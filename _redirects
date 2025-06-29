@@ -1,0 +1,6 @@
+/api/health /.netlify/functions/health 200
+/api/test /.netlify/functions/test 200
+/api/account-balance /.netlify/functions/account-balance 200
+/api/account-positions /.netlify/functions/account-positions 200
+/api/agent-analysis /.netlify/functions/agent-analysis 200
+/api/* /.netlify/functions/:splat 200
