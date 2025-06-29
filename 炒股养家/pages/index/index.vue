@@ -585,40 +585,44 @@ export default {
             });
         },
 
-        // 测试数据获取功能
+        // 测试真实数据获取功能
         async testDataFunctions() {
             try {
-                console.log('🧪 开始测试数据获取功能...');
+                console.log('🧪 开始测试真实数据获取功能...');
 
                 // 动态导入agentDataService
                 const agentDataService = (await import('@/services/agentDataService.js')).default;
 
-                // 测试股票数据获取
-                console.log('📊 测试股票数据获取...');
+                // 测试真实股票数据获取
+                console.log('📊 测试真实股票数据获取...');
                 const stockResult = await agentDataService.getStockData(['000001', '600000']);
-                console.log('📊 股票数据测试结果:', stockResult);
+                console.log('📊 真实股票数据测试结果:', stockResult);
 
-                // 测试回测功能
-                console.log('🔄 测试回测功能...');
+                // 测试真实数据回测功能
+                console.log('🔄 测试真实数据回测功能...');
                 const backtestResult = await agentDataService.runBacktest({
-                    strategy: 'test',
+                    strategy: 'ma_crossover',
                     symbols: ['000001'],
-                    initial_capital: 10000
+                    initial_capital: 100000,
+                    start_date: '2023-01-01',
+                    end_date: '2024-01-01'
                 });
-                console.log('🔄 回测测试结果:', backtestResult);
+                console.log('🔄 真实数据回测测试结果:', backtestResult);
 
                 // 显示测试完成提示
                 uni.showToast({
-                    title: '数据测试完成，请查看控制台',
+                    title: '真实数据测试完成，请查看控制台',
                     icon: 'success',
                     duration: 3000
                 });
 
             } catch (error) {
-                console.error('❌ 数据测试失败:', error);
+                console.error('❌ 真实数据测试失败:', error);
+                console.error('💡 请确保Agent后端服务正在运行并连接到真实数据源');
                 uni.showToast({
-                    title: '数据测试失败',
-                    icon: 'error'
+                    title: '需要Agent后端服务支持',
+                    icon: 'none',
+                    duration: 3000
                 });
             }
         },

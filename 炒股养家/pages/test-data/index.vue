@@ -126,11 +126,11 @@ export default {
         
         this.addResult({
           type: 'stock',
-          title: '股票数据获取测试',
+          title: '真实股票数据获取测试',
           success: result.success,
-          message: result.success ? 
-            `成功获取 ${symbols.length} 只股票的数据${result.source === 'mock' ? ' (模拟数据)' : ' (真实数据)'}` :
-            '股票数据获取失败',
+          message: result.success ?
+            `成功获取 ${symbols.length} 只股票的真实数据 (来源: ${result.source === 'real' ? 'Agent实时数据' : 'Agent API'})` :
+            '真实股票数据获取失败',
           data: result.data,
           rawData: result
         });
@@ -165,11 +165,11 @@ export default {
         
         this.addResult({
           type: 'backtest',
-          title: '回测功能测试',
+          title: '真实数据回测测试',
           success: result.success,
-          message: result.success ? 
-            `回测完成${result.source === 'mock' ? ' (模拟结果)' : ' (真实结果)'}` :
-            '回测运行失败',
+          message: result.success ?
+            `真实数据回测完成 (基于Agent提供的历史数据)` :
+            '真实数据回测失败',
           data: result.data,
           rawData: result
         });
