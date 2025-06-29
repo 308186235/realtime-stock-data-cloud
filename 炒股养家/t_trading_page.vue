@@ -1,0 +1,990 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">T交易策略</text>
+      <view class="subtitle">
+        <text>利用T+1制度,通过日内交易降低持仓成本</text>
+      </view>
+    </view>
+
+    <!-- 基本信息和控制区 -->
+    <view class="control-panel">
+      <view class="panel">
+        <view class="panel-title">
+          <text>交易日控制</text>
+        </view>
+        <view class="panel-body">
+          <view class="field">
+            <text class="field-label">当前日期</text>
+            <text class="field-value">{{ currentDate }}</text>
+          </view>
+          <view class="action-buttons">
+            <button class="btn" :disabled="isTrading" @click="startTradingDay">开始交易</button>
+            <button class="btn btn-warning" :disabled="!isTrading" @click="endTradingDay">结束交易</button>
+          </view>
+        </view>
+      </view>
+
+      <view class="panel">
+        <view class="panel-title">
+          <text>当日统计</text>
+        </view>
+        <view class="panel-body">
+          <view class="field">
+            <text class="field-label">交易次数</text>
+            <text class="field-value">{{ dailyStats.trades || 0 }}</text>
+          </view>
+          <view class="field">
+            <text class="field-label">成功次数</text>
+            <text class="field-value">{{ dailyStats.successful || 0 }}</text>
+          </view>
+          <view class="field">
+            <text class="field-label">盈利金额</text>
+            <text class="field-value" :class="{'profit': dailyStats.profit > 0, 'loss': dailyStats.profit < 0}">
+              {{ formatMoney(dailyStats.profit || 0) }}
+            </text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 股票选择 -->
+    <view class="panel stock-selector">
+      <view class="panel-title">
+        <text>选择股票</text>
+      </view>
+      <view class="panel-body">
+        <view class="field-row">
+          <text class="field-label">股票代码</text>
+          <input type="text" v-model="selectedStock.code" placeholder="输入股票代码" @blur="fetchStockData"/>
+        </view>
+        <view class="field-row">
+          <text class="field-label">股票名称</text>
+          <input type="text" v-model="selectedStock.name" placeholder="股票名称" disabled/>
+        </view>
+        <view class="field-row">
+          <text class="field-label">持仓数量</text>
+          <input type="number" v-model="selectedStock.basePosition" placeholder="输入底仓数量"/>
+        </view>
+        <view class="field-row">
+          <text class="field-label">持仓成本</text>
+          <input type="number" v-model="selectedStock.baseCost" placeholder="输入持仓成本"/>
+        </view>
+      </view>
+    </view>
+
+    <!-- 市场行情 -->
+    <view class="panel" v-if="stockInfo.code">
+      <view class="panel-title">
+        <text>{{ stockInfo.code }} {{ stockInfo.name }} 行情</text>
+        <text class="refresh-btn" @click="fetchStockData">刷新</text>
+      </view>
+      <view class="panel-body">
+        <view class="price-box">
+          <text class="current-price" :class="{'price-up': stockInfo.priceChange > 0, 'price-down': stockInfo.priceChange < 0}">
+            {{ stockInfo.currentPrice }}
+          </text>
+          <view class="price-change">
+            <text :class="{'price-up': stockInfo.priceChange > 0, 'price-down': stockInfo.priceChange < 0}">
+              {{ stockInfo.priceChange > 0 ? '+' : '' }}{{ stockInfo.priceChange }}
+              ({{ stockInfo.priceChangePercent }}%)
+            </text>
+          </view>
+        </view>
+        
+        <view class="market-info">
+          <view class="info-row">
+            <view class="info-item">
+              <text class="info-label">开盘</text>
+              <text class="info-value">{{ stockInfo.open }}</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">最高</text>
+              <text class="info-value">{{ stockInfo.high }}</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">最低</text>
+              <text class="info-value">{{ stockInfo.low }}</text>
+            </view>
+          </view>
+          <view class="info-row">
+            <view class="info-item">
+              <text class="info-label">成交量</text>
+              <text class="info-value">{{ formatVolume(stockInfo.volume) }}</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">振幅</text>
+              <text class="info-value">{{ stockInfo.amplitude }}%</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">换手率</text>
+              <text class="info-value">{{ stockInfo.turnoverRate }}%</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- T交易机会评估 -->
+    <view class="panel" v-if="stockInfo.code">
+      <view class="panel-title">
+        <text>T交易机会评估</text>
+        <text class="refresh-btn" @click="evaluateOpportunity">评估</text>
+      </view>
+      <view class="panel-body">
+        <view v-if="!opportunity" class="centered">
+          <text>点击评估按钮分析当前T交易机会</text>
+        </view>
+        <view v-else>
+          <view class="opportunity-result">
+            <view class="opportunity-status" :class="{
+              'opportunity-positive': opportunity.has_opportunity && opportunity.mode === 'positive',
+              'opportunity-negative': opportunity.has_opportunity && opportunity.mode === 'negative',
+              'opportunity-none': !opportunity.has_opportunity
+            }">
+              <text>{{ getOpportunityText() }}</text>
+            </view>
+            <view class="opportunity-detail">
+              <text>{{ opportunity.message }}</text>
+            </view>
+          </view>
+
+          <view v-if="opportunity.has_opportunity" class="opportunity-suggestion">
+            <view class="suggestion-item">
+              <text class="suggestion-label">建议交易数量</text>
+              <text class="suggestion-value">{{ opportunity.suggested_quantity }} 股</text>
+            </view>
+            <view class="suggestion-item">
+              <text class="suggestion-label">日内波动率</text>
+              <text class="suggestion-value">{{ (opportunity.volatility * 100).toFixed(2) }}%</text>
+            </view>
+            <view class="suggestion-item">
+              <text class="suggestion-label">价格位置</text>
+              <text class="suggestion-value">{{ (opportunity.current_position * 100).toFixed(0) }}%</text>
+            </view>
+          </view>
+
+          <view v-if="opportunity.expected_cost_impact" class="cost-impact">
+            <view class="impact-title">
+              <text>预期成本影响</text>
+            </view>
+            <view class="impact-item">
+              <text class="impact-label">原持仓成本</text>
+              <text class="impact-value">{{ formatMoney(opportunity.expected_cost_impact.original_cost) }}</text>
+            </view>
+            <view class="impact-item">
+              <text class="impact-label">预期新成本</text>
+              <text class="impact-value">{{ formatMoney(opportunity.expected_cost_impact.new_cost) }}</text>
+            </view>
+            <view class="impact-item">
+              <text class="impact-label">成本降低</text>
+              <text class="impact-value profit">{{ formatMoney(opportunity.expected_cost_impact.cost_reduction) }}
+                ({{ opportunity.expected_cost_impact.reduction_percentage.toFixed(2) }}%)
+              </text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 交易操作 -->
+    <view class="panel" v-if="stockInfo.code && opportunity && opportunity.has_opportunity">
+      <view class="panel-title">
+        <text>交易操作</text>
+      </view>
+      <view class="panel-body">
+        <view class="trade-form">
+          <view class="field-row">
+            <text class="field-label">交易类型</text>
+            <view class="radio-group">
+              <label class="radio-label">
+                <input type="radio" value="buy" v-model="tradeInfo.type" :disabled="opportunity.mode === 'negative'"/>
+                <text>买入</text>
+              </label>
+              <label class="radio-label">
+                <input type="radio" value="sell" v-model="tradeInfo.type" :disabled="opportunity.mode === 'positive'"/>
+                <text>卖出</text>
+              </label>
+            </view>
+          </view>
+          <view class="field-row">
+            <text class="field-label">交易价格</text>
+            <input type="number" v-model="tradeInfo.price" placeholder="输入交易价格" />
+          </view>
+          <view class="field-row">
+            <text class="field-label">交易数量</text>
+            <input type="number" v-model="tradeInfo.quantity" placeholder="输入交易数量" :max="selectedStock.basePosition" />
+          </view>
+          <view class="field-row actions">
+            <button class="btn btn-primary" @click="submitTrade">执行交易</button>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 历史T交易记录 -->
+    <view class="panel" v-if="tradingHistory.length > 0">
+      <view class="panel-title">
+        <text>交易历史</text>
+      </view>
+      <view class="panel-body">
+        <view class="table-container">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>股票</th>
+                <th>类型</th>
+                <th>买入价</th>
+                <th>卖出价</th>
+                <th>数量</th>
+                <th>利润</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(trade, index) in tradingHistory" :key="index">
+                <td>{{ formatDate(trade.date) }}</td>
+                <td>{{ trade.stock_code }}</td>
+                <td>{{ getTradeModeText(trade) }}</td>
+                <td>{{ trade.buy_price || '-' }}</td>
+                <td>{{ trade.sell_price || '-' }}</td>
+                <td>{{ trade.quantity }}</td>
+                <td :class="{'profit': trade.profit > 0, 'loss': trade.profit < 0}">
+                  {{ trade.profit ? formatMoney(trade.profit) : '-' }}
+                </td>
+                <td :class="{'success': trade.status === 'success', 'failure': trade.status === 'failure', 'pending': trade.status === 'pending'}">
+                  {{ getTradeStatusText(trade.status) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      isTrading: false,
+      currentDate: this.formatDateString(new Date()),
+      selectedStock: {
+        code: '',
+        name: '',
+        basePosition: 100,
+        baseCost: 0
+      },
+      stockInfo: {
+        code: '',
+        name: '',
+        currentPrice: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        priceChange: 0,
+        priceChangePercent: 0,
+        volume: 0,
+        amplitude: 0,
+        turnoverRate: 0
+      },
+      opportunity: null,
+      tradeInfo: {
+        type: 'buy',
+        price: 0,
+        quantity: 0
+      },
+      tradingHistory: [],
+      dailyStats: {
+        trades: 0,
+        successful: 0,
+        profit: 0
+      }
+    }
+  },
+  created() {
+    // 初始化当前日期
+    this.currentDate = this.formatDateString(new Date())
+    
+    // 加载交易历史数据
+    this.loadTradingHistory()
+  },
+  methods: {
+    formatDateString(date) {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    },
+    
+    formatDate(dateStr) {
+      if (!dateStr) return '-'
+      return dateStr.slice(5) // 只显示月-日部分
+    },
+    
+    formatMoney(value) {
+      return '¥' + parseFloat(value).toFixed(2)
+    },
+    
+    formatVolume(volume) {
+      if (volume >= 100000000) {
+        return (volume / 100000000).toFixed(2) + '亿'
+      } else if (volume >= 10000) {
+        return (volume / 10000).toFixed(2) + '万'
+      } else {
+        return volume.toString()
+      }
+    },
+    
+    // 开始交易日
+    async startTradingDay() {
+      try {
+        const response = await this.$http.post('/api/t-trading/start-trading-day')
+        if (response.data && response.data.status === 'success') {
+          this.isTrading = true
+          this.currentDate = response.data.date
+          this.$toast.success('已开始当日T交易')
+        }
+      } catch (error) {
+        console.error('开始交易日失败', error)
+        this.$toast.error('开始交易日失败: ' + (error.response?.data?.detail || error.message))
+      }
+    },
+    
+    // 结束交易日
+    async endTradingDay() {
+      try {
+        const response = await this.$http.post('/api/t-trading/end-trading-day')
+        if (response.data && response.data.status === 'success') {
+          this.isTrading = false
+          this.dailyStats.trades = response.data.trades_count
+          this.dailyStats.profit = response.data.daily_profit
+          this.$toast.success(`已结束当日T交易,总利润: ${this.formatMoney(response.data.daily_profit)}`)
+          
+          // 重新加载交易历史
+          this.loadTradingHistory()
+        }
+      } catch (error) {
+        console.error('结束交易日失败', error)
+        this.$toast.error('结束交易日失败: ' + (error.response?.data?.detail || error.message))
+      }
+    },
+    
+    // 获取股票数据
+    async fetchStockData() {
+      if (!this.selectedStock.code) return
+      
+      try {
+        this.$toast.info('获取股票数据中...')
+        
+        // 实际项目中应当从API获取数据
+        const response = await this.$http.get(`/api/stock/quote/${this.selectedStock.code}`)
+        const stockData = response.data
+        
+        // 更新股票信息
+        this.stockInfo = {
+          code: this.selectedStock.code,
+          name: stockData.name,
+          currentPrice: stockData.price,
+          open: stockData.open,
+          high: stockData.high,
+          low: stockData.low,
+          priceChange: stockData.change,
+          priceChangePercent: stockData.changePercent,
+          volume: stockData.volume,
+          amplitude: stockData.amplitude,
+          turnoverRate: stockData.turnover
+        }
+        
+        // 更新股票名称
+        this.selectedStock.name = stockData.name
+        
+        // 自动评估交易机会
+        this.evaluateOpportunity()
+      } catch (error) {
+        console.error('获取股票数据失败', error)
+        this.$toast.error('获取股票数据失败: ' + (error.response?.data?.detail || error.message))
+        
+        // TODO: 开发期间使用模拟数据
+        this.stockInfo = {
+          code: this.selectedStock.code,
+          name: '示例股票',
+          currentPrice: 10.50,
+          open: 10.30,
+          high: 10.80,
+          low: 10.20,
+          priceChange: 0.20,
+          priceChangePercent: 1.94,
+          volume: 1250000,
+          amplitude: 5.8,
+          turnoverRate: 1.5
+        }
+        this.selectedStock.name = '示例股票'
+      }
+    },
+    
+    // 评估T交易机会
+    async evaluateOpportunity() {
+      if (!this.stockInfo.code || !this.selectedStock.basePosition) {
+        this.$toast.warning('请先选择股票并填写底仓信息')
+        return
+      }
+      
+      try {
+        const stockInfo = {
+          code: this.stockInfo.code,
+          name: this.stockInfo.name,
+          current_price: this.stockInfo.currentPrice,
+          open_price: this.stockInfo.open,
+          intraday_high: this.stockInfo.high,
+          intraday_low: this.stockInfo.low,
+          avg_volume: this.stockInfo.volume * 0.8, // 假设平均成交量为当前的80%
+          current_volume: this.stockInfo.volume,
+          base_position: parseInt(this.selectedStock.basePosition),
+          base_cost: parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice
+        }
+        
+        const response = await this.$http.post('/api/t-trading/evaluate-opportunity', stockInfo)
+        this.opportunity = response.data
+        
+        // 如果有机会,自动设置交易类型和参数
+        if (this.opportunity.has_opportunity) {
+          if (this.opportunity.mode === 'positive') {
+            this.tradeInfo.type = 'buy'
+          } else {
+            this.tradeInfo.type = 'sell'
+          }
+          
+          this.tradeInfo.price = this.stockInfo.currentPrice
+          this.tradeInfo.quantity = this.opportunity.suggested_quantity || 
+                                   Math.floor(this.selectedStock.basePosition * 0.2)
+        }
+      } catch (error) {
+        console.error('评估T交易机会失败', error)
+        this.$toast.error('评估交易机会失败: ' + (error.response?.data?.detail || error.message))
+        
+        // TODO: 开发期间使用模拟数据
+        if (this.stockInfo.priceChange > 0) {
+          // 上涨趋势,模拟反T机会
+          this.opportunity = {
+            has_opportunity: true,
+            mode: 'negative',
+            message: '接近日内高点,可考虑反T(先卖)',
+            suggested_quantity: Math.floor(this.selectedStock.basePosition * 0.2),
+            volatility: this.stockInfo.amplitude / 100,
+            current_position: 0.75,
+            expected_cost_impact: {
+              original_cost: parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice,
+              new_cost: (parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice) * 0.995,
+              cost_reduction: (parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice) * 0.005,
+              reduction_percentage: 0.5
+            }
+          }
+          this.tradeInfo.type = 'sell'
+        } else {
+          // 下跌趋势,模拟正T机会
+          this.opportunity = {
+            has_opportunity: true,
+            mode: 'positive',
+            message: '接近日内低点,可考虑正T(先买)',
+            suggested_quantity: Math.floor(this.selectedStock.basePosition * 0.2),
+            volatility: this.stockInfo.amplitude / 100,
+            current_position: 0.25,
+            expected_cost_impact: {
+              original_cost: parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice,
+              new_cost: (parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice) * 0.995,
+              cost_reduction: (parseFloat(this.selectedStock.baseCost) || this.stockInfo.currentPrice) * 0.005,
+              reduction_percentage: 0.5
+            }
+          }
+          this.tradeInfo.type = 'buy'
+        }
+        
+        this.tradeInfo.price = this.stockInfo.currentPrice
+        this.tradeInfo.quantity = this.opportunity.suggested_quantity
+      }
+    },
+    
+    // 提交交易
+    async submitTrade() {
+      if (!this.isTrading) {
+        this.$toast.warning('请先开始交易日')
+        return
+      }
+      
+      if (!this.tradeInfo.price || !this.tradeInfo.quantity) {
+        this.$toast.warning('请填写完整的交易信息')
+        return
+      }
+      
+      try {
+        const tradeRequest = {
+          stock_code: this.stockInfo.code,
+          stock_name: this.stockInfo.name,
+          price: parseFloat(this.tradeInfo.price),
+          quantity: parseInt(this.tradeInfo.quantity),
+          trade_type: this.tradeInfo.type,
+          mode: this.opportunity.mode
+        }
+        
+        const response = await this.$http.post('/api/t-trading/record-trade', tradeRequest)
+        
+        if (response.data && response.data.status === 'success') {
+          this.$toast.success(response.data.message)
+          
+          // 重新加载交易历史
+          this.loadTradingHistory()
+          
+          // 重置交易表单
+          this.tradeInfo = {
+            type: this.opportunity.mode === 'positive' ? 'buy' : 'sell',
+            price: this.stockInfo.currentPrice,
+            quantity: this.opportunity.suggested_quantity
+          }
+        }
+      } catch (error) {
+        console.error('提交交易失败', error)
+        this.$toast.error('提交交易失败: ' + (error.response?.data?.detail || error.message))
+      }
+    },
+    
+    // 加载交易历史
+    async loadTradingHistory() {
+      try {
+        const response = await this.$http.get('/api/t-trading/trade-history?days=7')
+        this.tradingHistory = response.data
+        
+        // 更新统计信息
+        this.updateDailyStats()
+      } catch (error) {
+        console.error('加载交易历史失败', error)
+        
+        // TODO: 开发期间使用模拟数据
+        this.tradingHistory = [
+          {
+            date: this.formatDateString(new Date()),
+            stock_code: '600000',
+            stock_name: '浦发银行',
+            trade_type: 'complete',
+            mode: 'positive',
+            buy_price: 10.25,
+            sell_price: 10.45,
+            quantity: 200,
+            profit: 40,
+            status: 'success'
+          },
+          {
+            date: this.formatDateString(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+            stock_code: '601318',
+            stock_name: '中国平安',
+            trade_type: 'complete',
+            mode: 'negative',
+            buy_price: 38.10,
+            sell_price: 38.95,
+            quantity: 100,
+            profit: 85,
+            status: 'success'
+          },
+          {
+            date: this.formatDateString(new Date(Date.now() - 48 * 60 * 60 * 1000)),
+            stock_code: '000001',
+            stock_name: '平安银行',
+            trade_type: 'buy_only',
+            mode: 'positive',
+            buy_price: 15.80,
+            sell_price: 0,
+            quantity: 300,
+            profit: 0,
+            status: 'pending'
+          }
+        ]
+        
+        this.updateDailyStats()
+      }
+    },
+    
+    // 更新每日统计
+    updateDailyStats() {
+      const today = this.formatDateString(new Date())
+      const todayTrades = this.tradingHistory.filter(trade => trade.date === today)
+      
+      this.dailyStats = {
+        trades: todayTrades.length,
+        successful: todayTrades.filter(trade => trade.status === 'success').length,
+        profit: todayTrades.reduce((sum, trade) => sum + (trade.profit || 0), 0)
+      }
+    },
+    
+    // 获取机会文本
+    getOpportunityText() {
+      if (!this.opportunity || !this.opportunity.has_opportunity) {
+        return '无T交易机会'
+      }
+      
+      return this.opportunity.mode === 'positive' ? '正T机会(先买后卖)' : '反T机会(先卖后买)'
+    },
+    
+    // 获取交易模式文本
+    getTradeModeText(trade) {
+      if (trade.trade_type === 'complete') {
+        return trade.mode === 'positive' ? '正T' : '反T'
+      } else if (trade.trade_type === 'buy_only') {
+        return '买入'
+      } else if (trade.trade_type === 'sell_only') {
+        return '卖出'
+      }
+      return '-'
+    },
+    
+    // 获取交易状态文本
+    getTradeStatusText(status) {
+      const statusMap = {
+        'success': '获利',
+        'failure': '亏损',
+        'neutral': '平',
+        'pending': '待完成'
+      }
+      return statusMap[status] || status
+    }
+  }
+}
+</script>
+
+<style scoped>
+.container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-top: 5px;
+}
+
+.control-panel {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.panel-title {
+  background: #f5f7fa;
+  padding: 12px 15px;
+  font-weight: bold;
+  color: #333;
+  border-bottom: 1px solid #eaeaea;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-body {
+  padding: 15px;
+}
+
+.field {
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.field-row {
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+}
+
+.field-label {
+  flex: 0 0 100px;
+  font-size: 14px;
+  color: #666;
+}
+
+input[type="text"],
+input[type="number"] {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.btn {
+  padding: 8px 15px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #409eff;
+  color: white;
+  transition: all 0.3s;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn:disabled {
+  background: #a0cfff;
+  cursor: not-allowed;
+}
+
+.btn-warning {
+  background: #e6a23c;
+}
+
+.btn-primary {
+  background: #409eff;
+  color: white;
+}
+
+.stock-selector {
+  margin-bottom: 20px;
+}
+
+.price-box {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 15px;
+}
+
+.current-price {
+  font-size: 28px;
+  font-weight: bold;
+  margin-right: 10px;
+}
+
+.price-change {
+  font-size: 14px;
+}
+
+.price-up {
+  color: #f56c6c;
+}
+
+.price-down {
+  color: #67c23a;
+}
+
+.market-info {
+  border-top: 1px solid #eaeaea;
+  padding-top: 15px;
+}
+
+.info-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.info-item {
+  flex: 1;
+}
+
+.info-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.info-value {
+  font-size: 14px;
+  color: #303133;
+}
+
+.centered {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
+}
+
+.opportunity-result {
+  margin-bottom: 15px;
+}
+
+.opportunity-status {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.opportunity-positive {
+  color: #67c23a;
+}
+
+.opportunity-negative {
+  color: #f56c6c;
+}
+
+.opportunity-none {
+  color: #909399;
+}
+
+.opportunity-detail {
+  font-size: 14px;
+  color: #606266;
+}
+
+.opportunity-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px dashed #eaeaea;
+}
+
+.suggestion-item {
+  flex: 1;
+  min-width: 120px;
+}
+
+.suggestion-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.suggestion-value {
+  font-size: 14px;
+  color: #303133;
+  font-weight: bold;
+}
+
+.cost-impact {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px dashed #eaeaea;
+}
+
+.impact-title {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.impact-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.impact-label {
+  font-size: 12px;
+  color: #606266;
+}
+
+.impact-value {
+  font-size: 12px;
+  color: #303133;
+}
+
+.profit {
+  color: #f56c6c;
+}
+
+.loss {
+  color: #67c23a;
+}
+
+.trade-form {
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.radio-group {
+  display: flex;
+  gap: 20px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.actions {
+  margin-top: 20px;
+  justify-content: center;
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.history-table th,
+.history-table td {
+  border: 1px solid #ebeef5;
+  padding: 8px 12px;
+  text-align: center;
+}
+
+.history-table th {
+  background-color: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+}
+
+.history-table tr:hover td {
+  background-color: #f5f7fa;
+}
+
+.success {
+  color: #67c23a;
+}
+
+.failure {
+  color: #f56c6c;
+}
+
+.pending {
+  color: #909399;
+}
+
+.refresh-btn {
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.refresh-btn:hover {
+  text-decoration: underline;
+}
+</style> 

@@ -1,0 +1,476 @@
+/**
+ * Agent学习引擎
+ * 负责分析交易结果,优化策略权重和参数
+ */
+
+/**
+ * Agent学习引擎类
+ */
+class LearningEngine {
+  constructor() {
+    // 历史交易记录
+    this.tradingHistory = [];
+    
+    // 学习状态
+    this.hasLearned = false;
+    
+    // 学习结果
+    this.learningResults = {
+      bestStrategies: [],
+      bestParameters: {},
+      strategiesPerformance: {}
+    };
+    
+    // 初始化指标重要性评分
+    this.indicatorImportance = {
+      macd: 0.5,
+      rsi: 0.5,
+      kdj: 0.5,
+      boll: 0.5,
+      volume: 0.5,
+      williamsR: 0.5
+    };
+  }
+  
+  /**
+   * 记录交易结果
+   * @param {Object} trade 交易记录
+   */
+  recordTrade(trade) {
+    this.tradingHistory.push({
+      ...trade,
+      timestamp: new Date()
+    });
+    
+    // 重置学习状态
+    this.hasLearned = false;
+  }
+  
+  /**
+   * 分析交易历史并学习
+   * @returns {Object} 学习结果
+   */
+  learn() {
+    // 如果没有足够的历史数据,返回
+    if (this.tradingHistory.length < 10) {
+      return {
+        success: false,
+        message: "需要更多的交易数据才能开始学习"
+      };
+    }
+    
+    // 分析各策略的表现
+    const strategiesPerformance = this.analyzeStrategiesPerformance();
+    
+    // 分析各指标的重要性
+    const indicatorImportance = this.analyzeIndicatorImportance();
+    
+    // 找出最佳策略组合
+    const bestStrategies = this.findBestStrategyCombination();
+    
+    // 找出最佳参数设置
+    const bestParameters = this.optimizeParameters();
+    
+    // 更新学习结果
+    this.learningResults = {
+      bestStrategies,
+      bestParameters,
+      strategiesPerformance,
+      indicatorImportance
+    };
+    
+    this.hasLearned = true;
+    
+    return {
+      success: true,
+      results: this.learningResults
+    };
+  }
+  
+  /**
+   * 分析各策略的表现
+   * @returns {Object} 各策略的表现指标
+   */
+  analyzeStrategiesPerformance() {
+    // 初始化各策略的表现统计
+    const performance = {
+      sixSword: { wins: 0, losses: 0, score: 0 },
+      jiuFang: { wins: 0, losses: 0, score: 0 },
+      compass: { wins: 0, losses: 0, score: 0 },
+      williamsR: { wins: 0, losses: 0, score: 0 }
+    };
+    
+    // 分析每笔交易,计算各策略的胜率
+    this.tradingHistory.forEach(trade => {
+      if (!trade.strategyDetails) return;
+      
+      // 分析六剑奇门策略
+      if (trade.strategyDetails.sixSword) {
+        const sixSwordAction = trade.strategyDetails.sixSword.action;
+        
+        if ((sixSwordAction === 'buy' && trade.result > 0) || 
+            (sixSwordAction === 'sell' && trade.result < 0)) {
+          performance.sixSword.wins++;
+        } else if ((sixSwordAction === 'buy' && trade.result < 0) || 
+                  (sixSwordAction === 'sell' && trade.result > 0)) {
+          performance.sixSword.losses++;
+        }
+      }
+      
+      // 分析九方智能策略
+      if (trade.strategyDetails.jiuFang) {
+        const jiuFangAction = trade.strategyDetails.jiuFang.action;
+        
+        if ((jiuFangAction === 'buy' && trade.result > 0) || 
+            (jiuFangAction === 'sell' && trade.result < 0)) {
+          performance.jiuFang.wins++;
+        } else if ((jiuFangAction === 'buy' && trade.result < 0) || 
+                  (jiuFangAction === 'sell' && trade.result > 0)) {
+          performance.jiuFang.losses++;
+        }
+      }
+      
+      // 分析指南针策略
+      if (trade.strategyDetails.compass) {
+        const compassAction = trade.strategyDetails.compass.action;
+        
+        if ((compassAction === 'buy' && trade.result > 0) || 
+            (compassAction === 'sell' && trade.result < 0)) {
+          performance.compass.wins++;
+        } else if ((compassAction === 'buy' && trade.result < 0) || 
+                  (compassAction === 'sell' && trade.result > 0)) {
+          performance.compass.losses++;
+        }
+      }
+      
+      // 分析威廉指标策略
+      if (trade.strategyDetails.williamsR) {
+        const williamsRAction = trade.strategyDetails.williamsR.action;
+        
+        if ((williamsRAction === 'buy' && trade.result > 0) || 
+            (williamsRAction === 'sell' && trade.result < 0)) {
+          performance.williamsR.wins++;
+        } else if ((williamsRAction === 'buy' && trade.result < 0) || 
+                  (williamsRAction === 'sell' && trade.result > 0)) {
+          performance.williamsR.losses++;
+        }
+      }
+    });
+    
+    // 计算各策略的评分
+    Object.keys(performance).forEach(strategy => {
+      const { wins, losses } = performance[strategy];
+      const total = wins + losses;
+      
+      if (total > 0) {
+        // 胜率作为基础评分
+        const winRate = wins / total;
+        performance[strategy].winRate = winRate;
+        
+        // 评分考虑胜率和样本量
+        performance[strategy].score = winRate * Math.min(1, total / 20);
+      }
+    });
+    
+    return performance;
+  }
+  
+  /**
+   * 分析各指标的重要性
+   * @returns {Object} 各指标的重要性评分
+   */
+  analyzeIndicatorImportance() {
+    // 初始化指标重要性
+    const indicatorScores = { ...this.indicatorImportance };
+    
+    // 统计各指标的预测准确度
+    const indicatorStats = {
+      macd: { correct: 0, total: 0 },
+      rsi: { correct: 0, total: 0 },
+      kdj: { correct: 0, total: 0 },
+      boll: { correct: 0, total: 0 },
+      volume: { correct: 0, total: 0 },
+      williamsR: { correct: 0, total: 0 }
+    };
+    
+    // 分析每笔交易的指标表现
+    this.tradingHistory.forEach(trade => {
+      if (!trade.indicatorSignals) return;
+      
+      // 分析MACD指标
+      if (trade.indicatorSignals.macd !== undefined) {
+        indicatorStats.macd.total++;
+        if ((trade.indicatorSignals.macd > 0 && trade.result > 0) || 
+            (trade.indicatorSignals.macd < 0 && trade.result < 0)) {
+          indicatorStats.macd.correct++;
+        }
+      }
+      
+      // 分析RSI指标
+      if (trade.indicatorSignals.rsi !== undefined) {
+        indicatorStats.rsi.total++;
+        // RSI低于30为超卖(看涨),高于70为超买(看跌)
+        const rsiSignal = trade.indicatorSignals.rsi < 30 ? 1 : (trade.indicatorSignals.rsi > 70 ? -1 : 0);
+        if ((rsiSignal > 0 && trade.result > 0) || 
+            (rsiSignal < 0 && trade.result < 0)) {
+          indicatorStats.rsi.correct++;
+        }
+      }
+      
+      // 分析KDJ指标
+      if (trade.indicatorSignals.kdj !== undefined) {
+        indicatorStats.kdj.total++;
+        // KDJ的K值低于20为超卖(看涨),高于80为超买(看跌)
+        const kdjSignal = trade.indicatorSignals.kdj < 20 ? 1 : (trade.indicatorSignals.kdj > 80 ? -1 : 0);
+        if ((kdjSignal > 0 && trade.result > 0) || 
+            (kdjSignal < 0 && trade.result < 0)) {
+          indicatorStats.kdj.correct++;
+        }
+      }
+      
+      // 分析BOLL指标
+      if (trade.indicatorSignals.boll !== undefined) {
+        indicatorStats.boll.total++;
+        // 价格低于下轨为超卖(看涨),高于上轨为超买(看跌)
+        if ((trade.indicatorSignals.boll === 'lower' && trade.result > 0) || 
+            (trade.indicatorSignals.boll === 'upper' && trade.result < 0)) {
+          indicatorStats.boll.correct++;
+        }
+      }
+      
+      // 分析成交量指标
+      if (trade.indicatorSignals.volume !== undefined) {
+        indicatorStats.volume.total++;
+        // 放量上涨看涨,放量下跌看跌
+        if ((trade.indicatorSignals.volume === 'increase' && trade.priceChange > 0 && trade.result > 0) || 
+            (trade.indicatorSignals.volume === 'increase' && trade.priceChange < 0 && trade.result < 0)) {
+          indicatorStats.volume.correct++;
+        }
+      }
+      
+      // 分析威廉指标
+      if (trade.indicatorSignals.williamsR !== undefined) {
+        indicatorStats.williamsR.total++;
+        // 威廉指标低于-80为超卖(看涨),高于-20为超买(看跌)
+        const wrSignal = trade.indicatorSignals.williamsR < -80 ? 1 : (trade.indicatorSignals.williamsR > -20 ? -1 : 0);
+        if ((wrSignal > 0 && trade.result > 0) || 
+            (wrSignal < 0 && trade.result < 0)) {
+          indicatorStats.williamsR.correct++;
+        }
+      }
+    });
+    
+    // 更新各指标的重要性评分
+    Object.keys(indicatorStats).forEach(indicator => {
+      if (indicatorStats[indicator].total > 0) {
+        // 准确率作为重要性评分
+        const accuracy = indicatorStats[indicator].correct / indicatorStats[indicator].total;
+        
+        // 平滑更新指标重要性(加权平均)
+        indicatorScores[indicator] = indicatorScores[indicator] * 0.7 + accuracy * 0.3;
+      }
+    });
+    
+    return indicatorScores;
+  }
+  
+  /**
+   * 找出最佳策略组合
+   * @returns {Array} 最佳策略组合
+   */
+  findBestStrategyCombination() {
+    const performance = this.analyzeStrategiesPerformance();
+    
+    // 按照评分从高到低排序策略
+    const rankedStrategies = Object.entries(performance)
+      .sort((a, b) => b[1].score - a[1].score)
+      .map(entry => ({ 
+        name: entry[0], 
+        score: entry[1].score,
+        winRate: entry[1].winRate || 0,
+        sampleSize: (entry[1].wins || 0) + (entry[1].losses || 0)
+      }));
+    
+    return rankedStrategies;
+  }
+  
+  /**
+   * 优化策略参数
+   * @returns {Object} 优化后的参数
+   */
+  optimizeParameters() {
+    // 这里返回各策略的最佳参数
+    // 实际开发中可以实现更复杂的优化算法,如网格搜索,遗传算法等
+    const bestParameters = {
+      sixSword: {
+        // 六剑奇门策略最佳参数
+      },
+      jiuFang: {
+        // 九方智能策略最佳参数
+      },
+      compass: {
+        // 指南针策略最佳参数
+      },
+      williamsR: {
+        // 威廉指标策略最佳参数
+        lookbackPeriods: [7, 14, 21],  // 建议使用的周期组合
+        oversoldThreshold: -80,       // 超卖阈值
+        overboughtThreshold: -20,     // 超买阈值
+        useRSIConfirmation: true,     // 是否使用RSI确认
+        useTrendFilter: true          // 是否使用趋势过滤
+      }
+    };
+    
+    return bestParameters;
+  }
+  
+  /**
+   * 根据学习结果提供策略优化建议
+   * @returns {Object} 优化建议
+   */
+  getOptimizationSuggestions() {
+    if (!this.hasLearned) {
+      this.learn();
+    }
+    
+    // 获取最佳策略组合
+    const bestStrategies = this.learningResults.bestStrategies;
+    
+    // 生成权重优化建议(给表现更好的策略更高的权重)
+    const weightSuggestions = {};
+    let totalScore = 0;
+    
+    bestStrategies.forEach(strategy => {
+      totalScore += strategy.score;
+    });
+    
+    // 基于表现分配权重
+    bestStrategies.forEach(strategy => {
+      if (totalScore > 0) {
+        weightSuggestions[strategy.name] = strategy.score / totalScore;
+      } else {
+        // 如果所有策略评分为0,则平均分配
+        weightSuggestions[strategy.name] = 1 / bestStrategies.length;
+      }
+    });
+    
+    // 基于指标重要性提供指标使用建议
+    const indicatorSuggestions = {};
+    Object.entries(this.learningResults.indicatorImportance)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([indicator, importance]) => {
+        indicatorSuggestions[indicator] = {
+          importance,
+          recommendation: importance > 0.6 ? "重点关注" : 
+                         importance > 0.4 ? "辅助参考" : "减少权重"
+        };
+      });
+    
+    // 提供威廉指标的特定建议
+    let williamsRSuggestion = "";
+    const williamsRStats = this.analyzeWilliamsRPerformance();
+    
+    if (williamsRStats.oversoldToBuyWinRate > 0.6) {
+      williamsRSuggestion += "威廉指标从超卖区上穿策略表现良好,可增加权重。";
+    }
+    
+    if (williamsRStats.overboughtToSellWinRate > 0.6) {
+      williamsRSuggestion += "威廉指标从超买区下穿策略表现良好,可增加权重。";
+    }
+    
+    if (williamsRStats.rsiConfirmationImprovement > 0.1) {
+      williamsRSuggestion += "使用RSI确认可显著提高威廉指标的准确率,建议同时使用。";
+    }
+    
+    return {
+      weightSuggestions,
+      parameterSuggestions: this.learningResults.bestParameters,
+      indicatorSuggestions,
+      specificSuggestions: {
+        williamsR: williamsRSuggestion
+      }
+    };
+  }
+  
+  /**
+   * 分析威廉指标的细节表现
+   * @returns {Object} 威廉指标表现统计
+   */
+  analyzeWilliamsRPerformance() {
+    // 初始化统计数据
+    const stats = {
+      oversoldToBuy: { wins: 0, losses: 0 },
+      overboughtToSell: { wins: 0, losses: 0 },
+      withRSIConfirmation: { wins: 0, losses: 0 },
+      withoutRSIConfirmation: { wins: 0, losses: 0 }
+    };
+    
+    // 分析交易历史
+    this.tradingHistory.forEach(trade => {
+      if (!trade.strategyDetails?.williamsR || !trade.indicatorSignals?.williamsR) return;
+      
+      // 分析超卖区上穿买入信号
+      if (trade.indicatorSignals.williamsR < -80 && trade.strategyDetails.williamsR.signals.crossingFromOversold) {
+        if (trade.result > 0) {
+          stats.oversoldToBuy.wins++;
+        } else {
+          stats.oversoldToBuy.losses++;
+        }
+      }
+      
+      // 分析超买区下穿卖出信号
+      if (trade.indicatorSignals.williamsR > -20 && trade.strategyDetails.williamsR.signals.crossingFromOverbought) {
+        if (trade.result < 0) {
+          stats.overboughtToSell.wins++;
+        } else {
+          stats.overboughtToSell.losses++;
+        }
+      }
+      
+      // 分析RSI确认的信号
+      if (trade.strategyDetails.williamsR.signals.rsiConfirmation) {
+        if ((trade.strategyDetails.williamsR.action === 'buy' && trade.result > 0) ||
+            (trade.strategyDetails.williamsR.action === 'sell' && trade.result < 0)) {
+          stats.withRSIConfirmation.wins++;
+        } else {
+          stats.withRSIConfirmation.losses++;
+        }
+      } else {
+        if ((trade.strategyDetails.williamsR.action === 'buy' && trade.result > 0) ||
+            (trade.strategyDetails.williamsR.action === 'sell' && trade.result < 0)) {
+          stats.withoutRSIConfirmation.wins++;
+        } else {
+          stats.withoutRSIConfirmation.losses++;
+        }
+      }
+    });
+    
+    // 计算胜率
+    const calcWinRate = (wins, losses) => {
+      const total = wins + losses;
+      return total > 0 ? wins / total : 0;
+    };
+    
+    // 计算各种情况的胜率
+    const oversoldToBuyWinRate = calcWinRate(stats.oversoldToBuy.wins, stats.oversoldToBuy.losses);
+    const overboughtToSellWinRate = calcWinRate(stats.overboughtToSell.wins, stats.overboughtToSell.losses);
+    const withRSIConfirmationWinRate = calcWinRate(stats.withRSIConfirmation.wins, stats.withRSIConfirmation.losses);
+    const withoutRSIConfirmationWinRate = calcWinRate(stats.withoutRSIConfirmation.wins, stats.withoutRSIConfirmation.losses);
+    
+    return {
+      oversoldToBuyWinRate,
+      overboughtToSellWinRate,
+      withRSIConfirmationWinRate,
+      withoutRSIConfirmationWinRate,
+      rsiConfirmationImprovement: withRSIConfirmationWinRate - withoutRSIConfirmationWinRate,
+      sampleSizes: {
+        oversoldToBuy: stats.oversoldToBuy.wins + stats.oversoldToBuy.losses,
+        overboughtToSell: stats.overboughtToSell.wins + stats.overboughtToSell.losses,
+        withRSIConfirmation: stats.withRSIConfirmation.wins + stats.withRSIConfirmation.losses,
+        withoutRSIConfirmation: stats.withoutRSIConfirmation.wins + stats.withoutRSIConfirmation.losses
+      }
+    };
+  }
+}
+
+export default LearningEngine; 

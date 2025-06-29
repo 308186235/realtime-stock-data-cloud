@@ -1,0 +1,85 @@
+"""
+Tushare数据服务
+用于获取真实的股票数据进行回测
+"""
+
+import tushare as ts
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional, Any
+import logging
+from datetime import datetime, timedelta
+import time
+
+logger = logging.getLogger(__name__)
+
+class TushareDataService:
+    """Tushare数据服务类"""
+    
+    def __init__(self, token: str = "2f204ad53468c48203e351b2e43b7ebd2c1ef1028c9d4c4e8ea3736c"):
+        """初始化Tushare数据服务"""
+        self.token = token
+        try:
+            ts.set_token(token)
+            self.pro = ts.pro_api()
+            logger.info("Tushare API初始化成功")
+        except Exception as e:
+            logger.error(f"Tushare API初始化失败: {e}")
+            self.pro = None
+    
+    def get_stock_data(self, ts_code: str, start_date: str, end_date: str, adj: str = 'qfq') -> pd.DataFrame:
+        """获取股票历史数据"""
+        if not self.pro:
+            raise Exception("Tushare API未正确初始化")
+        
+        try:
+            # 获取日线数据
+            df = self.pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
+            
+            if df.empty:
+                logger.warning(f"未获取到股票数据: {ts_code}")
+                return pd.DataFrame()
+            
+            # 重命名列以符合回测系统格式
+            df = df.rename(columns={
+                'trade_date': 'date',
+                'ts_code': 'symbol',
+                'vol': 'volume'
+            })
+            
+            # 转换日期格式
+            df['date'] = pd.to_datetime(df['date'], format='%Y%m%d')
+            df = df.sort_values('date').reset_index(drop=True)
+            
+            # 选择需要的列
+            columns = ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']
+            df = df[columns]
+            
+            logger.info(f"成功获取 {ts_code} 数据,共 {len(df)} 条记录")
+            return df
+            
+        except Exception as e:
+            logger.error(f"获取股票数据失败 {ts_code}: {e}")
+            return pd.DataFrame()
+    
+    def calculate_returns(self, data: pd.DataFrame) -> List[float]:
+        """计算收益率"""
+        if data.empty:
+            return []
+        
+        data = data.copy()
+        returns = data['close'].pct_change().dropna().tolist()
+        return returns
+    
+    def format_date(self, date_str: str) -> str:
+        """格式化日期为Tushare API需要的格式"""
+        try:
+            if '-' in date_str:
+                return date_str.replace('-', '')
+            else:
+                return date_str
+        except:
+            return datetime.now().strftime('%Y%m%d')
+
+# 全局实例
+tushare_service = TushareDataService()

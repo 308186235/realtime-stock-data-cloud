@@ -1,0 +1,339 @@
+# Agent智能快捷键交易系统使用指南
+
+## 📋 概述
+
+Agent智能快捷键交易系统是一个将AI决策与交易软件快捷键操作相结合的自动化交易解决方案。系统能够:
+
+- 🤖 **AI智能决策**: 基于市场数据和技术分析生成交易决策
+- ⌨️ **快捷键自动操作**: 自动控制交易软件执行买入卖出操作
+- 🔒 **安全风控**: 多重安全检查,防止误操作和过度交易
+- 📊 **实时监控**: Web界面实时监控系统状态和交易历史
+- 🎛️ **灵活配置**: 支持多种交易模式和参数调整
+
+## 🚀 快速开始
+
+### 1. 环境准备
+
+#### 必要软件
+- **Python 3.8+** - 系统运行环境
+- **交易软件** - 东吴证券,同花顺,通达信等(已登录状态)
+- **浏览器** - 用于访问Web控制台
+
+#### 依赖安装
+```bash
+# 安装Python依赖
+pip install -r requirements.txt
+
+# 安装快捷键相关依赖
+pip install pyautogui keyboard pywin32
+```
+
+### 2. 系统启动
+
+#### 方式一:使用启动脚本(推荐)
+```bash
+# 运行启动脚本
+start_agent_trading.bat
+```
+
+启动脚本提供4种模式:
+1. **仅快捷键交易** - 手动决策,快捷键执行
+2. **Agent智能交易** - AI自动决策
+3. **完整系统** - Agent + 快捷键 + Web API
+4. **测试模式** - 安全测试环境
+
+#### 方式二:手动启动
+```bash
+# 启动后端API服务
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# 启动Agent交易系统
+python backend/ai/run_agent.py
+```
+
+### 3. 系统验证
+
+#### 运行测试脚本
+```bash
+python test_agent_hotkey_trading.py
+```
+
+测试脚本会验证:
+- ✅ 系统组件启动
+- ✅ 交易软件连接
+- ✅ 快捷键操作
+- ✅ AI决策功能
+- ✅ 安全检查机制
+
+## 🎛️ 使用方法
+
+### Web控制台
+
+访问 `http://localhost:8000/api/docs` 查看完整API文档
+
+主要功能页面:
+- **系统状态** - 实时监控系统运行状态
+- **手动交易** - 手动输入交易指令
+- **自动交易** - 启动AI自动交易
+- **配置管理** - 调整系统参数
+- **执行历史** - 查看交易记录
+
+### API接口使用
+
+#### 启动系统
+```bash
+curl -X POST "http://localhost:8000/api/agent-trading/start"
+```
+
+#### 执行手动交易
+```bash
+curl -X POST "http://localhost:8000/api/agent-trading/execute-decision" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "buy",
+    "symbol": "600000",
+    "price": 10.50,
+    "quantity": 100,
+    "confidence": 0.85,
+    "reason": "手动交易"
+  }'
+```
+
+#### 获取AI决策
+```bash
+curl -X POST "http://localhost:8000/api/agent-trading/agent-decision?symbol=600519"
+```
+
+#### 启动自动交易
+```bash
+curl -X POST "http://localhost:8000/api/agent-trading/auto-trade?symbol=600000"
+```
+
+### 前端组件集成
+
+在Vue.js项目中使用Agent交易面板:
+
+```vue
+<template>
+  <div>
+    <AgentTradingPanel />
+  </div>
+</template>
+
+<script>
+import AgentTradingPanel from '@/components/AgentTradingPanel.vue'
+
+export default {
+  components: {
+    AgentTradingPanel
+  }
+}
+</script>
+```
+
+## ⚙️ 配置说明
+
+### 交易配置 (`config/hotkey_trader_config.json`)
+
+```json
+{
+  "窗口标题": ["东吴证券", "网上股票交易系统"],
+  "快捷键": {
+    "买入": "F1",
+    "卖出": "F2",
+    "持仓": "F4",
+    "资金": "F5"
+  },
+  "安全设置": {
+    "操作间隔最小时间": 1,
+    "最大单笔交易额": 100000,
+    "需要二次确认的金额": 50000
+  }
+}
+```
+
+### Agent配置 (`config/agent_config.json`)
+
+```json
+{
+  "risk_manager": {
+    "max_position_size": 0.2,
+    "max_daily_loss": 0.03,
+    "stop_loss_mode": "adaptive"
+  },
+  "decision_engine": {
+    "confidence_threshold": 0.6,
+    "decision_mode": "weighted"
+  }
+}
+```
+
+### 运行时配置
+
+通过API动态调整:
+
+```python
+config = {
+    "auto_trading_enabled": True,
+    "auto_confirm": False,
+    "max_daily_trades": 20,
+    "max_position_size": 0.1,
+    "min_confidence_threshold": 0.75,
+    "min_trade_interval": 60
+}
+```
+
+## 🔒 安全机制
+
+### 多重安全检查
+
+1. **置信度检查** - 只执行高置信度决策
+2. **仓位限制** - 防止过度集中投资
+3. **交易频率限制** - 避免过度交易
+4. **金额限制** - 单笔交易金额上限
+5. **时间间隔** - 强制交易间隔时间
+
+### 风险控制参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `max_daily_trades` | 20 | 每日最大交易次数 |
+| `max_position_size` | 0.1 | 单只股票最大仓位比例 |
+| `min_confidence_threshold` | 0.75 | 最小决策置信度 |
+| `min_trade_interval` | 60 | 最小交易间隔(秒) |
+| `auto_confirm` | false | 是否自动确认订单 |
+
+### 紧急停止
+
+- **快捷键**: `Ctrl+C` 停止系统
+- **API**: `POST /api/agent-trading/stop`
+- **Web界面**: 点击"停止系统"按钮
+
+## 📊 监控与分析
+
+### 实时状态监控
+
+系统提供多维度状态监控:
+
+- **系统状态**: 各组件运行状态
+- **交易统计**: 今日交易次数,成功率
+- **风险指标**: 当前仓位,风险敞口
+- **性能指标**: 系统响应时间,资源使用
+
+### 执行历史分析
+
+- **交易记录**: 完整的买卖记录
+- **决策分析**: AI决策置信度和准确率
+- **性能统计**: 盈亏统计和风险指标
+- **异常记录**: 失败交易和错误日志
+
+## 🛠️ 故障排除
+
+### 常见问题
+
+#### 1. 交易软件未找到
+**现象**: 系统提示"未找到交易软件窗口"
+**解决**: 
+- 确保交易软件已打开并登录
+- 检查窗口标题是否匹配配置
+- 尝试重新启动交易软件
+
+#### 2. 快捷键无响应
+**现象**: 按键发送但交易软件无反应
+**解决**:
+- 确保交易软件窗口处于前台
+- 检查快捷键配置是否正确
+- 验证交易软件快捷键设置
+
+#### 3. AI决策失败
+**现象**: Agent无法生成有效决策
+**解决**:
+- 检查市场数据连接
+- 验证Agent配置参数
+- 查看日志文件排查错误
+
+#### 4. 权限问题
+**现象**: 系统无法控制其他程序
+**解决**:
+- 以管理员身份运行
+- 检查Windows安全设置
+- 确认防病毒软件未阻止
+
+### 日志查看
+
+```bash
+# 查看系统日志
+tail -f logs/agent.log
+
+# 查看交易日志
+tail -f logs/trading.log
+
+# 查看错误日志
+tail -f logs/error.log
+```
+
+## 📈 最佳实践
+
+### 1. 渐进式启用
+
+1. **测试模式** - 先在测试模式下验证功能
+2. **手动模式** - 使用手动决策,快捷键执行
+3. **半自动模式** - AI决策,手动确认
+4. **全自动模式** - 完全自动化交易
+
+### 2. 参数调优
+
+- **新手**: 高置信度阈值(0.8+),小仓位(5%)
+- **进阶**: 中等置信度(0.7),适中仓位(10%)
+- **专家**: 根据策略调整,最大仓位不超过20%
+
+### 3. 风险管理
+
+- 设置合理的止损点
+- 分散投资,避免集中持仓
+- 定期检查和调整参数
+- 保持充足的现金储备
+
+### 4. 监控要点
+
+- 每日交易次数和成功率
+- 系统响应时间和稳定性
+- AI决策质量和准确率
+- 风险指标和仓位分布
+
+## 🔄 系统升级
+
+### 版本更新
+
+```bash
+# 备份配置
+cp config/*.json config/backup/
+
+# 更新代码
+git pull origin main
+
+# 安装新依赖
+pip install -r requirements.txt
+
+# 重启系统
+start_agent_trading.bat
+```
+
+### 配置迁移
+
+升级时注意配置文件兼容性,必要时参考新版本配置模板进行调整。
+
+## 📞 技术支持
+
+- **文档**: 查看 `docs/` 目录下的详细文档
+- **示例**: 参考 `examples/` 目录下的使用示例
+- **测试**: 运行 `test_agent_hotkey_trading.py` 验证功能
+- **日志**: 检查 `logs/` 目录下的日志文件
+
+---
+
+⚠️ **重要提醒**: 
+- 交易有风险,投资需谨慎
+- 建议先在模拟环境中充分测试
+- 定期备份配置和交易数据
+- 遵守相关法律法规和交易所规则

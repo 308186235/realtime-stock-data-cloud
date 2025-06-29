@@ -1,0 +1,28 @@
+# 订单流数据分析规范
+
+## 数据采集
+1. 使用WebSocket实时接收交易所原始订单流
+2. 字段包含:时间戳,证券代码,价格,数量,买卖方向,订单类型
+
+## 存储格式
+```protobuf
+message OrderFlow {
+  string symbol = 1;
+  double price = 2;
+  int32 quantity = 3;
+  Direction direction = 4;
+  int64 timestamp = 5;
+  OrderType order_type = 6;
+  string participant_code = 7;
+}
+```
+
+## 分析模块
+- 异常交易检测:统计单位时间订单频率/撤单率
+- 大单追踪:监控超过平均量500%的订单
+- 智能路由分析:统计不同交易所订单分布
+
+## 数据安全
+1. 使用AES-256加密存储历史数据
+2. 区块链存证关键操作日志
+3. 基于RBAC的访问控制体系

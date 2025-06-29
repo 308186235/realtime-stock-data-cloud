@@ -1,0 +1,124 @@
+"""
+交易API - 真正的原版模块化
+Agent调用接口,基于完全原版逻辑
+"""
+
+from trader_buy_sell import buy_stock, sell_stock
+from trader_export_real import export_holdings, export_transactions, export_orders
+from trader_core_original import cleanup_old_export_files
+import win32gui
+import glob
+
+class TradingAPI:
+    """交易API类 - 真正的原版模块化"""
+    
+    def buy(self, code, quantity, price="市价"):
+        """买入股票"""
+        return buy_stock(code, quantity, price)
+    
+    def sell(self, code, quantity, price="市价"):
+        """卖出股票"""
+        return sell_stock(code, quantity, price)
+    
+    def export_positions(self):
+        """导出持仓数据"""
+        return export_holdings()
+    
+    def export_trades(self):
+        """导出成交数据"""
+        return export_transactions()
+    
+    def export_orders(self):
+        """导出委托数据"""
+        return export_orders()
+    
+    def export_all(self):
+        """导出所有数据"""
+        results = {}
+        results['holdings'] = self.export_positions()
+        results['transactions'] = self.export_trades()
+        results['orders'] = self.export_orders()
+        return results
+    
+    def batch_trade(self, trades):
+        """批量交易"""
+        results = []
+        for trade in trades:
+            if trade['action'] == 'buy':
+                success = self.buy(trade['code'], trade['quantity'], trade.get('price', '市价'))
+            elif trade['action'] == 'sell':
+                success = self.sell(trade['code'], trade['quantity'], trade.get('price', '市价'))
+            else:
+                success = False
+            
+            results.append({
+                'trade': trade,
+                'success': success
+            })
+        
+        return results
+    
+    def get_files(self):
+        """获取导出文件列表"""
+        files = {
+            'holdings': glob.glob("持仓数据_*.csv"),
+            'transactions': glob.glob("成交数据_*.csv"),
+            'orders': glob.glob("委托数据_*.csv")
+        }
+        return files
+    
+    def cleanup_files(self):
+        """清理过期文件"""
+        cleanup_old_export_files()
+    
+    def get_status(self):
+        """获取系统状态"""
+        try:
+            current_hwnd = win32gui.GetForegroundWindow()
+            current_title = win32gui.GetWindowText(current_hwnd)
+            
+            # 检查交易软件是否激活
+            trading_active = "交易" in current_title or "股票" in current_title
+            
+            # 统计文件数量
+            files = self.get_files()
+            file_counts = {
+                'holdings_count': len(files['holdings']),
+                'transactions_count': len(files['transactions']),
+                'orders_count': len(files['orders'])
+            }
+            
+            return {
+                'current_window': current_title,
+                'trading_software_active': trading_active,
+                'export_files': file_counts
+            }
+        except:
+            return {
+                'current_window': '未知',
+                'trading_software_active': False,
+                'export_files': {'holdings_count': 0, 'transactions_count': 0, 'orders_count': 0}
+            }
+
+# 创建全局API实例
+api = TradingAPI()
+
+# 测试函数
+def test_api():
+    """测试API功能"""
+    print("🧪 测试真正的原版API")
+    print("=" * 40)
+    
+    # 测试状态查询
+    print("\n📊 系统状态:")
+    status = api.get_status()
+    print(f"当前窗口: {status['current_window']}")
+    print(f"交易软件激活: {status['trading_software_active']}")
+    
+    files = status['export_files']
+    print(f"导出文件: 持仓{files['holdings_count']} 成交{files['transactions_count']} 委托{files['orders_count']}")
+    
+    print("\n✅ API测试完成")
+
+if __name__ == "__main__":
+    test_api()

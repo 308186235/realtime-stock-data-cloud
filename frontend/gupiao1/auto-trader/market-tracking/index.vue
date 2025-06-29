@@ -1,0 +1,918 @@
+// 简化版市场追踪页面
+<template>
+    <view class="container" style="background-color: #141414; color: #e0e0e0; padding: 15px;">
+        <view class="header" style="margin-bottom: 20px; text-align: center;">
+            <text class="title" style="font-size: 20px; font-weight: bold; color: #fff;">股票交易系统</text>
+        </view>
+        
+    <!-- 市场概览 - 专业风格布局 -->
+    <view class="section market-overview-section" style="margin-bottom: 20px; background-color: #1e1e1e; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+            <view class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+        <text class="section-title" style="font-size: 18px; font-weight: bold; color: #fff;">市场概览</text>
+        <view class="header-actions" style="display: flex; align-items: center;">
+          <DataSourceSelector :defaultSource="marketDataSource" @change="onDataSourceChange" />
+          <view class="refresh-button" @tap="refreshMarketData" style="font-size: 14px; color: #4c8dff; padding: 5px 10px; background-color: #2a2a2a; border-radius: 15px; margin-left: 10px;">刷新</view>
+        </view>
+      </view>
+      
+      <!-- 数据源对比模式 -->
+      <view class="comparison-mode" v-if="marketDataSource === 'compare'" style="background-color: #262626; border-radius: 5px; overflow: hidden; margin-bottom: 10px; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+        <view class="comparison-header" style="display: flex; background-color: #333; padding: 10px; font-weight: bold; color: #ddd;">
+          <view class="source-column" style="flex: 1; text-align: center;">指数</view>
+          <view class="source-column" style="flex: 1; text-align: center;">通达信</view>
+          <view class="source-column" style="flex: 1; text-align: center;">同花顺</view>
+        </view>
+        
+        <!-- 上证指数对比 -->
+        <view class="comparison-item" style="display: flex; padding: 12px 10px; border-bottom: 1px solid #333;">
+          <view class="index-column" style="flex: 1; display: flex; align-items: center;">
+            <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">上证指数</text>
+          </view>
+          <view class="data-column tdx" style="flex: 1; display: flex; flex-direction: column; align-items: center; background-color: rgba(66, 66, 66, 0.2);">
+            <view class="index-value" style="font-size: 18px; font-weight: bold; color: #fff;">{{ marketData.tdx['000001']?.value || '--' }}</view>
+            <view :class="['index-change', getChangeClass(marketData.tdx['000001']?.change)]" :style="getChangeStyle(marketData.tdx['000001']?.change)">
+              {{ formatChange(marketData.tdx['000001']?.change) }}
+            </view>
+          </view>
+          <view class="data-column ths" style="flex: 1; display: flex; flex-direction: column; align-items: center; background-color: rgba(82, 82, 82, 0.2);">
+            <view class="index-value" style="font-size: 18px; font-weight: bold; color: #fff;">{{ marketData.ths['000001']?.value || '--' }}</view>
+            <view :class="['index-change', getChangeClass(marketData.ths['000001']?.change)]" :style="getChangeStyle(marketData.ths['000001']?.change)">
+              {{ formatChange(marketData.ths['000001']?.change) }}
+            </view>
+          </view>
+        </view>
+        
+        <!-- 深证成指对比 -->
+        <view class="comparison-item" style="display: flex; padding: 12px 10px; border-bottom: 1px solid #333;">
+          <view class="index-column" style="flex: 1; display: flex; align-items: center;">
+            <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">深证成指</text>
+          </view>
+          <view class="data-column tdx" style="flex: 1; display: flex; flex-direction: column; align-items: center; background-color: rgba(66, 66, 66, 0.2);">
+            <view class="index-value" style="font-size: 18px; font-weight: bold; color: #fff;">{{ marketData.tdx['399001']?.value || '--' }}</view>
+            <view :class="['index-change', getChangeClass(marketData.tdx['399001']?.change)]" :style="getChangeStyle(marketData.tdx['399001']?.change)">
+              {{ formatChange(marketData.tdx['399001']?.change) }}
+            </view>
+          </view>
+          <view class="data-column ths" style="flex: 1; display: flex; flex-direction: column; align-items: center; background-color: rgba(82, 82, 82, 0.2);">
+            <view class="index-value" style="font-size: 18px; font-weight: bold; color: #fff;">{{ marketData.ths['399001']?.value || '--' }}</view>
+            <view :class="['index-change', getChangeClass(marketData.ths['399001']?.change)]" :style="getChangeStyle(marketData.ths['399001']?.change)">
+              {{ formatChange(marketData.ths['399001']?.change) }}
+            </view>
+          </view>
+        </view>
+        
+        <!-- 创业板指对比 -->
+        <view class="comparison-item" style="display: flex; padding: 12px 10px; border-bottom: 1px solid #333;">
+          <view class="index-column" style="flex: 1; display: flex; align-items: center;">
+            <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">创业板指</text>
+          </view>
+          <view class="data-column tdx" style="flex: 1; display: flex; flex-direction: column; align-items: center; background-color: rgba(66, 66, 66, 0.2);">
+            <view class="index-value" style="font-size: 18px; font-weight: bold; color: #fff;">{{ marketData.tdx['399006']?.value || '--' }}</view>
+            <view :class="['index-change', getChangeClass(marketData.tdx['399006']?.change)]" :style="getChangeStyle(marketData.tdx['399006']?.change)">
+              {{ formatChange(marketData.tdx['399006']?.change) }}
+            </view>
+          </view>
+          <view class="data-column ths" style="flex: 1; display: flex; flex-direction: column; align-items: center; background-color: rgba(82, 82, 82, 0.2);">
+            <view class="index-value" style="font-size: 18px; font-weight: bold; color: #fff;">{{ marketData.ths['399006']?.value || '--' }}</view>
+            <view :class="['index-change', getChangeClass(marketData.ths['399006']?.change)]" :style="getChangeStyle(marketData.ths['399006']?.change)">
+              {{ formatChange(marketData.ths['399006']?.change) }}
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <!-- 单一数据源模式 - 专业交易软件风格 -->
+      <view class="single-mode" v-else>
+        <view class="market-grid" style="display: flex; flex-wrap: wrap; margin: 0 -5px;">
+          <!-- 上证指数 -->
+          <view class="market-card" style="width: calc(50% - 10px); margin: 5px; background-color: #262626; border-radius: 5px; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+            <view class="market-card-header" style="background-color: #333; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+              <text class="index-code" style="font-size: 12px; color: #999;">sh000001</text>
+              <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">上证指数</text>
+            </view>
+            <view class="market-card-body" style="padding: 12px; text-align: center;">
+              <view class="index-value" style="font-size: 26px; font-weight: bold; margin-bottom: 5px; color: #fff; font-family: DIN, Arial, sans-serif;">{{ getCurrentMarketData('000001')?.value || '--' }}</view>
+              <view :class="['index-change', getChangeClass(getCurrentMarketData('000001')?.change)]" :style="getChangeStyle(getCurrentMarketData('000001')?.change)">
+                {{ formatChange(getCurrentMarketData('000001')?.change) }}
+              </view>
+            </view>
+          </view>
+          
+          <!-- 深证成指 -->
+          <view class="market-card" style="width: calc(50% - 10px); margin: 5px; background-color: #262626; border-radius: 5px; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+            <view class="market-card-header" style="background-color: #333; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+              <text class="index-code" style="font-size: 12px; color: #999;">sz399001</text>
+              <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">深证成指</text>
+            </view>
+            <view class="market-card-body" style="padding: 12px; text-align: center;">
+              <view class="index-value" style="font-size: 26px; font-weight: bold; margin-bottom: 5px; color: #fff; font-family: DIN, Arial, sans-serif;">{{ getCurrentMarketData('399001')?.value || '--' }}</view>
+              <view :class="['index-change', getChangeClass(getCurrentMarketData('399001')?.change)]" :style="getChangeStyle(getCurrentMarketData('399001')?.change)">
+                {{ formatChange(getCurrentMarketData('399001')?.change) }}
+              </view>
+            </view>
+          </view>
+          
+          <!-- 创业板指 -->
+          <view class="market-card" style="width: calc(50% - 10px); margin: 5px; background-color: #262626; border-radius: 5px; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+            <view class="market-card-header" style="background-color: #333; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+              <text class="index-code" style="font-size: 12px; color: #999;">sz399006</text>
+              <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">创业板指</text>
+            </view>
+            <view class="market-card-body" style="padding: 12px; text-align: center;">
+              <view class="index-value" style="font-size: 26px; font-weight: bold; margin-bottom: 5px; color: #fff; font-family: DIN, Arial, sans-serif;">{{ getCurrentMarketData('399006')?.value || '--' }}</view>
+              <view :class="['index-change', getChangeClass(getCurrentMarketData('399006')?.change)]" :style="getChangeStyle(getCurrentMarketData('399006')?.change)">
+                {{ formatChange(getCurrentMarketData('399006')?.change) }}
+              </view>
+            </view>
+          </view>
+          
+          <!-- 沪深300 -->
+          <view class="market-card" style="width: calc(50% - 10px); margin: 5px; background-color: #262626; border-radius: 5px; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+            <view class="market-card-header" style="background-color: #333; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+              <text class="index-code" style="font-size: 12px; color: #999;">sh000300</text>
+              <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">沪深300</text>
+            </view>
+            <view class="market-card-body" style="padding: 12px; text-align: center;">
+              <view class="index-value" style="font-size: 26px; font-weight: bold; margin-bottom: 5px; color: #fff; font-family: DIN, Arial, sans-serif;">{{ getCurrentMarketData('000300')?.value || '--' }}</view>
+              <view :class="['index-change', getChangeClass(getCurrentMarketData('000300')?.change)]" :style="getChangeStyle(getCurrentMarketData('000300')?.change)">
+                {{ formatChange(getCurrentMarketData('000300')?.change) }}
+              </view>
+            </view>
+            </view>
+            
+          <!-- 中证500 -->
+          <view class="market-card" style="width: calc(50% - 10px); margin: 5px; background-color: #262626; border-radius: 5px; overflow: hidden; box-shadow: 0 1px 5px rgba(0,0,0,0.2);">
+            <view class="market-card-header" style="background-color: #333; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+              <text class="index-code" style="font-size: 12px; color: #999;">sh000905</text>
+              <text class="index-name" style="font-size: 14px; color: #ddd; font-weight: bold;">中证500</text>
+            </view>
+            <view class="market-card-body" style="padding: 12px; text-align: center;">
+              <view class="index-value" style="font-size: 26px; font-weight: bold; margin-bottom: 5px; color: #fff; font-family: DIN, Arial, sans-serif;">{{ getCurrentMarketData('000905')?.value || '--' }}</view>
+              <view :class="['index-change', getChangeClass(getCurrentMarketData('000905')?.change)]" :style="getChangeStyle(getCurrentMarketData('000905')?.change)">
+                {{ formatChange(getCurrentMarketData('000905')?.change) }}
+              </view>
+            </view>
+          </view>
+                    </view>
+                </view>
+      
+      <view class="data-time" v-if="lastUpdateTime" style="text-align: right; color: #888; font-size: 12px; margin-top: 10px; padding-right: 10px;">
+        最近更新: {{ lastUpdateTime }}
+      </view>
+        </view>
+        
+    <!-- 自动交易设置 -->
+        <view class="section" style="margin-bottom: 20px; background-color: #1e1e1e; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+            <view class="section-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+        <text class="section-title" style="font-size: 18px; font-weight: bold; color: #fff;">自动交易设置</text>
+        <view class="setup-button" @tap="showAutoTradeSetup" style="font-size: 14px; color: #4c8dff; padding: 5px 10px; background-color: #2a2a2a; border-radius: 15px;">设置</view>
+            </view>
+            
+      <view class="auto-trade-info">
+        <view class="info-item">
+          <text class="info-label">自动交易状态</text>
+          <text class="info-value" :class="autoTradeEnabled ? 'enabled' : 'disabled'">
+            {{ autoTradeEnabled ? '已启用' : '未启用' }}
+                        </text>
+          <switch :checked="autoTradeEnabled" @change="toggleAutoTrade" color="#0066cc" />
+        </view>
+        
+        <view class="setup-steps">
+          <view class="step-title">实现自动交易需要完成以下步骤:</view>
+          <view class="step-item">
+            <text class="step-number">1</text>
+            <text class="step-desc">完成交易策略设置(选择交易策略,设置风险参数)</text>
+          </view>
+          <view class="step-item">
+            <text class="step-number">2</text>
+            <text class="step-desc">连接真实交易账户(需进行身份验证)</text>
+          </view>
+          <view class="step-item">
+            <text class="step-number">3</text>
+            <text class="step-desc">设置交易限额(单笔交易最大金额,每日交易上限)</text>
+          </view>
+          <view class="step-item">
+            <text class="step-number">4</text>
+            <text class="step-desc">配置风控规则(止损,止盈比例)</text>
+          </view>
+          <view class="step-item">
+            <text class="step-number">5</text>
+            <text class="step-desc">开启自动交易功能并进行模拟测试</text>
+          </view>
+        </view>
+        
+        <view class="action-buttons">
+          <view class="action-button setup-strategy" @tap="navigateToStrategySetup">
+            配置交易策略
+                    </view>
+          <view class="action-button setup-account" @tap="navigateToAccountSetup">
+            绑定交易账户
+                    </view>
+                </view>
+            </view>
+        </view>
+        
+    <!-- 热点板块 -->
+        <view class="section">
+            <view class="section-header">
+        <text class="section-title">热点板块</text>
+        <view class="refresh-button" @tap="refreshSectorData">刷新</view>
+            </view>
+      <view class="sector-list">
+        <view class="sector-item" v-for="(item, index) in sectorData" :key="index" @tap="showSectorDetail(item)">
+          <view class="sector-info">
+            <text class="sector-name">{{ item.name }}</text>
+            <text class="sector-desc">{{ item.description }}</text>
+                    </view>
+          <view class="sector-change-wrap">
+            <text class="sector-change" :class="item.change >= 0 ? 'up' : 'down'">
+              {{ item.change >= 0 ? '+' + item.change : item.change }}%
+                        </text>
+                    </view>
+                </view>
+            </view>
+        </view>
+        
+    <!-- 主力资金监控 -->
+        <view class="section">
+            <view class="section-header">
+        <text class="section-title">主力资金监控</text>
+        <view class="refresh-button">刷新</view>
+            </view>
+      <view class="content">
+        <text>暂无数据</text>
+            </view>
+        </view>
+    </view>
+</template>
+
+<script>
+import DataSourceSelector from '../../components/DataSourceSelector.vue';
+import marketDataService from '../../../股票5/components/services/marketDataService.js';
+
+export default {
+  components: {
+    DataSourceSelector
+  },
+  data: function() {
+        return {
+      marketDataSource: 'auto',
+      testData: 'test',
+      autoTradeEnabled: false,
+      lastUpdateTime: '',
+      loading: false,
+      // 市场数据对象,包含不同数据源的数据
+      marketData: {
+        auto: {},
+        tdx: {},
+        ths: {},
+        merge: {},
+        compare: {}
+      },
+      sectorData: [
+        { name: '半导体', description: '芯片设计与制造', change: 2.35 },
+        { name: '新能源', description: '光伏,风电,储能', change: 1.87 },
+        { name: '医药生物', description: '创新药,医疗器械', change: -0.56 },
+        { name: '智能Agent', description: '算力,大模型应用', change: 3.12 },
+        { name: '金融科技', description: '数字货币,支付创新', change: 0.78 }
+      ],
+      // 指数代码列表
+      indexCodes: ['000001', '399001', '399006', '000300', '000905']
+    }
+  },
+  mounted() {
+    // 页面加载时获取数据
+    console.log('市场追踪页面已加载,开始获取市场数据');
+    
+    // 强制清除缓存然后刷新
+    this.forceRefreshPage();
+  },
+  methods: {
+    // 强制刷新页面方法
+    forceRefreshPage() {
+      console.log('强制刷新页面以应用样式更改');
+      
+      // 清除缓存
+      uni.clearStorageSync();
+      
+      // 强制刷新样式
+      const currentStyle = document.createElement('style');
+      currentStyle.textContent = `
+        body { 
+          background-color: #141414 !important;
+        }
+        .container * {
+          transition: none !important;
+        }
+      `;
+      document.head.appendChild(currentStyle);
+      
+      // 刷新市场数据
+      this.refreshMarketData();
+    },
+    onDataSourceChange(source) {
+      console.log('切换数据源:', source);
+      this.marketDataSource = source;
+      
+      // 如果切换到比较模式,需要获取两种数据源的数据
+      if (source === 'compare') {
+        this.loadComparisonData();
+      } else {
+        // 否则刷新当前选择的数据源
+        this.refreshMarketData();
+      }
+    },
+    // 获取当前数据源下的市场数据
+    getCurrentMarketData(code) {
+      if (!this.marketData[this.marketDataSource]) {
+        return null;
+      }
+      return this.marketData[this.marketDataSource][code];
+    },
+    // 加载比较模式的数据
+    async loadComparisonData() {
+      if (this.loading) return;
+      
+      try {
+        this.loading = true;
+        console.log('开始加载对比数据');
+        
+        uni.showLoading({
+          title: '加载对比数据...'
+        });
+        
+        // 并行获取通达信和同花顺的数据
+        await Promise.all([
+          this.fetchDataBySource('tdx'),
+          this.fetchDataBySource('ths')
+        ]);
+        
+        this.lastUpdateTime = this.formatDateTime(new Date());
+        console.log('对比数据加载完成', this.marketData);
+        
+        uni.showToast({
+          title: '对比数据已更新',
+          icon: 'success'
+        });
+      } catch (error) {
+        console.error('获取对比数据失败:', error);
+        uni.showToast({
+          title: '获取对比数据失败',
+          icon: 'none'
+        });
+      } finally {
+        this.loading = false;
+        uni.hideLoading();
+      }
+    },
+    // 根据指定数据源获取数据
+    async fetchDataBySource(source) {
+      console.log(`开始获取${source}的市场数据`);
+      
+      try {
+        // 获取指数数据
+        const indexPromises = this.indexCodes.map(code => 
+          marketDataService.getIndexData(code, {
+            data_source: source
+          })
+        );
+        
+        const responses = await Promise.all(indexPromises);
+        console.log(`${source}数据响应:`, responses);
+        
+        // 如果无法获取API数据,使用模拟数据
+        if (responses.every(resp => !resp.success || !resp.data || resp.data.length === 0)) {
+          console.log(`无法获取${source}的API数据,使用模拟数据`);
+          
+          // 模拟数据
+          this.marketData[source] = {
+            '000001': { value: '3,258.63', change: 0.56 },
+            '399001': { value: '10,825.93', change: -0.23 },
+            '399006': { value: '2,156.78', change: 1.05 },
+            '000300': { value: '3,985.45', change: 0.78 },
+            '000905': { value: '6,532.21', change: -0.12 }
+          };
+          return;
+        }
+        
+        // 处理响应数据
+        responses.forEach((response, index) => {
+          if (response.success && response.data && response.data.length > 0) {
+            const indexCode = this.indexCodes[index];
+            const latestData = response.data[response.data.length - 1];
+            
+            // 计算价格和涨跌幅
+            const close = parseFloat(latestData.close);
+            let change = 0;
+            if (response.data.length > 1) {
+              const prevClose = parseFloat(response.data[response.data.length - 2].close);
+              change = ((close - prevClose) / prevClose) * 100;
+            }
+            
+            // 更新数据 - 使用Vue的响应式API确保更新
+            if (!this.marketData[source]) {
+              this.$set(this.marketData, source, {});
+            }
+            
+            this.$set(this.marketData[source], indexCode, {
+              value: close.toLocaleString(),
+              change: change
+            });
+            
+            console.log(`已更新${source}的${indexCode}数据:`, this.marketData[source][indexCode]);
+          }
+        });
+      } catch (error) {
+        console.error(`获取${source}数据失败:`, error);
+        throw error;
+      }
+    },
+    async refreshMarketData() {
+      if (this.loading) return;
+      
+      try {
+        this.loading = true;
+        console.log('开始刷新市场数据, 数据源:', this.marketDataSource);
+        
+        uni.showLoading({
+          title: '更新数据中...'
+        });
+        
+        // 如果是比较模式,获取两种数据源的数据
+        if (this.marketDataSource === 'compare') {
+          await this.loadComparisonData();
+        } else {
+          // 获取当前选择的数据源的数据
+          await this.fetchDataBySource(this.marketDataSource);
+          this.lastUpdateTime = this.formatDateTime(new Date());
+          console.log('市场数据已更新:', this.marketData[this.marketDataSource]);
+        }
+        
+        // 添加一个小延迟,确保UI已更新
+        setTimeout(() => {
+          // 强制应用样式变更
+          this.$forceUpdate();
+            
+            uni.showToast({
+            title: '数据更新成功',
+                icon: 'success'
+            });
+        }, 300);
+      } catch (error) {
+        console.error('更新市场数据出错:', error);
+        uni.showToast({
+          title: '更新数据失败',
+          icon: 'none'
+        });
+      } finally {
+        this.loading = false;
+        uni.hideLoading();
+      }
+    },
+    // 格式化涨跌幅显示
+    formatChange(change) {
+      if (change === undefined || change === null) return '--';
+      return (change >= 0 ? '+' : '') + change.toFixed(2) + '%';
+    },
+    // 获取涨跌幅的CSS类
+    getChangeClass(change) {
+      if (change === undefined || change === null) return '';
+      return change >= 0 ? 'up' : 'down';
+    },
+    // 获取涨跌幅的内联样式
+    getChangeStyle(change) {
+      if (change === undefined || change === null) return '';
+      return change >= 0 ? 'color: #ff4d4f !important;' : 'color: #52c41a !important;';
+    },
+    // 格式化日期时间
+    formatDateTime(date) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+    },
+    toggleAutoTrade(e) {
+      this.autoTradeEnabled = e.detail.value;
+      if (this.autoTradeEnabled) {
+        this.checkAutoTradeRequirements();
+      }
+    },
+    checkAutoTradeRequirements() {
+      const requirementsMet = false; // 实际中需要检查是否完成了自动交易所需的所有设置
+      
+      if (!requirementsMet) {
+        uni.showModal({
+          title: '自动交易未准备就绪',
+          content: '您需要完成策略配置和账户设置才能启用自动交易',
+          showCancel: false,
+          success: (res) => {
+            if (res.confirm) {
+              this.autoTradeEnabled = false;
+            }
+          }
+        });
+      }
+    },
+    showAutoTradeSetup() {
+      uni.showModal({
+        title: '自动交易设置',
+        content: '在此页面您可以配置自动交易参数,包括交易策略,风险控制,资金分配等',
+        confirmText: '前往设置',
+        success: (res) => {
+          if (res.confirm) {
+            this.navigateToStrategySetup();
+          }
+        }
+      });
+    },
+    navigateToStrategySetup() {
+      uni.showToast({
+        title: '即将跳转至策略设置',
+        icon: 'none'
+      });
+      
+      // 实际应用中应该跳转到策略设置页面
+      // uni.navigateTo({
+      //   url: '/pages/auto-trader/strategy-setup'
+      // });
+    },
+    navigateToAccountSetup() {
+      uni.showToast({
+        title: '即将跳转至账户设置',
+        icon: 'none'
+      });
+      
+      // 实际应用中应该跳转到账户设置页面
+      // uni.navigateTo({
+      //   url: '/pages/auto-trader/account-setup'
+      // });
+    },
+    refreshSectorData: function() {
+            // 模拟数据更新
+      for (let i = 0; i < this.sectorData.length; i++) {
+        // 生成介于-2.5和+3.5之间的随机涨跌幅
+        let change = (Math.random() * 6 - 2.5).toFixed(2);
+        this.sectorData[i].change = parseFloat(change);
+      }
+            
+            // 按涨幅排序
+      this.sectorData.sort((a, b) => b.change - a.change);
+            
+            uni.showToast({
+                title: '板块数据已更新',
+                icon: 'success'
+            });
+        },
+    showSectorDetail: function(item) {
+            uni.showModal({
+        title: item.name + '板块详情',
+        content: '涨跌幅: ' + item.change + '%\n板块描述: ' + item.description,
+                showCancel: false
+            });
+    }
+    }
+}
+</script>
+
+<style>
+.container {
+  padding: 15px;
+  background-color: #141414 !important;
+  color: #e0e0e0 !important;
+}
+
+.header {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.title {
+  font-size: 20px;
+    font-weight: bold;
+  color: #fff !important;
+}
+
+.section {
+  margin-bottom: 20px;
+  background-color: #1e1e1e !important;
+  border-radius: 10px;
+  padding: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+}
+
+.market-overview-section {
+  padding: 15px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #333 !important;
+  padding-bottom: 10px;
+}
+
+.section-title {
+  font-size: 18px;
+    font-weight: bold;
+  color: #fff !important;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions .data-source-selector {
+  margin-right: 10px;
+  background-color: #2a2a2a !important;
+}
+
+.refresh-button, .setup-button {
+  font-size: 14px;
+  color: #4c8dff !important;
+  padding: 5px 10px;
+  background-color: #2a2a2a !important;
+  border-radius: 15px;
+}
+
+/* 市场卡片网格布局 */
+.market-grid {
+    display: flex;
+  flex-wrap: wrap;
+  margin: 0 -5px;
+}
+
+/* 市场卡片样式 - 专业交易软件风格 */
+.market-card {
+  width: calc(50% - 10px);
+  margin: 5px;
+  background-color: #262626 !important;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.2) !important;
+}
+
+.market-card-header {
+  background-color: #333 !important;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+    align-items: center;
+}
+
+.index-code {
+  font-size: 12px;
+  color: #999 !important;
+}
+
+.index-name {
+  font-size: 14px;
+  color: #ddd !important;
+  font-weight: bold;
+}
+
+.market-card-body {
+  padding: 12px;
+  text-align: center;
+}
+
+.index-value {
+  font-size: 26px;
+    font-weight: bold;
+  margin-bottom: 5px;
+  color: #fff !important;
+  font-family: DIN, Arial, sans-serif;
+}
+
+.index-change {
+  font-size: 16px;
+  font-weight: bold;
+  font-family: DIN, Arial, sans-serif;
+}
+
+/* 涨跌颜色 - 专业软件风格 */
+.up {
+  color: #ff4d4f !important;
+}
+
+.down {
+    color: #52c41a !important;
+}
+
+/* 比较模式样式 */
+.comparison-mode {
+  background-color: #262626 !important;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.2) !important;
+}
+
+.comparison-header {
+  display: flex;
+  background-color: #333 !important;
+  padding: 10px;
+  font-weight: bold;
+  color: #ddd !important;
+}
+
+.source-column {
+  flex: 1;
+  text-align: center;
+}
+
+.comparison-item {
+    display: flex;
+  padding: 12px 10px;
+  border-bottom: 1px solid #333 !important;
+}
+
+.comparison-item:last-child {
+  border-bottom: none;
+}
+
+.index-column {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.data-column {
+  flex: 1;
+    display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.data-column .index-value {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.data-column .index-change {
+  font-size: 14px;
+    font-weight: bold;
+}
+
+.tdx {
+  background-color: rgba(66, 66, 66, 0.2) !important;
+}
+
+.ths {
+  background-color: rgba(82, 82, 82, 0.2) !important;
+}
+
+.data-time {
+  text-align: right;
+  color: #888 !important;
+  font-size: 12px;
+  margin-top: 10px;
+  padding-right: 10px;
+}
+
+/* 其他样式保持不变,但适应深色主题 */
+.content {
+  background-color: #262626 !important;
+  padding: 15px;
+  border-radius: 5px;
+  text-align: center;
+  color: #777 !important;
+}
+
+.auto-trade-info {
+  padding: 10px 0;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #333 !important;
+}
+
+.info-label {
+  font-size: 16px;
+  color: #fff !important;
+}
+
+.info-value {
+  font-size: 16px;
+  font-weight: bold;
+  margin: 0 10px;
+}
+
+.enabled {
+  color: #4caf50 !important;
+}
+
+.disabled {
+  color: #f44336 !important;
+}
+
+.setup-steps {
+  margin: 15px 0;
+  padding: 15px;
+  background-color: #2a2a2a !important;
+  border-radius: 8px;
+}
+
+.step-title {
+  font-size: 16px;
+    font-weight: bold;
+  margin-bottom: 15px;
+  color: #fff !important;
+}
+
+.step-item {
+  display: flex;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.step-number {
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
+  background-color: #0066cc !important;
+  color: white !important;
+  border-radius: 12px;
+  margin-right: 10px;
+  font-size: 14px;
+}
+
+.step-desc {
+  font-size: 14px;
+  color: #fff !important;
+    flex: 1;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15px;
+}
+
+.action-button {
+  flex: 1;
+  padding: 12px 0;
+  text-align: center;
+  border-radius: 4px;
+  font-size: 14px;
+    font-weight: bold;
+}
+
+.setup-strategy {
+  background-color: #0066cc !important;
+  color: white !important;
+  margin-right: 10px;
+}
+
+.setup-account {
+  background-color: #2a2a2a !important;
+  color: #fff !important;
+}
+
+.sector-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sector-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid #333 !important;
+}
+
+.sector-item:last-child {
+  border-bottom: none;
+}
+
+.sector-info {
+  flex: 1;
+}
+
+.sector-name {
+  font-size: 16px;
+  font-weight: bold;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.sector-desc {
+  font-size: 12px;
+  color: #fff !important;
+}
+
+.sector-change-wrap {
+  min-width: 70px;
+  text-align: right;
+}
+
+.sector-change {
+  font-size: 16px;
+  font-weight: bold;
+}
+</style> 

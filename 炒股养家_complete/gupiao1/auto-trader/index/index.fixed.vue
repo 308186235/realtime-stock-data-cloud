@@ -1,0 +1,852 @@
+<template>
+    <view class="container">
+        <!-- 标题及欢迎信息 -->
+        <view class="header">
+            <text class="main-title">股票交易系统</text>
+            <text class="subtitle">AI驱动的智能交易平台</text>
+        </view>
+        
+        <!-- 市场概览 Section -->
+        <view class="section">
+            <view class="section-header">
+                <text class="section-title">市场概览</text>
+                <text class="refresh-btn" @click="refreshMarketData">刷新</text>
+            </view>
+            <view class="market-indices">
+                <!-- 硬编码市场指数数据 -->
+                <view class="index-card">
+                    <view class="index-header">
+                        <text class="index-name">上证指数</text>
+                        <text class="index-value">3,258.63</text>
+                        <text class="index-change increase">+0.56%</text>
+                    </view>
+                    <view class="strategy-tip" @click="toggleStrategy('shanghai')">
+                        <text class="tip-icon">ℹ️</text>
+                        <text class="tip-text">防御策略说明</text>
+                    </view>
+                    <view v-if="expandedStrategy === 'shanghai'" class="strategy-detail">
+                        <text class="strategy-text">• 主力资金3日净流出超5%自动减持\n• 波动率突破布林带上轨触发预警\n• 大宗交易异常同步启动反操纵策略</text>
+                    </view>
+                </view>
+                <view class="index-card">
+                    <text class="index-name">深证成指</text>
+                    <text class="index-value">10,825.93</text>
+                    <text class="index-change decrease">-0.23%</text>
+                </view>
+                <view class="index-card">
+                    <text class="index-name">创业板指</text>
+                    <text class="index-value">2,156.78</text>
+                    <text class="index-change increase">+1.05%</text>
+                </view>
+            </view>
+        </view>
+
+        <!-- 自动交易平台 (突出显示) -->
+        <view class="section fund-flow-section">
+            <view class="section-header">
+                <text class="section-title">主力资金监控</text>
+                <text class="refresh-btn" @click="refreshFundFlow">刷新</text>
+            </view>
+            <view class="fund-flow-chart">
+                <!-- 实时资金流向图表 -->
+                <canvas canvas-id="fundFlowChart" class="chart-container"></canvas>
+            </view>
+            <view class="abnormal-signal">
+                <text class="signal-label">异常信号:</text>
+                <text class="signal-value" :class="abnormalSignalClass">{{ abnormalSignalText }}</text>
+            </view>
+        </view>
+
+        <view class="section auto-trade-highlight">
+            <view class="section-header">
+                <text class="section-title">自动交易平台</text>
+                <text class="more-btn" @click="navigateTo('/pages/auto-trader/index')">管理</text>
+            </view>
+            
+            <view class="auto-trade-overview">
+                <view class="trade-status-box">
+                    <view class="status-info">
+                        <text class="status-label">系统状态</text>
+                        <text v-if="autoTradeEnabled" class="status-value status-active">
+                            自动交易运行中
+                        </text>
+                        <text v-else class="status-value status-inactive">
+                            自动交易已停止
+                        </text>
+                    </view>
+                    
+                    <view class="auto-trade-toggle">
+                        <text class="toggle-label">{{ autoTradeEnabled ? '停止' : '启用' }}</text>
+                        <switch :checked="autoTradeEnabled" @change="toggleAutoTrading" color="#1989fa"/>
+                    </view>
+                </view>
+                
+                <view class="trade-mode-selection">
+                    <text class="mode-title">交易模式</text>
+                    <view class="mode-options">
+                        <view class="mode-option" :class="{'active': tradeMode === 'CONSERVATIVE'}"
+                                @click="setTradeMode('CONSERVATIVE')">
+                            <text class="mode-icon">🛡️</text>
+                            <text class="mode-name">保守型</text>
+                        </view>
+                        <view class="mode-option" :class="{'active': tradeMode === 'MODERATE'}"
+                                @click="setTradeMode('MODERATE')">
+                            <text class="mode-icon">⚖️</text>
+                            <text class="mode-name">平衡型</text>
+                        </view>
+                        <view class="mode-option" :class="{'active': tradeMode === 'AGGRESSIVE'}"
+                                @click="setTradeMode('AGGRESSIVE')">
+                            <text class="mode-icon">🚀</text>
+                            <text class="mode-name">激进型</text>
+                        </view>
+                    </view>
+                </view>
+                
+                <view class="trade-metrics">
+                    <view class="metric-item">
+                        <text class="metric-label">今日交易</text>
+                        <text class="metric-value">{{ todayTrades }} 笔</text>
+                    </view>
+                    <view class="metric-item">
+                        <text class="metric-label">自动交易收益</text>
+                        <text v-if="weeklyProfit >= 0" class="metric-value profit">
+                            +{{ weeklyProfit }}%
+                        </text>
+                        <text v-else class="metric-value loss">
+                            {{ weeklyProfit }}%
+                        </text>
+                    </view>
+                </view>
+                
+                <view class="quick-actions">
+                    <button class="action-btn secondary" @click="navigateTo('/pages/trade-settings/index')">交易设置</button>
+                    <button class="action-btn secondary" @click="navigateTo('/pages/trade-history/index')">交易历史</button>
+                </view>
+            </view>
+        </view>
+
+        <!-- Portfolio Summary Section -->
+        <view class="section">
+            <view class="section-header">
+                <text class="section-title">持仓概览</text>
+                <text class="more-btn" @click="navigateTo('/pages/portfolio/index')">查看详情</text>
+            </view>
+            <view class="portfolio-summary card">
+                <view class="summary-row">
+                    <text>总资产</text>
+                    <text class="summary-value">¥{{ totalAssets }}</text>
+                </view>
+                <view class="summary-row">
+                    <text>持仓市值</text>
+                    <text class="summary-value">¥{{ stockValue }}</text>
+                </view>
+                <view class="summary-row">
+                    <text>可用资金</text>
+                    <text class="summary-value">¥{{ availableCash }}</text>
+                </view>
+                <view class="summary-row">
+                    <text>可操作金额</text>
+                    <view class="editable-amount">
+                        <text class="summary-value">¥{{ operableAmount }}</text>
+                        <text class="edit-btn" @click="showAmountModal">调整</text>
+                    </view>
+                </view>
+                <view class="summary-row">
+                    <text>今日盈亏</text>
+                    <text v-if="todayProfit >= 0" class="summary-value profit">
+                        +¥{{ todayProfit }}
+                    </text>
+                    <text v-else class="summary-value loss">
+                        ¥{{ todayProfit }}
+                    </text>
+                </view>
+                <view class="summary-row">
+                    <text>总盈亏</text>
+                    <text v-if="totalProfit >= 0" class="summary-value profit">
+                        +¥{{ totalProfit }} ({{ totalProfitPercentage }}%)
+                    </text>
+                    <text v-else class="summary-value loss">
+                        ¥{{ totalProfit }} ({{ totalProfitPercentage }}%)
+                    </text>
+                </view>
+            </view>
+        </view>
+
+        <!-- 高级风控看板 -->
+        <view class="section risk-dashboard">
+            <view class="section-header">
+                <text class="section-title">风控指标</text>
+                <text class="refresh-btn" @click="refreshRiskData">刷新</text>
+            </view>
+            <view class="risk-metrics">
+                <view class="metric-card">
+                    <text class="metric-label">VAR值</text>
+                    <text class="metric-value" :class="varColor(riskMetrics.var)">{{ riskMetrics.var }}%</text>
+                </view>
+                <view class="metric-card">
+                    <text class="metric-label">最大回撤</text>
+                    <text class="metric-value" :class="drawdownColor(riskMetrics.maxDrawdown)">{{ riskMetrics.maxDrawdown }}%</text>
+                </view>
+                <view class="metric-card">
+                    <text class="metric-label">波动率</text>
+                    <text class="metric-value">{{ riskMetrics.volatility }}%</text>
+                </view>
+            </view>
+            <view class="risk-chart">
+                <canvas canvas-id="riskChart" class="chart-container"></canvas>
+            </view>
+        </view>
+
+        <!-- AI Insights Section -->
+        <view class="section">
+            <view class="section-header">
+                <text class="section-title">AI 洞察</text>
+                <text class="more-btn" @click="navigateTo('/pages/agent-analysis/diagnosis/index')">查看更多</text>
+            </view>
+            <view class="ai-insights card">
+                <!-- 硬编码AI洞察数据 -->
+                <view class="insight-item">
+                    <text class="insight-title">市场趋势分析</text>
+                    <text class="insight-content">根据近期数据分析,市场整体呈现震荡上行趋势,建议关注消费和科技板块。</text>
+                </view>
+                <view class="insight-item">
+                    <text class="insight-title">投资组合优化建议</text>
+                    <text class="insight-content">当前投资组合风险较高,建议适当增加防御性板块配置,降低组合波动性。</text>
+                </view>
+            </view>
+        </view>
+
+        <!-- 策略效果对比 -->
+        <view class="section strategy-comparison">
+            <view class="section-header">
+                <text class="section-title">策略效果对比</text>
+                <text class="more-btn" @click="navigateTo('/pages/strategy-analysis/comparison')">更多</text>
+            </view>
+            <view class="strategy-metrics">
+                <view class="metric-card">
+                    <text class="metric-label">动量策略</text>
+                    <text class="metric-value">+12.5%</text>
+                    <progress class="metric-progress" value="75" max="100"></progress>
+                </view>
+                <view class="metric-card">
+                    <text class="metric-label">均值回归</text>
+                    <text class="metric-value">+8.2%</text>
+                    <progress class="metric-progress" value="55" max="100"></progress>
+                </view>
+                <view class="metric-card">
+                    <text class="metric-label">区块链监控</text>
+                    <text class="metric-value">+15.1%</text>
+                    <progress class="metric-progress" value="85" max="100"></progress>
+                </view>
+            </view>
+        </view>
+    </view>
+</template>
+
+<script>
+export default {
+    data() {
+        return {
+            riskMetrics: {
+                var: 2.8,
+                maxDrawdown: 1.5,
+                volatility: 15.2
+            },
+            // 市场概览数据
+            expandedStrategy: '',
+            
+            // 主力资金数据
+            mainFundData: {
+                fundFlow: 2.45,
+                patternScore: 0.72,
+                volatility: 0.15,
+                lastUpdate: '14:30'
+            },
+            
+            // 异常信号数据
+            abnormalSignalText: '未检测到异常',
+            abnormalSignalClass: 'normal',
+            
+            // 自动交易数据
+            autoTradeEnabled: false,
+            tradeMode: 'MODERATE',
+            todayTrades: 8,
+            weeklyProfit: 5.2,
+            riskRewardRatio: 2.5,
+            chartInstance: null,
+            
+            // 持仓概览数据
+            totalAssets: '125,680.00',
+            stockValue: '98,450.00',
+            availableCash: '27,230.00',
+            todayProfit: 1250.80,
+            totalProfit: 15680.50,
+            totalProfitPercentage: 12.5,
+            operableAmount: '10,000.00',
+            
+            // WebSocket连接管理
+            ws: null,
+            isConnecting: false,
+            reconnectAttempts: 0
+        }
+    },
+    methods: {
+        // 切换策略显示
+        toggleStrategy(strategyKey) {
+            if (this.expandedStrategy === strategyKey) {
+                this.expandedStrategy = '';
+            } else {
+                this.expandedStrategy = strategyKey;
+            }
+        },
+        
+        // 刷新市场数据
+        refreshMarketData() {
+            uni.showToast({
+                title: '数据已刷新',
+                icon: 'success'
+            });
+        },
+        
+        // 刷新资金流向
+        refreshFundFlow() {
+            this.fetchMainFundData();
+            uni.showToast({
+                title: '资金流向已刷新',
+                icon: 'success'
+            });
+        },
+        
+        // 切换自动交易状态
+        toggleAutoTrading(e) {
+            this.autoTradeEnabled = e.detail.value;
+            uni.showToast({
+                title: this.autoTradeEnabled ? '自动交易已启用' : '自动交易已停止',
+                icon: 'none'
+            });
+        },
+        
+        // 设置交易模式
+        setTradeMode(mode) {
+            this.tradeMode = mode;
+            uni.showToast({
+                title: '交易模式已设置',
+                icon: 'success'
+            });
+        },
+        
+        // 页面导航
+        navigateTo(url) {
+            uni.navigateTo({
+                url: url
+            });
+        },
+        
+        // 新增监控方法
+        fetchMainFundData() {
+            // 模拟数据,实际应调用API
+            this.mainFundData = {
+                fundFlow: Math.random() * 5 - 2.5,
+                patternScore: Math.random().toFixed(2),
+                volatility: (Math.random() * 0.3).toFixed(2),
+                lastUpdate: new Date().toLocaleTimeString('zh-CN')
+            };
+            
+            // 更新异常信号
+            if (this.mainFundData.fundFlow < -1.5) {
+                this.abnormalSignalText = '主力资金大幅流出';
+                this.abnormalSignalClass = 'danger';
+            } else if (this.mainFundData.fundFlow < -0.5) {
+                this.abnormalSignalText = '主力资金轻微流出';
+                this.abnormalSignalClass = 'warning';
+            } else if (this.mainFundData.fundFlow > 1.5) {
+                this.abnormalSignalText = '主力资金大幅流入';
+                this.abnormalSignalClass = 'normal';
+            } else {
+                this.abnormalSignalText = '主力资金流向正常';
+                this.abnormalSignalClass = 'normal';
+            }
+        },
+        
+        initWebSocket() {
+            this.isConnecting = true;
+            this.ws = new WebSocket('wss://your-api-domain.com/ws');
+
+            this.ws.onopen = () => {
+                this.reconnectAttempts = 0;
+                this.isConnecting = false;
+            };
+
+            this.ws.onclose = (e) => {
+                if (e.code !== 1000) {
+                    const timeout = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+                    setTimeout(() => {
+                        this.reconnectAttempts++;
+                        this.initWebSocket();
+                    }, timeout);
+                }
+            };
+
+            this.ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                this.ws.close();
+            };
+        },
+        
+        // 风险指标颜色计算方法
+        varColor(value) {
+            if (value <= 2) return 'profit';
+            if (value <= 4) return 'warn';
+            return 'loss';
+        },
+        
+        // 最大回撤颜色计算方法
+        drawdownColor(value) {
+            if (value <= 1) return 'profit';
+            if (value <= 3) return 'warn';
+            return 'loss';
+        },
+        
+        // 刷新风险数据
+        refreshRiskData() {
+            // 模拟数据,实际应调用API
+            this.riskMetrics = {
+                var: (Math.random() * 5).toFixed(1),
+                maxDrawdown: (Math.random() * 4).toFixed(1),
+                volatility: (Math.random() * 20 + 5).toFixed(1)
+            };
+            
+            uni.showToast({
+                title: '风控指标已刷新',
+                icon: 'success'
+            });
+        },
+        
+        // 显示可操作金额设置弹窗
+        showAmountModal() {
+            // 使用导航到专门的设置页面
+            uni.navigateTo({
+                url: `/pages/settings/amount?current=${this.operableAmount.replace(/,/g, '')}`
+            });
+        }
+    },
+    
+    // 生命周期钩子
+    initRiskRewardChart() {
+        this.chartInstance = uni.createCanvasContext('riskRewardChart', this);
+        // 初始化图表配置
+    },
+    updateRiskRewardChart(data) {
+        // 更新图表数据
+    },
+    async refreshRiskReward() {
+        uni.showLoading({title: '加载中...'});
+        try {
+            const res = await uni.request({
+                url: 'http://localhost:8000/risk-reward'
+            });
+            this.riskRewardRatio = res.data.current_ratio.toFixed(2);
+            this.updateRiskRewardChart(res.data.historical);
+        } catch (e) {
+            uni.showToast({title: '更新失败', icon: 'none'});
+        } finally {
+            uni.hideLoading();
+        }
+    },
+    onLoad() {
+        // 初始化数据
+        this.fetchMainFundData();
+        
+        // 尝试初始化WebSocket连接
+        // this.initWebSocket();
+    },
+    onShow() {
+        // 检查是否有新设置的可操作金额
+        const app = getApp();
+        if (app.globalData && app.globalData.operableAmount) {
+            this.operableAmount = app.globalData.operableAmount;
+        }
+    }
+}
+</script>
+
+<style>
+    .container {
+        padding: 20rpx;
+    }
+    
+    .header {
+        padding: 30rpx 0;
+        align-items: center;
+    }
+    
+    .main-title {
+        font-size: 36rpx;
+        font-weight: bold;
+        margin-bottom: 10rpx;
+    }
+    
+    .subtitle {
+        font-size: 24rpx;
+        color: #666;
+    }
+    
+    .section {
+        margin-bottom: 30rpx;
+        background-color: #fff;
+        border-radius: 12rpx;
+        padding: 20rpx;
+        box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+    }
+    
+    .section-header {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20rpx;
+    }
+    
+    .section-title {
+        font-size: 28rpx;
+        font-weight: bold;
+    }
+    
+    .refresh-btn, .more-btn {
+        font-size: 24rpx;
+        color: #1989fa;
+    }
+    
+    /* 市场指数样式 */
+    .market-indices {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+    }
+    
+    .index-card {
+        flex: 1;
+        padding: 15rpx;
+        align-items: center;
+    }
+    
+    .index-name {
+        font-size: 24rpx;
+        color: #666;
+        margin-bottom: 10rpx;
+    }
+    
+    .index-value {
+        font-size: 32rpx;
+        font-weight: bold;
+        margin-bottom: 5rpx;
+    }
+    
+    .index-change {
+        font-size: 24rpx;
+    }
+    
+    .increase {
+        color: #f5222d;
+    }
+    
+    .decrease {
+        color: #52c41a;
+    }
+    
+    /* 自动交易平台样式 */
+    .auto-trade-highlight {
+        border: 1rpx solid #1989fa;
+        background-color: rgba(25, 137, 250, 0.05);
+    }
+    
+    .trade-status-box {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20rpx;
+        background-color: #f8f8f8;
+        border-radius: 8rpx;
+        margin-bottom: 20rpx;
+    }
+    
+    .status-info {
+        flex-direction: column;
+    }
+    
+    .status-label {
+        font-size: 24rpx;
+        color: #666;
+        margin-bottom: 10rpx;
+    }
+    
+    .status-value {
+        font-size: 28rpx;
+        font-weight: bold;
+    }
+    
+    .status-active {
+        color: #52c41a;
+    }
+    
+    .status-inactive {
+        color: #999;
+    }
+    
+    .auto-trade-toggle {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+    }
+    
+    .toggle-label {
+        font-size: 24rpx;
+        margin-right: 10rpx;
+    }
+    
+    /* 交易模式选择 */
+    .trade-mode-selection {
+        margin: 20rpx 0;
+    }
+    
+    .mode-title {
+        font-size: 26rpx;
+        margin-bottom: 15rpx;
+    }
+    
+    .mode-options {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+    }
+    
+    .mode-option {
+        flex: 1;
+        padding: 15rpx;
+        align-items: center;
+        background-color: #f8f8f8;
+        margin: 0 5rpx;
+        border-radius: 8rpx;
+    }
+    
+    .mode-option.active {
+        background-color: #e6f7ff;
+        border: 1rpx solid #1989fa;
+    }
+    
+    .mode-icon {
+        font-size: 32rpx;
+        margin-bottom: 10rpx;
+    }
+    
+    .mode-name {
+        font-size: 24rpx;
+    }
+    
+    /* 交易数据 */
+    .trade-metrics {
+        display: flex;
+        flex-direction: row;
+        margin: 20rpx 0;
+    }
+    
+    .metric-item {
+        flex: 1;
+        padding: 10rpx;
+        align-items: center;
+    }
+    
+    .metric-label {
+        font-size: 24rpx;
+        color: #666;
+        margin-bottom: 10rpx;
+    }
+    
+    .metric-value {
+        font-size: 28rpx;
+        font-weight: bold;
+    }
+    
+    .profit {
+        color: #f5222d;
+    }
+    
+    .loss {
+        color: #52c41a;
+    }
+    
+    /* 快速操作 */
+    .quick-actions {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    
+    .action-btn {
+        flex: 1;
+        min-width: 200rpx;
+        margin: 10rpx;
+        font-size: 24rpx;
+        background-color: #1989fa;
+        color: white;
+    }
+    
+    .action-btn.secondary {
+        background-color: #f8f8f8;
+        color: #333;
+        border: 1rpx solid #ddd;
+    }
+    
+    /* 投资组合摘要 */
+    .card {
+        background-color: #fff;
+        border-radius: 8rpx;
+        padding: 20rpx;
+    }
+    
+    .summary-row {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        margin-bottom: 15rpx;
+        font-size: 26rpx;
+    }
+    
+    .summary-value {
+        font-weight: bold;
+    }
+    
+    /* 可操作金额样式 */
+    .editable-amount {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+    }
+    
+    .edit-btn {
+        margin-left: 10rpx;
+        padding: 4rpx 10rpx;
+        font-size: 22rpx;
+        color: #1989fa;
+        background-color: #e6f7ff;
+        border-radius: 4rpx;
+    }
+    
+    /* AI洞察 */
+    .ai-insights {
+        padding: 15rpx;
+    }
+    
+    .insight-item {
+        margin-bottom: 20rpx;
+    }
+    
+    .insight-title {
+        font-size: 26rpx;
+        font-weight: bold;
+        margin-bottom: 10rpx;
+    }
+    
+    .insight-content {
+        font-size: 24rpx;
+        color: #666;
+        line-height: 1.5;
+    }
+
+    .fund-flow-section {
+        background: linear-gradient(145deg, #1a237e, #0d47a1);
+        border-radius: 16px;
+        padding: 20px;
+        margin: 20px 0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .fund-flow-chart {
+        height: 200px;
+        margin: 15px 0;
+    }
+
+    .abnormal-signal {
+        background: rgba(255,82,82,0.1);
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        align-items: center;
+    }
+
+    .signal-value {
+        margin-left: 10px;
+        font-weight: 500;
+    }
+
+    .signal-value.normal {
+        color: #69f0ae;
+    }
+
+    .signal-value.warning {
+        color: #ffd740;
+    }
+
+    .signal-value.danger {
+        color: #ff5252;
+    }
+
+    /* WebSocket连接状态样式 */
+    .ws-status {
+        display: flex;
+        align-items: center;
+        padding: 5px 10px;
+        background-color: rgba(0,0,0,0.05);
+        border-radius: 20px;
+        margin: 10px 0;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background-color: #4caf50;
+        margin-right: 5px;
+    }
+
+    .connecting .status-dot {
+        background-color: #ff9800;
+        animation: blink 1s infinite;
+    }
+
+    .status-text {
+        font-size: 12px;
+        color: #666;
+    }
+
+    @keyframes blink {
+        0% { opacity: 0.2; }
+        50% { opacity: 1; }
+        100% { opacity: 0.2; }
+    }
+
+    .fund-chart {
+        width: 100%;
+        height: 200px;
+        margin: 10px 0;
+    }
+
+    .indicator-item {
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 8px 0;
+    }
+
+    .indicator-value.positive {
+        color: #00b578;
+    }
+
+    .indicator-value.negative {
+        color: #ff3141;
+    }
+
+    .warn {
+        color: #ff8f1f;
+    }
+</style> 

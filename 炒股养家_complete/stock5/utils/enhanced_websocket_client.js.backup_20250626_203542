@@ -1,0 +1,770 @@
+/**
+ * 增强版WebSocket客户端 v2.0
+ * 提供更强大的安全性、性能优化和批处理功能
+ */
+
+// WebSocket事件类型
+export const EVENTS = {
+  OPEN: 'open',
+  CLOSE: 'close',
+  ERROR: 'error',
+  MESSAGE: 'message',
+  RECONNECT: 'reconnect',
+  RECONNECT_ATTEMPT: 'reconnect_attempt',
+  SUBSCRIBE: 'subscribe',
+  UNSUBSCRIBE: 'unsubscribe',
+  BATCH: 'batch',
+  AUTH: 'auth'
+};
+
+// WebSocket消息类型
+export const MSG_TYPES = {
+  PING: 'ping',
+  PONG: 'pong',
+  SUBSCRIBE: 'subscribe',
+  UNSUBSCRIBE: 'unsubscribe',
+  DATA: 'data',
+  ERROR: 'error',
+  BATCH: 'batch',
+  WELCOME: 'welcome',
+  AUTH: 'auth'
+};
+
+// 默认配置
+const DEFAULT_CONFIG = {
+  url: 'ws://localhost:8000/ws',     // 使用根路径WebSocket端点
+  reconnectInterval: 5000,           // 重连间隔(毫秒)
+  reconnectAttempts: 10,             // 最大重连次数
+  heartbeatInterval: 30000,          // 心跳间隔(毫秒)
+  debug: false,                      // 调试模式
+  batchInterval: 50,                 // 消息批处理间隔(毫秒)
+  enableBatching: true,              // 启用消息批处理
+  enableCompression: false,          // 启用压缩（需服务器支持）
+  authToken: null,                   // 认证令牌
+  autoReconnect: true,               // 自动重连
+  connectionTimeout: 10000,          // 连接超时(毫秒)
+  useBackoff: true,                  // 使用指数退避策略
+  maxBackoff: 30000,                 // 最大退避时间(毫秒)
+  secure: false                      // 使用安全WebSocket (WSS)
+};
+
+/**
+ * 增强版WebSocket客户端
+ */
+export default class EnhancedWebSocketClient {
+  /**
+   * 创建增强版WebSocket客户端实例
+   * @param {Object} config 配置选项
+   */
+  constructor(config = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+    
+    // 如果设置了secure，修改URL协议
+    if (this.config.secure && !this.config.url.startsWith('wss://')) {
+      this.config.url = this.config.url.replace('ws://', 'wss://');
+    }
+    
+    this.socket = null;
+    this.isConnected = false;
+    this.isConnecting = false;
+    this.reconnectAttempts = 0;
+    this.subscriptions = new Map();           // 管理订阅
+    this.eventListeners = {};                 // 事件监听器
+    this.heartbeatTimer = null;
+    this.reconnectTimer = null;
+    this.connectionTimer = null;
+    this.batchTimer = null;
+    this.messageBuffer = [];                  // 消息缓冲区
+    this.lastMessageTime = 0;                 // 最后消息时间
+    this.metrics = {                          // 性能指标
+      sentMessages: 0,
+      receivedMessages: 0,
+      reconnects: 0,
+      lastLatency: 0,
+      messagesSent: {},                       // 按类型统计发送的消息
+      messagesReceived: {},                   // 按类型统计接收的消息
+      startTime: Date.now(),
+      errors: 0
+    };
+    
+    // 绑定方法
+    this._onOpen = this._onOpen.bind(this);
+    this._onClose = this._onClose.bind(this);
+    this._onError = this._onError.bind(this);
+    this._onMessage = this._onMessage.bind(this);
+    
+    this._log('WebSocket客户端已初始化');
+  }
+  
+  /**
+   * 连接WebSocket服务器
+   * @param {string} token 可选的认证令牌
+   * @returns {Promise} 连接Promise
+   */
+  connect(token = null) {
+    if (this.socket && this.isConnected) {
+      this._log('WebSocket已连接');
+      return Promise.resolve();
+    }
+    
+    if (this.isConnecting) {
+      this._log('WebSocket正在连接中...');
+      return Promise.reject(new Error('Connection in progress'));
+    }
+    
+    this.isConnecting = true;
+    
+    // 使用传入的token或配置的token
+    const authToken = token || this.config.authToken;
+    let url = this.config.url;
+    
+    // 如果有token，添加到URL查询参数
+    if (authToken) {
+      const separator = url.includes('?') ? '&' : '?';
+      url = `${url}${separator}token=${encodeURIComponent(authToken)}`;
+    }
+    
+    return new Promise((resolve, reject) => {
+      try {
+        this._log(`连接到WebSocket: ${url}`);
+        this.socket = new WebSocket(url);
+        
+        // 设置连接超时
+        this.connectionTimer = setTimeout(() => {
+          if (!this.isConnected) {
+            this._log('连接超时', 'error');
+            this.socket.close();
+            this.isConnecting = false;
+            reject(new Error('Connection timeout'));
+          }
+        }, this.config.connectionTimeout);
+        
+        this.socket.onopen = (event) => {
+          clearTimeout(this.connectionTimer);
+          this._onOpen(event);
+          resolve(event);
+        };
+        
+        this.socket.onclose = this._onClose;
+        this.socket.onerror = (error) => {
+          clearTimeout(this.connectionTimer);
+          this._onError(error);
+          this.isConnecting = false;
+          reject(error);
+        };
+        this.socket.onmessage = this._onMessage;
+        
+        // 支持二进制消息
+        this.socket.binaryType = 'arraybuffer';
+      } catch (error) {
+        clearTimeout(this.connectionTimer);
+        this._log(`连接错误: ${error.message}`, 'error');
+        this.isConnecting = false;
+        reject(error);
+      }
+    });
+  }
+  
+  /**
+   * 断开WebSocket连接
+   */
+  disconnect() {
+    this._log('断开WebSocket连接');
+    
+    // 清除所有定时器
+    this._clearTimers();
+    
+    // 重置重连计数
+    this.reconnectAttempts = 0;
+    
+    // 如果已连接，关闭连接
+    if (this.socket) {
+      this.socket.close();
+      this.socket = null;
+    }
+    
+    this.isConnected = false;
+    this.isConnecting = false;
+  }
+  
+  /**
+   * 清除所有定时器
+   * @private
+   */
+  _clearTimers() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    if (this.connectionTimer) {
+      clearTimeout(this.connectionTimer);
+      this.connectionTimer = null;
+    }
+    
+    if (this.batchTimer) {
+      clearInterval(this.batchTimer);
+      this.batchTimer = null;
+    }
+  }
+  
+  /**
+   * 订阅频道
+   * @param {string} channel 频道名称
+   * @param {Object} params 订阅参数
+   */
+  subscribe(channel, params = {}) {
+    if (!this.isConnected) {
+      this._log(`未连接，无法订阅: ${channel}`, 'error');
+      return;
+    }
+    
+    this._log(`订阅频道: ${channel}, 参数: ${JSON.stringify(params)}`);
+    
+    // 保存订阅
+    this.subscriptions.set(channel, params);
+    
+    // 发送订阅消息
+    const message = {
+      type: MSG_TYPES.SUBSCRIBE,
+      channel,
+      params
+    };
+    
+    this.send(message);
+    this.emit(EVENTS.SUBSCRIBE, { channel, params });
+  }
+  
+  /**
+   * 取消订阅
+   * @param {string} channel 频道名称
+   */
+  unsubscribe(channel) {
+    if (!this.isConnected) {
+      this._log(`未连接，无法取消订阅: ${channel}`, 'error');
+      return;
+    }
+    
+    this._log(`取消订阅频道: ${channel}`);
+    
+    // 移除订阅
+    this.subscriptions.delete(channel);
+    
+    // 发送取消订阅消息
+    const message = {
+      type: MSG_TYPES.UNSUBSCRIBE,
+      channel
+    };
+    
+    this.send(message);
+    this.emit(EVENTS.UNSUBSCRIBE, { channel });
+  }
+  
+  /**
+   * 重新订阅所有频道
+   * @private
+   */
+  _resubscribeAll() {
+    if (!this.isConnected || this.subscriptions.size === 0) {
+      return;
+    }
+    
+    this._log(`重新订阅 ${this.subscriptions.size} 个频道`);
+    
+    this.subscriptions.forEach((params, channel) => {
+      const message = {
+        type: MSG_TYPES.SUBSCRIBE,
+        channel,
+        params
+      };
+      
+      // 直接发送，不经过批处理
+      this._sendImmediately(message);
+    });
+  }
+  
+  /**
+   * 发送消息到服务器
+   * @param {Object|string} data 要发送的数据
+   * @param {Object} options 发送选项
+   * @param {boolean} options.immediate 是否立即发送，跳过批处理
+   * @param {string} options.priority 优先级 ('high', 'normal', 'low')
+   */
+  send(data, options = {}) {
+    if (!this.isConnected) {
+      this._log('未连接，无法发送消息', 'error');
+      return;
+    }
+    
+    const priority = options.priority || 'normal';
+    const immediate = options.immediate || priority === 'high' || !this.config.enableBatching;
+    
+    if (immediate) {
+      this._sendImmediately(data);
+    } else {
+      // 添加到批处理队列
+      this.messageBuffer.push({
+        data,
+        priority,
+        timestamp: Date.now()
+      });
+      
+      // 如果没有批处理定时器，启动一个
+      if (!this.batchTimer && this.config.enableBatching) {
+        this.batchTimer = setInterval(() => this._flushMessageBuffer(), this.config.batchInterval);
+      }
+    }
+  }
+  
+  /**
+   * 立即发送消息，不经过批处理
+   * @param {Object|string} data 要发送的数据
+   * @private
+   */
+  _sendImmediately(data) {
+    if (!this.isConnected || !this.socket) {
+      return;
+    }
+    
+    try {
+      const message = typeof data === 'string' ? data : JSON.stringify(data);
+      this.socket.send(message);
+      
+      // 更新统计信息
+      this.metrics.sentMessages++;
+      if (typeof data === 'object' && data.type) {
+        this.metrics.messagesSent[data.type] = (this.metrics.messagesSent[data.type] || 0) + 1;
+      }
+      
+      this.lastMessageTime = Date.now();
+    } catch (error) {
+      this._log(`发送消息错误: ${error.message}`, 'error');
+      this.metrics.errors++;
+    }
+  }
+  
+  /**
+   * 刷新消息缓冲区，将缓冲的消息发送到服务器
+   * @private
+   */
+  _flushMessageBuffer() {
+    if (!this.isConnected || this.messageBuffer.length === 0) {
+      return;
+    }
+    
+    try {
+      const now = Date.now();
+      
+      // 按优先级排序
+      this.messageBuffer.sort((a, b) => {
+        const priorityOrder = { high: 0, normal: 1, low: 2 };
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      });
+      
+      // 提取消息数据
+      const messages = this.messageBuffer.map(item => item.data);
+      
+      // 分批处理，防止单个消息过大
+      const batchSize = 50;
+      for (let i = 0; i < messages.length; i += batchSize) {
+        const batch = messages.slice(i, i + batchSize);
+        
+        // 只有多个消息时才需要批处理
+        if (batch.length > 1) {
+          const batchMessage = {
+            type: MSG_TYPES.BATCH,
+            messages: batch,
+            count: batch.length,
+            timestamp: now
+          };
+          
+          this._sendImmediately(batchMessage);
+          this.emit(EVENTS.BATCH, { count: batch.length, timestamp: now });
+        } else if (batch.length === 1) {
+          // 单个消息直接发送
+          this._sendImmediately(batch[0]);
+        }
+      }
+      
+      // 清空缓冲区
+      this.messageBuffer = [];
+    } catch (error) {
+      this._log(`批量发送消息错误: ${error.message}`, 'error');
+      this.metrics.errors++;
+    }
+  }
+  
+  /**
+   * 发送心跳消息
+   * @private
+   */
+  _sendHeartbeat() {
+    const now = Date.now();
+    
+    // 只有在没有其他消息发送时才发送心跳
+    if (now - this.lastMessageTime > this.config.heartbeatInterval / 2) {
+      this.send({
+        type: MSG_TYPES.PING,
+        timestamp: now
+      }, { priority: 'high' });
+    }
+  }
+  
+  /**
+   * 重新连接
+   * @private
+   */
+  _reconnect() {
+    if (!this.config.autoReconnect || this.reconnectTimer) {
+      return;
+    }
+    
+    this.reconnectAttempts += 1;
+    
+    if (this.reconnectAttempts > this.config.reconnectAttempts) {
+      this._log('超过最大重连次数，停止重连', 'error');
+      this.emit(EVENTS.ERROR, new Error('重连失败: 超过最大重连次数'));
+      return;
+    }
+    
+    const delay = this._getReconnectDelay();
+    
+    this._log(`尝试重连 (${this.reconnectAttempts}/${this.config.reconnectAttempts}) 将在 ${delay}ms 后进行...`);
+    this.emit(EVENTS.RECONNECT_ATTEMPT, this.reconnectAttempts);
+    
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      
+      this.connect()
+        .then(() => {
+          this._log('重连成功');
+          this.emit(EVENTS.RECONNECT, this.reconnectAttempts);
+          this.metrics.reconnects++;
+          this.reconnectAttempts = 0;
+          
+          // 重新订阅
+          this._resubscribeAll();
+        })
+        .catch(error => {
+          this._log(`重连失败: ${error.message}`, 'error');
+          this._reconnect();
+        });
+    }, delay);
+  }
+  
+  /**
+   * 计算重连延迟（使用指数退避）
+   * @returns {number} 延迟时间(毫秒)
+   * @private
+   */
+  _getReconnectDelay() {
+    if (!this.config.useBackoff) {
+      return this.config.reconnectInterval;
+    }
+    
+    // 指数退避策略: 基础时间 * (2^尝试次数) 并增加一些随机性
+    const baseDelay = this.config.reconnectInterval;
+    const exponentialDelay = baseDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const jitter = Math.random() * 1000; // 添加最多1秒的随机性
+    
+    // 确保不超过最大退避时间
+    return Math.min(exponentialDelay + jitter, this.config.maxBackoff);
+  }
+  
+  /**
+   * 添加事件监听器
+   * @param {string} event 事件名称
+   * @param {Function} callback 回调函数
+   * @returns {EnhancedWebSocketClient} this
+   */
+  on(event, callback) {
+    if (!this.eventListeners[event]) {
+      this.eventListeners[event] = [];
+    }
+    
+    this.eventListeners[event].push(callback);
+    return this;
+  }
+  
+  /**
+   * 移除事件监听器
+   * @param {string} event 事件名称
+   * @param {Function} callback 回调函数
+   * @returns {EnhancedWebSocketClient} this
+   */
+  off(event, callback) {
+    if (!this.eventListeners[event]) {
+      return this;
+    }
+    
+    if (callback) {
+      this.eventListeners[event] = this.eventListeners[event].filter(cb => cb !== callback);
+    } else {
+      delete this.eventListeners[event];
+    }
+    
+    return this;
+  }
+  
+  /**
+   * 触发事件
+   * @param {string} event 事件名称
+   * @param {*} data 事件数据
+   * @private
+   */
+  emit(event, data) {
+    if (!this.eventListeners[event]) {
+      return;
+    }
+    
+    this.eventListeners[event].forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        this._log(`事件处理器错误: ${error.message}`, 'error');
+        this.metrics.errors++;
+      }
+    });
+  }
+  
+  /**
+   * 获取性能指标
+   * @returns {Object} 性能指标对象
+   */
+  getMetrics() {
+    const now = Date.now();
+    const uptime = now - this.metrics.startTime;
+    
+    return {
+      ...this.metrics,
+      uptime,
+      messagesPerSecond: this.metrics.sentMessages / (uptime / 1000),
+      isConnected: this.isConnected,
+      subscriptions: Array.from(this.subscriptions.keys()),
+      timestamp: now
+    };
+  }
+  
+  /**
+   * 重置性能指标
+   */
+  resetMetrics() {
+    this.metrics = {
+      sentMessages: 0,
+      receivedMessages: 0,
+      reconnects: 0,
+      lastLatency: 0,
+      messagesSent: {},
+      messagesReceived: {},
+      startTime: Date.now(),
+      errors: 0
+    };
+  }
+  
+  /**
+   * 设置认证令牌
+   * @param {string} token JWT令牌
+   */
+  setAuthToken(token) {
+    this.config.authToken = token;
+    
+    // 如果已连接，断开并使用新令牌重连
+    if (this.isConnected) {
+      this.disconnect();
+      setTimeout(() => this.connect(), 100);
+    }
+  }
+  
+  /**
+   * WebSocket打开事件处理
+   * @param {Event} event 事件对象
+   * @private
+   */
+  _onOpen(event) {
+    this._log('WebSocket连接已建立');
+    this.isConnected = true;
+    this.isConnecting = false;
+    this.reconnectAttempts = 0;
+    
+    // 启动心跳
+    this._startHeartbeat();
+    
+    // 启动批处理
+    if (this.config.enableBatching && !this.batchTimer) {
+      this.batchTimer = setInterval(() => this._flushMessageBuffer(), this.config.batchInterval);
+    }
+    
+    this.emit(EVENTS.OPEN, event);
+  }
+  
+  /**
+   * WebSocket关闭事件处理
+   * @param {CloseEvent} event 关闭事件
+   * @private
+   */
+  _onClose(event) {
+    this._log(`WebSocket连接已关闭: ${event.code} ${event.reason}`);
+    this.isConnected = false;
+    this.isConnecting = false;
+    
+    // 清除定时器
+    this._clearTimers();
+    
+    this.emit(EVENTS.CLOSE, event);
+    
+    // 非正常关闭时自动重连
+    if (event.code !== 1000 && event.code !== 1001) {
+      this._reconnect();
+    }
+  }
+  
+  /**
+   * WebSocket错误事件处理
+   * @param {Event} error 错误事件
+   * @private
+   */
+  _onError(error) {
+    this._log(`WebSocket错误: ${error.message || '未知错误'}`, 'error');
+    this.metrics.errors++;
+    this.emit(EVENTS.ERROR, error);
+  }
+  
+  /**
+   * WebSocket消息事件处理
+   * @param {MessageEvent} event 消息事件
+   * @private
+   */
+  _onMessage(event) {
+    try {
+      let data = event.data;
+      
+      // 处理二进制数据
+      if (data instanceof ArrayBuffer) {
+        // 如果服务器发送压缩数据，这里需要解压
+        // 此处需要根据实际压缩方案实现
+        this._log('收到二进制消息');
+        // TODO: 处理二进制数据
+        return;
+      }
+      
+      const message = JSON.parse(data);
+      
+      // 更新统计信息
+      this.metrics.receivedMessages++;
+      if (message.type) {
+        this.metrics.messagesReceived[message.type] = (this.metrics.messagesReceived[message.type] || 0) + 1;
+      }
+      
+      // 处理批量消息
+      if (message.type === MSG_TYPES.BATCH && Array.isArray(message.messages)) {
+        this._log(`收到批量消息，包含 ${message.messages.length} 条子消息`);
+        
+        // 处理每个子消息
+        message.messages.forEach(subMessage => {
+          this._handleMessage(subMessage);
+        });
+        
+        // 触发批处理事件
+        this.emit(EVENTS.BATCH, {
+          count: message.messages.length,
+          timestamp: message.timestamp
+        });
+        
+        return;
+      }
+      
+      // 处理单个消息
+      this._handleMessage(message);
+    } catch (error) {
+      this._log(`解析消息错误: ${error.message}`, 'error');
+      this.metrics.errors++;
+      this.emit(EVENTS.ERROR, new Error(`解析消息错误: ${error.message}`));
+    }
+  }
+  
+  /**
+   * 处理收到的消息
+   * @param {Object} message 收到的消息
+   * @private
+   */
+  _handleMessage(message) {
+    const messageType = message.type;
+    
+    // 处理不同类型的消息
+    switch (messageType) {
+      case MSG_TYPES.PONG:
+        // 计算延迟
+        if (message.timestamp) {
+          this.metrics.lastLatency = Date.now() - message.timestamp;
+        }
+        break;
+        
+      case MSG_TYPES.WELCOME:
+        this._log(`收到欢迎消息，连接ID: ${message.connection_id}`);
+        break;
+        
+      case MSG_TYPES.ERROR:
+        this._log(`收到错误消息: ${message.error}`, 'error');
+        this.emit(EVENTS.ERROR, new Error(message.error));
+        break;
+        
+      case MSG_TYPES.SUBSCRIPTION:
+        this._log(`订阅确认: ${message.channel}`);
+        break;
+        
+      case MSG_TYPES.UNSUBSCRIPTION:
+        this._log(`取消订阅确认: ${message.channel}`);
+        break;
+    }
+    
+    // 发送收到的消息给监听器
+    this.emit(EVENTS.MESSAGE, message);
+  }
+  
+  /**
+   * 启动心跳
+   * @private
+   */
+  _startHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
+    
+    this.heartbeatTimer = setInterval(() => {
+      if (this.isConnected) {
+        this._sendHeartbeat();
+      }
+    }, this.config.heartbeatInterval);
+  }
+  
+  /**
+   * 记录日志
+   * @param {string} message 日志消息
+   * @param {string} level 日志级别
+   * @private
+   */
+  _log(message, level = 'info') {
+    if (!this.config.debug) {
+      return;
+    }
+    
+    const timestamp = new Date().toISOString();
+    
+    switch (level) {
+      case 'error':
+        console.error(`[EnhancedWS ${timestamp}] ${message}`);
+        break;
+      case 'warn':
+        console.warn(`[EnhancedWS ${timestamp}] ${message}`);
+        break;
+      default:
+        console.log(`[EnhancedWS ${timestamp}] ${message}`);
+    }
+  }
+} 
+ 

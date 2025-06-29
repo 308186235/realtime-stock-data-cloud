@@ -1,0 +1,266 @@
+// AgentService.js - 为AI训练,性能监控和预测结果提供API服务
+
+const API_URL = '/api';
+const USE_MOCK_DATA = true; // 开发环境中使用模拟数据
+
+/**
+ * Agent模型训练,监控和预测结果服务
+ */
+export default {
+  /**
+   * 获取AI训练进度
+   * @returns {Promise} 训练进度数据
+   */
+  async getTrainingProgress() {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return [
+        {
+          name: 'price_prediction',
+          displayName: '价格预测模型',
+          status: 'training',
+          progress: 65,
+          startTime: Date.now() - 3600000,
+          estimatedCompletion: Date.now() + 1800000,
+          currentEpoch: 32,
+          totalEpochs: 50
+        },
+        {
+          name: 'strategy_optimizer',
+          displayName: '策略优化模型',
+          status: 'complete',
+          progress: 100,
+          startTime: Date.now() - 7200000,
+          estimatedCompletion: Date.now() - 3600000,
+          currentEpoch: 50,
+          totalEpochs: 50
+        },
+        {
+          name: 'risk_assessment',
+          displayName: '风险评估模型',
+          status: 'idle',
+          progress: 0,
+          startTime: null,
+          estimatedCompletion: null,
+          currentEpoch: 0,
+          totalEpochs: 40
+        }
+      ];
+    }
+
+    // 生产环境使用实际API
+    try {
+      // 使用uni.request替代fetch
+      return new Promise((resolve, reject) => {
+        uni.request({
+          url: `${API_URL}/ai/training/progress`,
+          success: (res) => {
+            resolve(res.data);
+          },
+          fail: (err) => {
+            reject(err);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('获取AI训练进度失败:', error);
+      // 返回模拟数据作为备用
+      return [
+        // 模拟数据...
+      ];
+    }
+  },
+
+  /**
+   * 获取模型性能指标
+   * @param {String} modelType 模型类型 (price_prediction, strategy_optimizer, risk_assessment)
+   * @returns {Promise} 模型性能数据
+   */
+  async getModelPerformance(modelType) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        metrics: [
+          { name: 'mse', displayName: '均方误差', value: '0.0324', trend: 'down', changePercent: '5.2' },
+          { name: 'mae', displayName: '平均绝对误差', value: '0.1253', trend: 'down', changePercent: '3.7' },
+          { name: 'accuracy', displayName: '准确率', value: '87.6%', trend: 'up', changePercent: '2.1' },
+          { name: 'recall', displayName: '召回率', value: '0.825', trend: 'up', changePercent: '1.8' }
+        ],
+        history: {
+          epochs: Array.from({ length: 50 }, (_, i) => i + 1),
+          train_loss: Array.from({ length: 50 }, () => Math.random() * 0.5 + 0.1).sort((a, b) => b - a),
+          val_loss: Array.from({ length: 50 }, () => Math.random() * 0.7 + 0.2).sort((a, b) => b - a),
+          train_accuracy: Array.from({ length: 50 }, (_, i) => Math.min(0.95, 0.5 + i * 0.01)),
+          val_accuracy: Array.from({ length: 50 }, (_, i) => Math.min(0.9, 0.45 + i * 0.009))
+        }
+      };
+    }
+
+    // 生产环境使用实际API
+    try {
+      // 使用uni.request替代fetch
+      return new Promise((resolve, reject) => {
+        uni.request({
+          url: `${API_URL}/ai/models/performance?type=${modelType}`,
+          success: (res) => {
+            resolve(res.data);
+          },
+          fail: (err) => {
+            reject(err);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('获取模型性能数据失败:', error);
+      // 返回模拟数据
+      return {
+        metrics: [
+          // 模拟数据...
+        ]
+      };
+    }
+  },
+
+  /**
+   * 获取价格预测结果
+   * @param {String} stockCode 股票代码
+   * @param {Number} timeSteps 预测时间步数
+   * @returns {Promise} 价格预测数据
+   */
+  async getPricePrediction(stockCode, timeSteps = 10) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      const basePrice = 15.72;
+      return {
+        stock_code: stockCode,
+        current_price: basePrice,
+        predictions: Array.from({ length: timeSteps }, (_, i) => {
+          const trend = Math.random() > 0.5 ? 1 : -1;
+          const randomFactor = Math.random() * 0.05;
+          const dayFactor = i * 0.02;
+          const price = basePrice * (1 + trend * (randomFactor + dayFactor));
+          return {
+            time_step: i + 1,
+            predicted_price: price,
+            lower_bound: price * 0.95,
+            upper_bound: price * 1.05,
+            confidence: 0.95
+          };
+        })
+      };
+    }
+
+    // 生产环境使用实际API
+    try {
+      // 使用uni.request替代fetch
+      return new Promise((resolve, reject) => {
+        uni.request({
+          url: `${API_URL}/ai/predict/price?stock_code=${stockCode}&time_steps=${timeSteps}`,
+          success: (res) => {
+            resolve(res.data);
+          },
+          fail: (err) => {
+            reject(err);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('获取价格预测失败:', error);
+      // 返回模拟数据
+      return {
+        // 模拟数据...
+      };
+    }
+  },
+
+  /**
+   * 获取策略优化结果
+   * @param {String} strategyId 策略ID
+   * @param {String} stockCode 股票代码
+   * @returns {Promise} 策略优化数据
+   */
+  async getStrategyOptimization(strategyId, stockCode) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        strategy_id: strategyId,
+        stock_code: stockCode,
+        optimization_results: {
+          parameters: {
+            entry_threshold: 0.75,
+            exit_threshold: 0.25,
+            stop_loss: 0.05,
+            take_profit: 0.15
+          },
+          performance: {
+            annualized_return: 18.5,
+            sharpe_ratio: 1.75,
+            max_drawdown: 12.3,
+            win_rate: 68.5
+          }
+        }
+      };
+    }
+
+    // 生产环境使用实际API
+    try {
+      // 使用uni.request替代fetch
+      return new Promise((resolve, reject) => {
+        uni.request({
+          url: `${API_URL}/ai/optimize/strategy?strategy_id=${strategyId}&stock_code=${stockCode}`,
+          success: (res) => {
+            resolve(res.data);
+          },
+          fail: (err) => {
+            reject(err);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('获取策略优化数据失败:', error);
+      return { status: 'error', message: error.message };
+    }
+  },
+
+  /**
+   * 手动触发Agent模型训练
+   * @param {String} modelType 模型类型
+   * @returns {Promise} 训练任务状态
+   */
+  async triggerTraining(modelType) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        status: 'success',
+        model_type: modelType,
+        task_id: 'sim_' + Date.now(),
+        message: '训练任务已启动',
+        estimated_completion: new Date(Date.now() + 3600000).toISOString()
+      };
+    }
+
+    // 生产环境使用实际API
+    try {
+      // 使用uni.request替代fetch
+      return new Promise((resolve, reject) => {
+        uni.request({
+          url: `${API_URL}/ai/training/start`,
+          method: 'POST',
+          data: { model_type: modelType },
+          header: {
+            'Content-Type': 'application/json'
+          },
+          success: (res) => {
+            resolve(res.data);
+          },
+          fail: (err) => {
+            reject(err);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('触发AI训练失败:', error);
+      return { status: 'error', message: error.message };
+    }
+  }
+}; 

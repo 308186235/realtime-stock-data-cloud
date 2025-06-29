@@ -1,0 +1,132 @@
+import pandas as pd
+import numpy as np
+from .base_strategy import BaseStrategy
+
+class MACrossStrategy(BaseStrategy):
+    """
+    Moving Average Crossover Strategy.
+    Generates buy signals when short-term MA crosses above long-term MA,
+    and sell signals when short-term MA crosses below long-term MA.
+    """
+    
+    def __init__(self, parameters=None):
+        """
+        Initialize MA Cross strategy with parameters.
+        
+        Args:
+            parameters (dict): Strategy parameters
+        """
+        super().__init__(parameters)
+        self.name = "均线交叉策略"
+        self.description = "均线交叉策略是一种常见的技术分析策略，通过短期均线上穿长期均线产生买入信号，短期均线下穿长期均线产生卖出信号。该策略适合趋势明显的市场环境。"
+        
+        # Set parameters
+        default_params = self.get_default_parameters()
+        self.parameters = parameters or default_params
+        
+    def get_default_parameters(self):
+        """
+        Get default parameters for MA Cross strategy.
+        
+        Returns:
+            dict: Default parameters
+        """
+        return {
+            'short_period': 5,
+            'long_period': 20,
+            'stop_loss': 0.03,       # 3% stop loss
+            'take_profit': 0.08      # 8% take profit
+        }
+    
+    def get_parameter_ranges(self):
+        """
+        Get valid ranges for strategy parameters.
+        
+        Returns:
+            dict: Parameter ranges with min, max, and step values
+        """
+        return {
+            'short_period': {'min': 2, 'max': 20, 'step': 1},
+            'long_period': {'min': 10, 'max': 200, 'step': 5},
+            'stop_loss': {'min': 0.01, 'max': 0.1, 'step': 0.005},
+            'take_profit': {'min': 0.02, 'max': 0.2, 'step': 0.01}
+        }
+    
+    def generate_signals(self, data):
+        """
+        Generate trading signals based on moving average crossovers.
+        
+        Args:
+            data (pd.DataFrame): Historical market data with OHLCV
+            
+        Returns:
+            pd.Series: Series of trading signals (1 for buy, -1 for sell, 0 for hold)
+        """
+        # Make a copy of data to avoid modifying the original
+        df = data.copy()
+        
+        # Get parameters
+        short_period = self.parameters['short_period']
+        long_period = self.parameters['long_period']
+        
+        # Calculate moving averages
+        df['short_ma'] = df['close'].rolling(window=short_period).mean()
+        df['long_ma'] = df['close'].rolling(window=long_period).mean()
+        
+        # Initialize signals
+        df['signal'] = 0
+        
+        # Generate crossover signals
+        df.loc[df['short_ma'] > df['long_ma'], 'signal'] = 1  # Buy signal
+        df.loc[df['short_ma'] < df['long_ma'], 'signal'] = -1  # Sell signal
+        
+        # Apply stop loss and take profit
+        self._apply_stop_loss_take_profit(df)
+        
+        return df['signal']
+    
+    def _apply_stop_loss_take_profit(self, df):
+        """
+        Apply stop loss and take profit rules to the signals.
+        
+        Args:
+            df (pd.DataFrame): DataFrame with signals
+        """
+        stop_loss = self.parameters['stop_loss']
+        take_profit = self.parameters['take_profit']
+        
+        # Track entry prices and positions
+        position = 0
+        entry_price = 0
+        
+        for i in range(1, len(df)):
+            prev_signal = df['signal'].iloc[i-1]
+            curr_signal = df['signal'].iloc[i]
+            curr_price = df['close'].iloc[i]
+            
+            # Check if we need to open a position
+            if position == 0 and curr_signal == 1:
+                position = 1
+                entry_price = curr_price
+            
+            # Check if we need to close a position
+            elif position == 1:
+                # Calculate current profit/loss
+                pnl = (curr_price - entry_price) / entry_price
+                
+                # Apply stop loss
+                if pnl <= -stop_loss:
+                    df.loc[df.index[i], 'signal'] = -1
+                    position = 0
+                    entry_price = 0
+                
+                # Apply take profit
+                elif pnl >= take_profit:
+                    df.loc[df.index[i], 'signal'] = -1
+                    position = 0
+                    entry_price = 0
+                
+                # Check for sell signal
+                elif curr_signal == -1:
+                    position = 0
+                    entry_price = 0 

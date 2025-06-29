@@ -1,0 +1,385 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Agent API 处理程序
+
+提供RESTful API接口，用于与Agent系统交互
+"""
+
+import os
+import sys
+import json
+import logging
+import asyncio
+import datetime
+from typing import Dict, List, Any, Optional
+from fastapi import FastAPI, HTTPException, Depends, Query, Body
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('agent_api')
+
+# 创建FastAPI应用
+app = FastAPI(
+    title="Trading Agent API",
+    description="交易Agent系统API接口",
+    version="1.0.0"
+)
+
+# 添加CORS支持
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 生产环境中应限制为特定来源
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 导入Agent模块
+from backend.ai.agent_system import TradingAgent, AgentAPI
+
+# 全局Agent实例
+agent = None
+agent_api = None
+
+# 数据模型
+class ActionRequest(BaseModel):
+    action_data: Dict[str, Any] = Field(default_factory=dict)
+
+class DecisionRequest(BaseModel):
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+class FeedbackRequest(BaseModel):
+    feedback: Dict[str, Any] = Field(default_factory=dict)
+
+class AutoTradeModeRequest(BaseModel):
+    auto_trade: bool = Field(default=False)
+
+class OrderRequest(BaseModel):
+    symbol: str
+    side: str
+    quantity: float
+    type: str = "market"
+    price: Optional[float] = None
+    stop_price: Optional[float] = None
+
+class CancelOrderRequest(BaseModel):
+    order_id: str
+
+# 依赖项
+async def get_agent():
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Agent未初始化")
+    return agent
+
+async def get_agent_api():
+    if agent_api is None:
+        raise HTTPException(status_code=503, detail="Agent API未初始化")
+    return agent_api
+
+# Agent初始化
+@app.on_event("startup")
+async def startup_event():
+    global agent, agent_api
+    
+    try:
+        # 加载配置
+        config_path = os.environ.get("AGENT_CONFIG_FILE", "config/agent_config.json")
+        
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            logger.info(f"已加载配置: {config_path}")
+        else:
+            config = {}
+            logger.warning(f"配置文件不存在: {config_path}，使用默认配置")
+        
+        # 根据环境变量设置自动交易模式
+        auto_trade = os.environ.get("AGENT_AUTO_TRADE", "false").lower() == "true"
+        if "trade_executor" not in config:
+            config["trade_executor"] = {}
+        config["trade_executor"]["enable_paper_trading"] = not auto_trade
+        
+        # 创建Agent实例
+        agent = TradingAgent(config=config)
+        agent_api = AgentAPI(agent)
+        
+        logger.info("Agent系统已初始化")
+    except Exception as e:
+        logger.error(f"初始化Agent失败: {str(e)}")
+        raise
+
+# 关闭事件
+@app.on_event("shutdown")
+async def shutdown_event():
+    global agent
+    
+    if agent:
+        await agent.stop()
+        logger.info("Agent已停止")
+
+# API路由
+
+# Agent控制
+@app.post("/api/agent/start", summary="启动Agent")
+async def start_agent(agent=Depends(get_agent), agent_api=Depends(get_agent_api)):
+    try:
+        result = await agent_api.handle_request({"action": "start"})
+        return result
+    except Exception as e:
+        logger.error(f"启动Agent失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"启动Agent失败: {str(e)}")
+
+@app.post("/api/agent/stop", summary="停止Agent")
+async def stop_agent(agent=Depends(get_agent), agent_api=Depends(get_agent_api)):
+    try:
+        result = await agent_api.handle_request({"action": "stop"})
+        return result
+    except Exception as e:
+        logger.error(f"停止Agent失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"停止Agent失败: {str(e)}")
+
+@app.get("/api/agent/status", summary="获取Agent状态")
+async def get_agent_status(agent=Depends(get_agent), agent_api=Depends(get_agent_api)):
+    try:
+        result = await agent_api.handle_request({"action": "status"})
+        return result
+    except Exception as e:
+        logger.error(f"获取Agent状态失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取Agent状态失败: {str(e)}")
+
+# 决策与执行
+@app.post("/api/agent/decision", summary="请求Agent决策")
+async def make_decision(
+    request: DecisionRequest,
+    agent=Depends(get_agent),
+    agent_api=Depends(get_agent_api)
+):
+    try:
+        result = await agent_api.handle_request({
+            "action": "decision",
+            "context": request.context
+        })
+        return result
+    except Exception as e:
+        logger.error(f"请求决策失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"请求决策失败: {str(e)}")
+
+@app.post("/api/agent/execute", summary="执行交易动作")
+async def execute_action(
+    request: ActionRequest,
+    agent=Depends(get_agent),
+    agent_api=Depends(get_agent_api)
+):
+    try:
+        result = await agent_api.handle_request({
+            "action": "execute",
+            "action_data": request.action_data
+        })
+        return result
+    except Exception as e:
+        logger.error(f"执行动作失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"执行动作失败: {str(e)}")
+
+@app.post("/api/agent/learn", summary="提供学习反馈")
+async def provide_feedback(
+    request: FeedbackRequest,
+    agent=Depends(get_agent),
+    agent_api=Depends(get_agent_api)
+):
+    try:
+        result = await agent_api.handle_request({
+            "action": "learn",
+            "feedback": request.feedback
+        })
+        return result
+    except Exception as e:
+        logger.error(f"提供学习反馈失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"提供学习反馈失败: {str(e)}")
+
+# 交易执行器接口
+@app.get("/api/agent/executor/status", summary="获取交易执行器状态")
+async def get_executor_status(agent=Depends(get_agent)):
+    try:
+        if not hasattr(agent, 'trade_executor') or not agent.trade_executor:
+            raise HTTPException(status_code=503, detail="交易执行器未初始化")
+            
+        status = await agent.trade_executor.get_account_status()
+        return {"status": "success", "data": status}
+    except Exception as e:
+        logger.error(f"获取交易执行器状态失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取交易执行器状态失败: {str(e)}")
+
+@app.get("/api/agent/executor/positions", summary="获取当前持仓")
+async def get_positions(agent=Depends(get_agent)):
+    try:
+        if not hasattr(agent, 'trade_executor') or not agent.trade_executor:
+            raise HTTPException(status_code=503, detail="交易执行器未初始化")
+            
+        positions = await agent.trade_executor.get_positions()
+        return {"status": "success", "positions": positions}
+    except Exception as e:
+        logger.error(f"获取持仓失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取持仓失败: {str(e)}")
+
+@app.get("/api/agent/executor/orders", summary="获取订单历史")
+async def get_orders(
+    limit: int = Query(50, ge=1, le=1000),
+    agent=Depends(get_agent)
+):
+    try:
+        if not hasattr(agent, 'trade_executor') or not agent.trade_executor:
+            raise HTTPException(status_code=503, detail="交易执行器未初始化")
+            
+        orders = await agent.trade_executor.get_order_history(limit=limit)
+        return {"status": "success", "orders": orders}
+    except Exception as e:
+        logger.error(f"获取订单历史失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取订单历史失败: {str(e)}")
+
+@app.post("/api/agent/executor/mode", summary="设置自动交易模式")
+async def set_auto_trade_mode(
+    request: AutoTradeModeRequest,
+    agent=Depends(get_agent)
+):
+    try:
+        if not hasattr(agent, 'trade_executor') or not agent.trade_executor:
+            raise HTTPException(status_code=503, detail="交易执行器未初始化")
+            
+        # 设置交易模式
+        agent.trade_executor.enable_paper_trading = not request.auto_trade
+        
+        mode_str = "实盘交易" if request.auto_trade else "模拟交易"
+        logger.info(f"已切换到{mode_str}模式")
+        
+        return {
+            "status": "success",
+            "message": f"已切换到{mode_str}模式",
+            "auto_trade": request.auto_trade
+        }
+    except Exception as e:
+        logger.error(f"设置自动交易模式失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"设置自动交易模式失败: {str(e)}")
+
+@app.post("/api/agent/executor/place-order", summary="手动下单")
+async def place_order(
+    order: OrderRequest,
+    agent=Depends(get_agent)
+):
+    try:
+        if not hasattr(agent, 'trade_executor') or not agent.trade_executor:
+            raise HTTPException(status_code=503, detail="交易执行器未初始化")
+            
+        # 构建决策
+        decision = {
+            "action": order.side,  # buy或sell
+            "symbol": order.symbol,
+            "confidence": 1.0,  # 手动订单使用最高置信度
+            "position_size": order.quantity,
+            "reason": "手动订单"
+        }
+        
+        # 如果是限价单，添加价格
+        if order.type == "limit" and order.price:
+            decision["price"] = order.price
+            
+        # 如果是止损单，添加止损价格
+        if order.type == "stop" and order.stop_price:
+            decision["stop_price"] = order.stop_price
+            
+        # 执行订单
+        result = await agent.trade_executor.execute_decision(decision)
+        
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message", "下单失败"))
+            
+        return {
+            "status": "success",
+            "message": "下单成功",
+            "order_id": result.get("order_id"),
+            "result": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"手动下单失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"手动下单失败: {str(e)}")
+
+@app.post("/api/agent/executor/cancel-order", summary="取消订单")
+async def cancel_order(
+    request: CancelOrderRequest,
+    agent=Depends(get_agent)
+):
+    try:
+        if not hasattr(agent, 'trade_executor') or not agent.trade_executor:
+            raise HTTPException(status_code=503, detail="交易执行器未初始化")
+            
+        # 构建取消订单动作
+        action = {
+            "action": "cancel",
+            "order_id": request.order_id
+        }
+        
+        # 执行取消订单
+        result = await agent._cancel_orders(action)
+        
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message", "取消订单失败"))
+            
+        return {
+            "status": "success",
+            "message": "取消订单成功",
+            "result": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"取消订单失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"取消订单失败: {str(e)}")
+
+# 性能统计
+@app.get("/api/agent/performance", summary="获取Agent性能统计")
+async def get_performance(
+    range: str = Query("1d", regex="^(1d|1w|1m|3m|6m|1y|all)$"),
+    agent=Depends(get_agent)
+):
+    try:
+        # 这里实现获取性能统计的逻辑
+        # 可以从agent.decision_state和执行器的历史记录中整合数据
+        
+        # 示例数据
+        stats = {
+            "timeframe": range,
+            "win_rate": 0.65,
+            "profit_factor": 1.8,
+            "sharpe_ratio": 1.2,
+            "max_drawdown": 0.15,
+            "total_trades": 42,
+            "profitable_trades": 27,
+            "losing_trades": 15,
+            "total_profit": 12500,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        return {"status": "success", "stats": stats}
+    except Exception as e:
+        logger.error(f"获取性能统计失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取性能统计失败: {str(e)}")
+
+# 主函数
+if __name__ == "__main__":
+    import uvicorn
+    
+    # 运行API服务器
+    uvicorn.run(
+        "agent_api:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    ) 

@@ -1,0 +1,301 @@
+import unittest
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+from strategies.three_black_crows_strategy import ThreeBlackCrowsStrategy
+
+class TestThreeBlackCrowsStrategy(unittest.TestCase):
+    """顶部三鸦形策略测试"""
+    
+    def setUp(self):
+        """测试初始化"""
+        self.strategy = ThreeBlackCrowsStrategy()
+        
+        # 创建测试数据
+        self.create_test_data()
+    
+    def create_test_data(self):
+        """创建用于测试的K线数据"""
+        # 创建基本数据框架
+        dates = [datetime.now() - timedelta(days=i) for i in range(30, 0, -1)]
+        
+        data = {
+            'open': np.random.normal(10, 0.5, 30),
+            'high': np.random.normal(10.5, 0.5, 30),
+            'low': np.random.normal(9.5, 0.5, 30),
+            'close': np.random.normal(10, 0.5, 30),
+            'volume': np.random.randint(1000000, 5000000, 30)
+        }
+        
+        self.df = pd.DataFrame(data, index=dates)
+        
+        # 修正high和low,确保high > max(open, close),low < min(open, close)
+        for i in range(len(self.df)):
+            self.df.loc[self.df.index[i], 'high'] = max(self.df.loc[self.df.index[i], 'open'], 
+                                                        self.df.loc[self.df.index[i], 'close']) + 0.2
+            
+            self.df.loc[self.df.index[i], 'low'] = min(self.df.loc[self.df.index[i], 'open'], 
+                                                       self.df.loc[self.df.index[i], 'close']) - 0.2
+        
+        # 创建高位顶部三鸦形
+        self.create_high_position_pattern()
+        
+        # 创建中继位置的顶部三鸦形
+        self.create_middle_position_pattern()
+        
+        # 创建低位顶部三鸦形
+        self.create_low_position_pattern()
+    
+    def create_high_position_pattern(self):
+        """创建高位顶部三鸦形"""
+        # 创建上涨趋势
+        for i in range(5, 12):
+            self.df.loc[self.df.index[i], 'open'] = 10 + i * 0.15
+            self.df.loc[self.df.index[i], 'close'] = 10 + i * 0.15 + 0.3
+            self.df.loc[self.df.index[i], 'high'] = self.df.loc[self.df.index[i], 'close'] + 0.1
+            self.df.loc[self.df.index[i], 'low'] = self.df.loc[self.df.index[i], 'open'] - 0.1
+        
+        # 第一根阴线
+        i = 12
+        self.df.loc[self.df.index[i], 'open'] = 12.0
+        self.df.loc[self.df.index[i], 'close'] = 11.6
+        self.df.loc[self.df.index[i], 'high'] = 12.1
+        self.df.loc[self.df.index[i], 'low'] = 11.5
+        
+        # 第二根阴线
+        i = 13
+        self.df.loc[self.df.index[i], 'open'] = 11.7  # 开盘价在前一根K线实体内
+        self.df.loc[self.df.index[i], 'close'] = 11.3  # 收盘价低于前一根
+        self.df.loc[self.df.index[i], 'high'] = 11.8
+        self.df.loc[self.df.index[i], 'low'] = 11.2
+        
+        # 第三根阴线
+        i = 14
+        self.df.loc[self.df.index[i], 'open'] = 11.4  # 开盘价在前一根K线实体内
+        self.df.loc[self.df.index[i], 'close'] = 11.0  # 收盘价低于前一根
+        self.df.loc[self.df.index[i], 'high'] = 11.5
+        self.df.loc[self.df.index[i], 'low'] = 10.9
+        
+        # 增加成交量
+        self.df.loc[self.df.index[12], 'volume'] = 1500000
+        self.df.loc[self.df.index[13], 'volume'] = 1700000  # 放量
+        self.df.loc[self.df.index[14], 'volume'] = 2000000  # 继续放量
+    
+    def create_middle_position_pattern(self):
+        """创建中继位置的顶部三鸦形"""
+        # 创建下跌趋势后的反弹
+        for i in range(15, 18):
+            self.df.loc[self.df.index[i], 'open'] = 11.0 - (i-15) * 0.2
+            self.df.loc[self.df.index[i], 'close'] = 10.9 - (i-15) * 0.2
+            self.df.loc[self.df.index[i], 'high'] = self.df.loc[self.df.index[i], 'open'] + 0.1
+            self.df.loc[self.df.index[i], 'low'] = self.df.loc[self.df.index[i], 'close'] - 0.1
+        
+        # 反弹
+        for i in range(18, 20):
+            self.df.loc[self.df.index[i], 'open'] = 10.5 + (i-18) * 0.15
+            self.df.loc[self.df.index[i], 'close'] = 10.6 + (i-18) * 0.15
+            self.df.loc[self.df.index[i], 'high'] = self.df.loc[self.df.index[i], 'close'] + 0.1
+            self.df.loc[self.df.index[i], 'low'] = self.df.loc[self.df.index[i], 'open'] - 0.1
+        
+        # 第一根阴线
+        i = 20
+        self.df.loc[self.df.index[i], 'open'] = 10.9
+        self.df.loc[self.df.index[i], 'close'] = 10.7
+        self.df.loc[self.df.index[i], 'high'] = 11.0
+        self.df.loc[self.df.index[i], 'low'] = 10.6
+        
+        # 第二根阴线
+        i = 21
+        self.df.loc[self.df.index[i], 'open'] = 10.8  # 开盘价在前一根K线实体内
+        self.df.loc[self.df.index[i], 'close'] = 10.6  # 收盘价低于前一根
+        self.df.loc[self.df.index[i], 'high'] = 10.9
+        self.df.loc[self.df.index[i], 'low'] = 10.5
+        
+        # 第三根阴线
+        i = 22
+        self.df.loc[self.df.index[i], 'open'] = 10.65  # 开盘价在前一根K线实体内
+        self.df.loc[self.df.index[i], 'close'] = 10.4  # 收盘价低于前一根
+        self.df.loc[self.df.index[i], 'high'] = 10.7
+        self.df.loc[self.df.index[i], 'low'] = 10.3
+        
+        # 成交量中等
+        self.df.loc[self.df.index[20], 'volume'] = 1300000
+        self.df.loc[self.df.index[21], 'volume'] = 1400000
+        self.df.loc[self.df.index[22], 'volume'] = 1500000
+    
+    def create_low_position_pattern(self):
+        """创建低位顶部三鸦形"""
+        # 创建前期下跌
+        for i in range(23, 26):
+            self.df.loc[self.df.index[i], 'open'] = 10.2 - (i-23) * 0.3
+            self.df.loc[self.df.index[i], 'close'] = 10.0 - (i-23) * 0.3
+            self.df.loc[self.df.index[i], 'high'] = self.df.loc[self.df.index[i], 'open'] + 0.1
+            self.df.loc[self.df.index[i], 'low'] = self.df.loc[self.df.index[i], 'close'] - 0.1
+        
+        # 第一根阴线
+        i = 26
+        self.df.loc[self.df.index[i], 'open'] = 9.2
+        self.df.loc[self.df.index[i], 'close'] = 9.0
+        self.df.loc[self.df.index[i], 'high'] = 9.3
+        self.df.loc[self.df.index[i], 'low'] = 8.9
+        
+        # 第二根阴线
+        i = 27
+        self.df.loc[self.df.index[i], 'open'] = 9.1  # 开盘价在前一根K线实体内
+        self.df.loc[self.df.index[i], 'close'] = 8.9  # 收盘价低于前一根
+        self.df.loc[self.df.index[i], 'high'] = 9.2
+        self.df.loc[self.df.index[i], 'low'] = 8.8
+        
+        # 第三根阴线
+        i = 28
+        self.df.loc[self.df.index[i], 'open'] = 8.95  # 开盘价在前一根K线实体内
+        self.df.loc[self.df.index[i], 'close'] = 8.7  # 收盘价低于前一根
+        self.df.loc[self.df.index[i], 'high'] = 9.0
+        self.df.loc[self.df.index[i], 'low'] = 8.6
+        
+        # 缩量特征
+        self.df.loc[self.df.index[26], 'volume'] = 1200000
+        self.df.loc[self.df.index[27], 'volume'] = 1000000  # 缩量
+        self.df.loc[self.df.index[28], 'volume'] = 800000   # 继续缩量
+    
+    def test_strategy_initialization(self):
+        """测试策略初始化"""
+        self.assertEqual(self.strategy.name, "顶部三鸦形策略")
+        self.assertIsNotNone(self.strategy.description)
+        
+        # 检查默认参数
+        default_params = self.strategy.get_default_parameters()
+        self.assertIsNotNone(default_params)
+        self.assertIn('min_body_size_ratio', default_params)
+        self.assertIn('max_shadow_ratio', default_params)
+        
+        # 检查参数范围
+        param_ranges = self.strategy.get_parameter_ranges()
+        self.assertIsNotNone(param_ranges)
+        self.assertIn('min_body_size_ratio', param_ranges)
+    
+    def test_signal_generation(self):
+        """测试信号生成"""
+        signals = self.strategy.generate_signals(self.df)
+        
+        # 验证信号是Series类型
+        self.assertIsInstance(signals, pd.Series)
+        
+        # 验证信号长度与数据框一致
+        self.assertEqual(len(signals), len(self.df))
+        
+        # 打印检测到的信号
+        print("\n检测到的顶部三鸦形信号:")
+        for i, signal in enumerate(signals):
+            if signal != 0:
+                print(f"位置 {i}, 日期 {self.df.index[i]}, 信号值 {signal}")
+        
+        # 验证高位顶部三鸦形信号
+        self.assertEqual(signals[14], -1)  # 高位应该是卖出信号
+        
+        # 验证中继位置顶部三鸦形信号
+        self.assertEqual(signals[22], -1)  # 中继位置应该是卖出信号
+        
+        # 低位顶部三鸦形可能是中性或买入信号
+        self.assertIn(signals[28], [0, 1])  # 低位缩量可能是中性或买入信号
+    
+    def test_different_parameters(self):
+        """测试不同参数设置"""
+        # 使用更严格的参数
+        strict_params = {
+            'min_body_size_ratio': 0.6,     # 更高的实体要求
+            'max_shadow_ratio': 0.2,        # 更严格的影线要求
+            'body_similarity_threshold': 0.8,  # 更高的实体相似度要求
+            'max_open_close_gap': 0.01      # 更严格的开盘价要求
+        }
+        
+        strict_strategy = ThreeBlackCrowsStrategy(strict_params)
+        strict_signals = strict_strategy.generate_signals(self.df)
+        
+        print("\n使用严格参数检测到的信号:")
+        for i, signal in enumerate(strict_signals):
+            if signal != 0:
+                print(f"位置 {i}, 日期 {self.df.index[i]}, 信号值 {signal}")
+        
+        # 使用宽松参数
+        loose_params = {
+            'min_body_size_ratio': 0.4,     # 更宽松的实体要求
+            'max_shadow_ratio': 0.4,        # 更宽松的影线要求
+            'body_similarity_threshold': 0.6,  # 更宽松的实体相似度要求
+            'max_open_close_gap': 0.03      # 更宽松的开盘价要求
+        }
+        
+        loose_strategy = ThreeBlackCrowsStrategy(loose_params)
+        loose_signals = loose_strategy.generate_signals(self.df)
+        
+        print("\n使用宽松参数检测到的信号:")
+        for i, signal in enumerate(loose_signals):
+            if signal != 0:
+                print(f"位置 {i}, 日期 {self.df.index[i]}, 信号值 {signal}")
+        
+        # 验证参数影响检测结果
+        strict_signal_count = (strict_signals != 0).sum()
+        loose_signal_count = (loose_signals != 0).sum()
+        
+        print(f"\n严格参数检测到的信号数: {strict_signal_count}")
+        print(f"宽松参数检测到的信号数: {loose_signal_count}")
+        
+        # 预期宽松参数会检测到更多信号
+        self.assertLessEqual(strict_signal_count, loose_signal_count)
+    
+    def test_technical_indicators_confirmation(self):
+        """测试技术指标确认"""
+        # 开启所有技术指标确认
+        tech_params = {
+            'use_macd_confirmation': True,
+            'use_rsi_confirmation': True,
+            'use_ma_confirmation': True
+        }
+        
+        tech_strategy = ThreeBlackCrowsStrategy(tech_params)
+        tech_strategy._calculate_technical_indicators(self.df)
+        
+        # 验证指标是否已计算
+        self.assertIn('rsi', self.df.columns)
+        self.assertIn('macd', self.df.columns)
+        self.assertIn('macd_hist', self.df.columns)
+        
+        # 验证MA是否已计算
+        tech_strategy.generate_signals(self.df)
+        self.assertIn('ma5', self.df.columns)
+        self.assertIn('ma20', self.df.columns)
+        self.assertIn('ma60', self.df.columns)
+    
+    def test_position_type_detection(self):
+        """测试位置类型检测"""
+        # 测试高位检测
+        high_position = self.strategy._determine_position_type(self.df, 15, True)
+        self.assertEqual(high_position, 'high')
+        
+        # 测试中继位置检测
+        middle_position = self.strategy._determine_position_type(self.df, 23, False)
+        self.assertEqual(middle_position, 'middle')
+        
+        # 测试低位检测
+        low_position = self.strategy._determine_position_type(self.df, 29, False)
+        self.assertEqual(low_position, 'low')
+    
+    def test_backtest(self):
+        """测试回测功能"""
+        backtest_result = self.strategy.backtest(self.df, initial_capital=10000.0)
+        
+        # 验证回测结果包含预期的字段
+        self.assertIn('win_rate', backtest_result)
+        self.assertIn('profit_factor', backtest_result)
+        self.assertIn('sharpe_ratio', backtest_result)
+        self.assertIn('total_return', backtest_result)
+        self.assertIn('max_drawdown', backtest_result)
+        self.assertIn('total_trades', backtest_result)
+        
+        print("\n回测结果:")
+        for key, value in backtest_result.items():
+            print(f"{key}: {value}")
+
+if __name__ == "__main__":
+    unittest.main() 

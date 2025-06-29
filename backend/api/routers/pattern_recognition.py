@@ -1,0 +1,428 @@
+from fastapi import APIRouter, HTTPException, Body, Query, Depends
+from typing import Dict, List, Any, Optional
+import logging
+import pandas as pd
+from datetime import datetime, timedelta
+import numpy as np
+
+from ...strategies import STRATEGY_REGISTRY
+from ...strategies import get_strategy, list_available_strategies, get_strategy_details
+from ...strategies.double_green_parallel_strategy import DoubleGreenParallelStrategy
+from ...strategies.three_black_crows_strategy import ThreeBlackCrowsStrategy
+
+# Initialize logger
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/patterns", tags=["patterns"])
+
+@router.get("/list")
+async def get_available_patterns():
+    """获取所有已实现的K线形态"""
+    try:
+        # 过滤candlestick pattern策略
+        pattern_strategies = {}
+        
+        for name, strategy_class in STRATEGY_REGISTRY.items():
+            # Check if it's a candlestick pattern strategy
+            instance = strategy_class()
+            if any(keyword in instance.name for keyword in ["形态", "形", "K线", "蜡烛"]):
+                pattern_strategies[name] = {
+                    "id": name,
+                    "name": instance.name,
+                    "description": instance.description,
+                    "type": "candlestick"
+                }
+        
+        return {
+            "success": True,
+            "data": list(pattern_strategies.values())
+        }
+    except Exception as e:
+        logger.error(f"获取K线形态列表出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{pattern_id}/details")
+async def get_pattern_details(pattern_id: str):
+    """获取指定K线形态的详细信息"""
+    try:
+        if pattern_id not in STRATEGY_REGISTRY:
+            raise HTTPException(status_code=404, detail=f"未找到形态: {pattern_id}")
+        
+        details = get_strategy_details(pattern_id)
+        
+        # Add additional information
+        details["example_images"] = [
+            f"/static/patterns/{pattern_id}_example1.png",
+            f"/static/patterns/{pattern_id}_example2.png"
+        ]
+        
+        # Add pattern documentation link
+        details["documentation"] = f"/docs/patterns/{pattern_id}.md"
+        
+        return {
+            "success": True,
+            "data": details
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"获取形态详情出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/detect")
+async def detect_pattern(
+    data: Dict[str, Any] = Body(..., 
+        example={
+            "pattern_id": "double_green_parallel",
+            "candles": [
+                {"time": "2023-05-01", "open": 10.5, "high": 11.2, "low": 10.3, "close": 10.8, "volume": 1000000},
+                {"time": "2023-05-02", "open": 10.9, "high": 11.5, "low": 10.7, "close": 11.3, "volume": 1200000},
+                # More candles...
+            ]
+        }
+    )
+):
+    """检测K线形态"""
+    try:
+        pattern_id = data.get("pattern_id")
+        candles = data.get("candles", [])
+        params = data.get("parameters", {})
+        
+        if not pattern_id or not candles:
+            raise HTTPException(status_code=400, detail="缺少必要参数")
+        
+        if pattern_id not in STRATEGY_REGISTRY:
+            raise HTTPException(status_code=404, detail=f"未找到形态: {pattern_id}")
+        
+        # 转换蜡烛数据为DataFrame
+        df = pd.DataFrame(candles)
+        
+        # 确保有必要的列
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col not in df.columns:
+                raise HTTPException(status_code=400, detail=f"蜡烛数据缺少必要列: {col}")
+        
+        # 初始化策略并检测形态
+        strategy = get_strategy(pattern_id, params)
+        
+        # 使用策略的signal方法检测形态
+        signals = strategy.generate_signals(df)
+        
+        # 查找最近的形态识别结果
+        recent_signals = []
+        for i, signal in enumerate(signals):
+            if signal != 0:  # 非零信号表示检测到形态
+                # 获取对应的K线数据和索引
+                idx = df.index[i]
+                signal_data = {
+                    "index": i,
+                    "time": df.iloc[i].get('time', str(idx)),
+                    "signal": int(signal),  # 转换为整数
+                    "direction": "bullish" if signal > 0 else "bearish",
+                    "candle": df.iloc[i].to_dict()
+                }
+                recent_signals.append(signal_data)
+        
+        result = {
+            "pattern_id": pattern_id,
+            "pattern_name": strategy.name,
+            "total_candles": len(df),
+            "detected_signals": recent_signals,
+            "detected_count": len(recent_signals)
+        }
+        
+        # 如果是双绿并行形策略,添加特定信息
+        if pattern_id == "double_green_parallel":
+            # 计算位置分布统计
+            position_stats = compute_double_green_parallel_stats(df, strategy, signals)
+            result["pattern_stats"] = position_stats
+        
+        return {
+            "success": True,
+            "data": result
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"检测形态出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/backtest")
+async def backtest_pattern_strategy(
+    data: Dict[str, Any] = Body(..., 
+        example={
+            "pattern_id": "double_green_parallel",
+            "candles": [],
+            "parameters": {},
+            "initial_capital": 100000
+        }
+    )
+):
+    """回测K线形态策略"""
+    try:
+        pattern_id = data.get("pattern_id")
+        candles = data.get("candles", [])
+        params = data.get("parameters", {})
+        initial_capital = data.get("initial_capital", 100000)
+        
+        if not pattern_id or not candles:
+            raise HTTPException(status_code=400, detail="缺少必要参数")
+        
+        if pattern_id not in STRATEGY_REGISTRY:
+            raise HTTPException(status_code=404, detail=f"未找到形态: {pattern_id}")
+        
+        # 转换蜡烛数据为DataFrame
+        df = pd.DataFrame(candles)
+        
+        # 确保有必要的列
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col not in df.columns:
+                raise HTTPException(status_code=400, detail=f"蜡烛数据缺少必要列: {col}")
+        
+        # 初始化策略并进行回测
+        strategy = get_strategy(pattern_id, params)
+        backtest_result = strategy.backtest(df, initial_capital)
+        
+        return {
+            "success": True,
+            "data": {
+                "pattern_id": pattern_id,
+                "pattern_name": strategy.name,
+                "parameters": params,
+                "backtest_result": backtest_result
+            }
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"回测形态策略出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/double-green-parallel/stats")
+async def get_double_green_parallel_stats(
+    days: int = Query(90, description="统计天数"),
+    stocks: Optional[List[str]] = Query(None, description="股票代码列表")
+):
+    """获取双绿并行形态的统计数据"""
+    try:
+        # 在实际应用中,这里应该从数据库或其他数据源获取历史数据
+        # 目前返回模拟数据
+        
+        # 模拟数据:不同位置的形态统计
+        position_stats = {
+            "high": {
+                "count": 156,
+                "success_rate": 0.78,
+                "avg_return": -0.032,
+                "best_stock": "000858",
+                "worst_stock": "600519"
+            },
+            "middle": {
+                "count": 234,
+                "success_rate": 0.72,
+                "avg_return": -0.025,
+                "best_stock": "600036",
+                "worst_stock": "601398"
+            },
+            "low": {
+                "count": 87,
+                "success_rate": 0.65,
+                "avg_return": 0.018,
+                "best_stock": "000333",
+                "worst_stock": "601288"
+            }
+        }
+        
+        # 模拟数据:成交量特征统计
+        volume_stats = {
+            "increasing": {
+                "count": 193,
+                "success_rate": 0.76,
+                "avg_return": -0.028
+            },
+            "decreasing": {
+                "count": 156,
+                "success_rate": 0.68,
+                "avg_return": -0.012
+            },
+            "neutral": {
+                "count": 128,
+                "success_rate": 0.64,
+                "avg_return": -0.008
+            }
+        }
+        
+        # 模拟数据:MA线突破统计
+        ma_stats = {
+            "ma5_broken": {
+                "count": 145,
+                "success_rate": 0.82,
+                "avg_return": -0.035
+            },
+            "ma60_broken": {
+                "count": 78,
+                "success_rate": 0.74,
+                "avg_return": -0.042
+            },
+            "no_ma_break": {
+                "count": 254,
+                "success_rate": 0.61,
+                "avg_return": -0.015
+            }
+        }
+        
+        return {
+            "success": True,
+            "data": {
+                "days": days,
+                "total_patterns_detected": 477,
+                "position_stats": position_stats,
+                "volume_stats": volume_stats,
+                "ma_stats": ma_stats,
+                "stocks_count": 87,
+                "period": f"{(datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}"
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取双绿并行形态统计数据出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/three-black-crows/stats")
+async def get_three_black_crows_stats(
+    days: int = Query(90, description="统计天数"),
+    stocks: Optional[List[str]] = Query(None, description="股票代码列表")
+):
+    """获取顶部三鸦形态的统计数据"""
+    try:
+        # 在实际应用中,这里应该从数据库或其他数据源获取历史数据
+        # 目前返回模拟数据
+        
+        # 模拟数据:不同位置的形态统计
+        position_stats = {
+            "high": {
+                "count": 178,
+                "success_rate": 0.82,
+                "avg_return": -0.042,
+                "best_stock": "600519",
+                "worst_stock": "300750"
+            },
+            "middle": {
+                "count": 226,
+                "success_rate": 0.68,
+                "avg_return": -0.028,
+                "best_stock": "000333",
+                "worst_stock": "601888"
+            },
+            "low": {
+                "count": 62,
+                "success_rate": 0.38,
+                "avg_return": 0.012,
+                "best_stock": "601398",
+                "worst_stock": "002594"
+            }
+        }
+        
+        # 模拟数据:成交量特征统计
+        volume_stats = {
+            "increasing": {
+                "count": 245,
+                "success_rate": 0.85,
+                "avg_return": -0.038
+            },
+            "decreasing": {
+                "count": 132,
+                "success_rate": 0.62,
+                "avg_return": -0.022
+            },
+            "neutral": {
+                "count": 89,
+                "success_rate": 0.58,
+                "avg_return": -0.018
+            }
+        }
+        
+        # 模拟数据:均线突破统计
+        ma_stats = {
+            "ma5_broken": {
+                "count": 312,
+                "success_rate": 0.76,
+                "avg_return": -0.033
+            },
+            "ma20_broken": {
+                "count": 228,
+                "success_rate": 0.81,
+                "avg_return": -0.042
+            },
+            "ma60_broken": {
+                "count": 96,
+                "success_rate": 0.88,
+                "avg_return": -0.056
+            },
+            "no_ma_break": {
+                "count": 52,
+                "success_rate": 0.45,
+                "avg_return": -0.012
+            }
+        }
+        
+        # 模拟数据:指标共振统计
+        indicator_stats = {
+            "macd_divergence": {
+                "count": 165,
+                "success_rate": 0.86,
+                "avg_return": -0.046
+            },
+            "rsi_overbought": {
+                "count": 203,
+                "success_rate": 0.82,
+                "avg_return": -0.041
+            },
+            "both_confirmed": {
+                "count": 98,
+                "success_rate": 0.91,
+                "avg_return": -0.052
+            }
+        }
+        
+        return {
+            "success": True,
+            "data": {
+                "days": days,
+                "total_patterns_detected": 466,
+                "position_stats": position_stats,
+                "volume_stats": volume_stats,
+                "ma_stats": ma_stats,
+                "indicator_stats": indicator_stats,
+                "stocks_count": 94,
+                "period": f"{(datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')} 至 {datetime.now().strftime('%Y-%m-%d')}"
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取顶部三鸦形态统计数据出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def compute_double_green_parallel_stats(df, strategy, signals):
+    """计算双绿并行形态的位置分布统计"""
+    # 这里是一个简化的实现,实际中需要根据策略的内部实现来计算
+    
+    # 创建模拟统计结果
+    stats = {
+        "high": 0,
+        "middle": 0,
+        "low": 0
+    }
+    
+    # 统计各个位置的数量
+    non_zero_indices = [i for i, s in enumerate(signals) if s != 0]
+    for idx in non_zero_indices:
+        # 这里应该根据策略的内部逻辑确定位置,但我们使用简化的逻辑
+        if idx < len(df) * 0.3:
+            stats["low"] += 1
+        elif idx < len(df) * 0.7:
+            stats["middle"] += 1
+        else:
+            stats["high"] += 1
+    
+    return stats 

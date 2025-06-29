@@ -1,0 +1,152 @@
+// 主导航配置文件 - 统一所有导航路径
+const mainNavigationRoutes = {
+  // 主要路由
+  home: '/pages/index/index',
+  aiTrading: '/pages/agent-analysis/index',
+  tradingCenter: '/pages/trade/index',
+  t0Trading: '/pages/auto-trader/index',
+  tTrading: '/pages/t-trading/index',
+  portfolio: '/pages/portfolio/index',
+  indicators: '/pages/indicators/index',
+  
+  // 子页面
+  aiLearning: '/pages/agent-analysis/learning/index',
+  strategyAnalysis: '/pages/strategy-analysis/index',
+  tradeHistory: '/pages/trade-history/index',
+  tradeSettings: '/pages/trade-settings/index'
+};
+
+// 导航标题映射
+const navigationTitles = {
+  aiTrading: 'AI智能交易',
+  tradingCenter: '交易中心',
+  t0Trading: 'T+0交易',
+  tTrading: 'T交易策略',
+  portfolio: '我的持仓',
+  indicators: '技术指标',
+  strategyAnalysis: '策略分析',
+  tradeHistory: '交易历史',
+  tradeSettings: '交易设置'
+};
+
+// 主要标签页路由,用于检测是否应使用switchTab而非navigateTo
+const tabBarRoutes = [
+  '/pages/index/index',
+  '/pages/agent-analysis/index',
+  '/pages/trade/index',
+  '/pages/auto-trader/index',
+  '/pages/t-trading/index',
+  '/pages/portfolio/index'
+];
+
+// 增强型导航方法,包含多重尝试和错误处理
+export function navigateTo(route) {
+  // 显示加载中提示
+  uni.showLoading({
+    title: '正在加载...'
+  });
+
+  // 如果路由不存在,记录错误并返回
+  if (!mainNavigationRoutes[route]) {
+    console.error(`路由 ${route} 未定义`);
+    uni.hideLoading();
+    uni.showToast({
+      title: '页面不存在',
+      icon: 'none'
+    });
+    return;
+  }
+  
+  const url = mainNavigationRoutes[route];
+  
+  // 检查是否是标签页路由
+  const isTabPage = tabBarRoutes.includes(url);
+  
+  try {
+    // 首先尝试使用正确的导航方式
+    if (isTabPage) {
+      uni.switchTab({
+        url: url,
+        success: () => {
+          console.log(`成功导航到标签页: ${url}`);
+          uni.hideLoading();
+        },
+        fail: (err) => {
+          console.error(`switchTab 失败: ${JSON.stringify(err)}`);
+          // 如果switchTab失败,尝试使用navigateTo
+          fallbackNavigate(url);
+        }
+      });
+    } else {
+      uni.navigateTo({
+        url: url,
+        success: () => {
+          console.log(`成功导航到页面: ${url}`);
+          uni.hideLoading();
+        },
+        fail: (err) => {
+          console.error(`navigateTo 失败: ${JSON.stringify(err)}`);
+          // 如果navigateTo失败,尝试后备方案
+          fallbackNavigate(url);
+        }
+      });
+    }
+  } catch (e) {
+    console.error(`导航异常: ${e.message}`);
+    fallbackNavigate(url);
+  }
+}
+
+// 后备导航方法,尝试多种导航方式
+function fallbackNavigate(url) {
+  // 尝试重定向
+  uni.redirectTo({
+    url: url,
+    success: () => {
+      console.log(`使用redirectTo成功导航到: ${url}`);
+      uni.hideLoading();
+    },
+    fail: (redirectErr) => {
+      console.error(`redirectTo 失败: ${JSON.stringify(redirectErr)}`);
+      
+      // 最后尝试reLaunch
+      uni.reLaunch({
+        url: url,
+        success: () => {
+          console.log(`使用reLaunch成功导航到: ${url}`);
+          uni.hideLoading();
+        },
+        fail: (reLaunchErr) => {
+          console.error(`reLaunch 失败: ${JSON.stringify(reLaunchErr)}`);
+          uni.hideLoading();
+          
+          // 所有导航方法都失败,显示错误提示
+          uni.showToast({
+            title: '页面跳转失败',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+      });
+    }
+  });
+}
+
+export function switchTab(route) {
+  // 这个方法保留用于特定情况下明确需要使用switchTab
+  if (!mainNavigationRoutes[route]) {
+    console.error(`路由 ${route} 未定义`);
+    return;
+  }
+  
+  uni.switchTab({
+    url: mainNavigationRoutes[route],
+    fail: (err) => {
+      console.error(`switchTab 失败: ${JSON.stringify(err)}`);
+      // 切换失败时尝试使用增强导航
+      navigateTo(route);
+    }
+  });
+}
+
+export { mainNavigationRoutes, navigationTitles }; 

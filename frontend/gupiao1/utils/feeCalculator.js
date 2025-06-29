@@ -1,0 +1,130 @@
+/**
+ * 交易费用计算工具
+ * 通过分析交易记录和账户余额变化,计算各种交易费用(印花税,佣金等)
+ */
+
+/**
+ * 计算交易费用
+ * @param {Object} trade - 交易记录对象
+ * @param {number} balanceChange - 账户余额变化值(正数表示增加,负数表示减少)
+ * @returns {Object} 交易费用明细
+ */
+export const calculateTransactionFees = (trade, balanceChange) => {
+  // 交易方向判断
+  const isBuy = trade.direction && trade.direction.toUpperCase() === 'BUY';
+  
+  // 交易金额 = 价格 * 成交数量
+  const tradeAmount = trade.price * trade.volume;
+  
+  // 预期余额变化(买入为负,卖出为正)
+  const expectedChange = isBuy ? -tradeAmount : tradeAmount;
+  
+  // 实际费用 = 实际余额变化 - 预期余额变化
+  // 如果是买入,费用为负的差额;如果是卖出,费用为正的差额
+  const totalFees = isBuy 
+    ? expectedChange - balanceChange 
+    : balanceChange - expectedChange;
+  
+  // 根据交易类型分配费用
+  let stampDuty = 0;
+  let commission = 0;
+  let transferFee = 0;
+  
+  if (isBuy) {
+    // 买入不收印花税,只有佣金和过户费
+    commission = totalFees * 0.85; // 假设佣金占总费用的85%
+    transferFee = totalFees * 0.15; // 假设过户费占总费用的15%
+  } else {
+    // 卖出收取印花税,佣金和过户费
+    stampDuty = tradeAmount * 0.001; // 印花税为成交金额的0.1%
+    commission = (totalFees - stampDuty) * 0.9; // 佣金占剩余费用的90%
+    transferFee = (totalFees - stampDuty) * 0.1; // 过户费占剩余费用的10%
+  }
+  
+  return {
+    totalFees,
+    stampDuty,
+    commission,
+    transferFee
+  };
+};
+
+/**
+ * 估算交易费用(不依赖实际余额变化)
+ * @param {string} direction - 交易方向('BUY'或'SELL')
+ * @param {number} price - 交易价格
+ * @param {number} volume - 交易数量
+ * @returns {Object} 交易费用明细
+ */
+export const estimateTransactionFees = (direction, price, volume) => {
+  const isBuy = direction && direction.toUpperCase() === 'BUY';
+  const tradeAmount = price * volume;
+  
+  let stampDuty = 0;
+  let commission = 0;
+  let transferFee = 0;
+  let totalFees = 0;
+  
+  // 佣金费率(一般为成交金额的0.0003,最低5元)
+  const commissionRate = 0.0003;
+  const commissionMin = 5;
+  
+  // 过户费费率(上交所为成交金额的0.00002,最低1元)
+  const transferFeeRate = 0.00002;
+  const transferFeeMin = 1;
+  
+  // 计算佣金
+  commission = Math.max(tradeAmount * commissionRate, commissionMin);
+  
+  // 计算过户费(仅上海市场收取)
+  const isShanghai = /^6\d{5}$/.test(String(price).split('.')[0]);
+  if (isShanghai) {
+    transferFee = Math.max(tradeAmount * transferFeeRate, transferFeeMin);
+  }
+  
+  // 印花税(仅卖出收取,为成交金额的0.001)
+  if (!isBuy) {
+    stampDuty = tradeAmount * 0.001;
+  }
+  
+  totalFees = commission + transferFee + stampDuty;
+  
+  return {
+    totalFees,
+    stampDuty,
+    commission,
+    transferFee,
+    tradeAmount
+  };
+};
+
+/**
+ * 获取费用描述文本
+ * @param {Object} fees - 费用对象
+ * @returns {string} 费用描述文本
+ */
+export const getFeeDescription = (fees) => {
+  if (!fees) return '无费用信息';
+  
+  const items = [];
+  
+  if (fees.stampDuty > 0) {
+    items.push(`印花税: ${fees.stampDuty.toFixed(2)}元`);
+  }
+  
+  if (fees.commission > 0) {
+    items.push(`佣金: ${fees.commission.toFixed(2)}元`);
+  }
+  
+  if (fees.transferFee > 0) {
+    items.push(`过户费: ${fees.transferFee.toFixed(2)}元`);
+  }
+  
+  return items.join(',') || '无费用信息';
+};
+
+export default {
+  calculateTransactionFees,
+  estimateTransactionFees,
+  getFeeDescription
+}; 

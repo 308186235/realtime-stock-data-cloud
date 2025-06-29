@@ -1,0 +1,75 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "uvx",
+      "args": ["context7-mcp-server@latest"],
+      "priority": 1,
+      "description": "Context7 MCP Server - 精准代码生成,实时获取最新库文档",
+      "autoApprove": ["get-library-docs", "resolve-library-id"]
+    },
+    "feedback-enhanced": {
+      "command": "uvx",
+      "args": ["mcp-feedback-enhanced@latest"],
+      "priority": 2,
+      "description": "交互效率革命 - 通过用户反馈压缩多轮对话",
+      "autoApprove": "interactive_feedback"
+    },
+    "browsertools": {
+      "command": "uvx",
+      "args": ["browsertools-mcp@latest"],
+      "priority": 3,
+      "description": "可视化调试 - 直接控制浏览器进行UI调试",
+      "autoApprove": ["screenshot", "navigate", "click"]
+    },
+    "database-migration": {
+      "command": "uvx",
+      "args": ["database-migration-mcp@latest"],
+      "priority": 4,
+      "description": "数据库迁移自动化",
+      "env": {
+        "DB_SOURCE": "postgresql://localhost:5432/source_db",
+        "DB_TARGET": "mysql://localhost:3306/target_db"
+      }
+    },
+    "code-review": {
+      "command": "uvx",
+      "args": ["code-review-mcp@latest"],
+      "priority": 5,
+      "description": "自动化代码审查",
+      "autoApprove": ["analyze-code", "suggest-improvements"]
+    },
+    "test-generator": {
+      "command": "uvx",
+      "args": ["test-generator-mcp@latest"],
+      "priority": 6,
+      "description": "智能测试用例生成",
+      "autoApprove": ["generate-tests", "run-tests"]
+    },
+    "documentation": {
+      "command": "uvx",
+      "args": ["documentation-mcp@latest"],
+      "priority": 7,
+      "description": "API文档自动生成",
+      "autoApprove": ["generate-docs", "update-docs"]
+    },
+    "security-audit": {
+      "command": "uvx",
+      "args": ["security-audit-mcp@latest"],
+      "priority": 8,
+      "description": "安全漏洞扫描",
+      "autoApprove": ["scan-vulnerabilities", "security-report"]
+    }
+  },
+  "globalSettings": {
+    "logLevel": "info",
+    "timeout": 30000,
+    "retryAttempts": 3,
+    "cacheEnabled": true,
+    "cacheTTL": 86400
+  },
+  "systemPrompts": {
+    "codeGeneration": "执行多步骤任务前必须调用Context7工具确认最新API文档。根据用户反馈调整行为,直至明确结束指令。",
+    "debugging": "使用BrowserTools进行UI问题诊断时,先截图分析再进行交互操作。",
+    "testing": "编写代码后必须使用test-generator生成测试用例并执行验证。"
+  }
+}

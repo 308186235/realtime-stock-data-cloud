@@ -1,0 +1,545 @@
+<template>
+    <view class="container">
+        <view class="header">
+            <text class="title">交易历史</text>
+            <text class="subtitle">查看和分析您的历史交易记录</text>
+        </view>
+        
+        <!-- 交易统计 -->
+        <view class="section">
+            <view class="section-header">
+                <text class="section-title">交易统计</text>
+                <picker @change="changeDateRange" :value="dateRangeIndex" :range="dateRanges">
+                    <view class="picker">{{ dateRanges[dateRangeIndex] }}</view>
+                </picker>
+            </view>
+            
+            <view class="stats-cards">
+                <view class="stat-card">
+                    <text class="stat-label">总交易笔数</text>
+                    <text class="stat-value">{{ stats.totalTrades }}</text>
+                </view>
+                <view class="stat-card">
+                    <text class="stat-label">盈利交易</text>
+                    <text class="stat-value profit">{{ stats.profitTrades }}</text>
+                </view>
+                <view class="stat-card">
+                    <text class="stat-label">亏损交易</text>
+                    <text class="stat-value loss">{{ stats.lossTrades }}</text>
+                </view>
+                <view class="stat-card">
+                    <text class="stat-label">胜率</text>
+                    <text class="stat-value">{{ stats.winRate }}%</text>
+                </view>
+            </view>
+            
+            <view class="profit-summary">
+                <view class="summary-item">
+                    <text class="summary-label">总盈亏</text>
+                    <text :class="['summary-value', stats.totalProfit >= 0 ? 'profit' : 'loss']">
+                        {{ stats.totalProfit >= 0 ? '+' : '' }}{{ stats.totalProfit }}元
+                    </text>
+                </view>
+                <view class="summary-item">
+                    <text class="summary-label">平均收益率</text>
+                    <text :class="['summary-value', stats.avgReturn >= 0 ? 'profit' : 'loss']">
+                        {{ stats.avgReturn >= 0 ? '+' : '' }}{{ stats.avgReturn }}%
+                    </text>
+                </view>
+            </view>
+            
+            <view class="agent-analysis-button" @click="navigateToAIAnalysis">
+                <text class="agent-analysis-text">AI学习分析</text>
+                <text class="agent-analysis-icon">🧠</text>
+            </view>
+        </view>
+        
+        <!-- 交易记录筛选 -->
+        <view class="section">
+            <view class="section-header">
+                <text class="section-title">交易记录</text>
+            </view>
+            
+            <view class="filter-bar">
+                <view class="filter-group">
+                    <text class="filter-label">类型</text>
+                    <view class="filter-options">
+                        <text class="filter-option" :class="{active: tradeType === 'all'}" @click="tradeType = 'all'">全部</text>
+                        <text class="filter-option" :class="{active: tradeType === 'buy'}" @click="tradeType = 'buy'">买入</text>
+                        <text class="filter-option" :class="{active: tradeType === 'sell'}" @click="tradeType = 'sell'">卖出</text>
+                    </view>
+                </view>
+                
+                <view class="filter-group">
+                    <text class="filter-label">结果</text>
+                    <view class="filter-options">
+                        <text class="filter-option" :class="{active: profitFilter === 'all'}" @click="profitFilter = 'all'">全部</text>
+                        <text class="filter-option" :class="{active: profitFilter === 'profit'}" @click="profitFilter = 'profit'">盈利</text>
+                        <text class="filter-option" :class="{active: profitFilter === 'loss'}" @click="profitFilter = 'loss'">亏损</text>
+                    </view>
+                </view>
+            </view>
+        </view>
+        
+        <!-- 交易记录列表 -->
+        <view class="trade-list">
+            <view v-if="filteredTrades.length === 0" class="empty-tip">
+                <text class="empty-text">没有符合条件的交易记录</text>
+            </view>
+            
+            <view v-else class="trade-item" v-for="(item, index) in filteredTrades" :key="index" @click="showTradeDetail(item)">
+                <view class="trade-header">
+                    <view class="stock-info">
+                        <text class="stock-code">{{ item.code }}</text>
+                        <text class="stock-name">{{ item.name }}</text>
+                    </view>
+                    <text :class="['trade-profit', item.profit >= 0 ? 'profit' : 'loss']">
+                        {{ item.profit >= 0 ? '+' : '' }}{{ item.profit }}元
+                    </text>
+                </view>
+                
+                <view class="trade-details">
+                    <view class="detail-row">
+                        <text class="detail-label">{{ item.type === 'buy' ? '买入价' : '卖出价' }}</text>
+                        <text class="detail-value">{{ item.price }}元</text>
+                    </view>
+                    <view class="detail-row">
+                        <text class="detail-label">数量</text>
+                        <text class="detail-value">{{ item.quantity }}股</text>
+                    </view>
+                    <view class="detail-row">
+                        <text class="detail-label">交易额</text>
+                        <text class="detail-value">{{ item.amount }}元</text>
+                    </view>
+                </view>
+                
+                <view class="trade-footer">
+                    <text class="trade-type" :class="item.type">{{ item.type === 'buy' ? '买入' : '卖出' }}</text>
+                    <text class="trade-time">{{ item.time }}</text>
+                </view>
+            </view>
+        </view>
+    </view>
+</template>
+
+<script>
+export default {
+    data() {
+        return {
+            // 日期范围选择
+            dateRanges: ['最近一周', '最近一月', '最近三月', '全部'],
+            dateRangeIndex: 0,
+            
+            // 筛选条件
+            tradeType: 'all',
+            profitFilter: 'all',
+            
+            // 统计数据
+            stats: {
+                totalTrades: 28,
+                profitTrades: 18,
+                lossTrades: 10,
+                winRate: 64.3,
+                totalProfit: 5280.75,
+                avgReturn: 3.2
+            },
+            
+            // 交易记录
+            trades: [
+                {
+                    id: 1,
+                    code: 'SH600519',
+                    name: '贵州茅台',
+                    type: 'buy',
+                    price: 1789.50,
+                    quantity: 10,
+                    amount: 17895.00,
+                    profit: 0,
+                    time: '2023-05-15 10:23:45'
+                },
+                {
+                    id: 2,
+                    code: 'SH600519',
+                    name: '贵州茅台',
+                    type: 'sell',
+                    price: 1825.30,
+                    quantity: 10,
+                    amount: 18253.00,
+                    profit: 358.00,
+                    time: '2023-05-18 14:35:22'
+                },
+                {
+                    id: 3,
+                    code: 'SZ000858',
+                    name: '五粮液',
+                    type: 'buy',
+                    price: 168.75,
+                    quantity: 100,
+                    amount: 16875.00,
+                    profit: 0,
+                    time: '2023-05-20 09:45:12'
+                },
+                {
+                    id: 4,
+                    code: 'SZ000858',
+                    name: '五粮液',
+                    type: 'sell',
+                    price: 165.20,
+                    quantity: 100,
+                    amount: 16520.00,
+                    profit: -355.00,
+                    time: '2023-05-22 15:10:33'
+                },
+                {
+                    id: 5,
+                    code: 'SH601318',
+                    name: '中国平安',
+                    type: 'buy',
+                    price: 48.32,
+                    quantity: 500,
+                    amount: 24160.00,
+                    profit: 0,
+                    time: '2023-05-25 11:05:18'
+                },
+                {
+                    id: 6,
+                    code: 'SH601318',
+                    name: '中国平安',
+                    type: 'sell',
+                    price: 51.75,
+                    quantity: 500,
+                    amount: 25875.00,
+                    profit: 1715.00,
+                    time: '2023-06-02 10:18:42'
+                }
+            ]
+        }
+    },
+    computed: {
+        filteredTrades() {
+            return this.trades.filter(trade => {
+                // 根据交易类型筛选
+                if (this.tradeType !== 'all' && trade.type !== this.tradeType) {
+                    return false
+                }
+                
+                // 根据盈亏筛选
+                if (this.profitFilter === 'profit' && trade.profit <= 0) {
+                    return false
+                }
+                
+                if (this.profitFilter === 'loss' && trade.profit >= 0) {
+                    return false
+                }
+                
+                return true
+            })
+        }
+    },
+    methods: {
+        // 切换日期范围
+        changeDateRange(e) {
+            this.dateRangeIndex = e.detail.value
+            this.updateStats()
+        },
+        
+        // 更新统计数据
+        updateStats() {
+            // 根据选择的日期范围更新统计数据
+            // 这里使用模拟数据
+            const ranges = [
+                { totalTrades: 28, profitTrades: 18, lossTrades: 10, winRate: 64.3, totalProfit: 5280.75, avgReturn: 3.2 },
+                { totalTrades: 52, profitTrades: 30, lossTrades: 22, winRate: 57.7, totalProfit: 8750.25, avgReturn: 2.8 },
+                { totalTrades: 87, profitTrades: 48, lossTrades: 39, winRate: 55.2, totalProfit: 12580.50, avgReturn: 2.5 },
+                { totalTrades: 156, profitTrades: 89, lossTrades: 67, winRate: 57.1, totalProfit: 25680.80, avgReturn: 2.7 }
+            ]
+            
+            this.stats = ranges[this.dateRangeIndex]
+        },
+        
+        // 显示交易详情
+        showTradeDetail(trade) {
+            uni.showModal({
+                title: `${trade.type === 'buy' ? '买入' : '卖出'}详情`,
+                content: `股票: ${trade.name} (${trade.code})\n价格: ${trade.price}元\n数量: ${trade.quantity}股\n金额: ${trade.amount}元\n时间: ${trade.time}\n${trade.type === 'sell' ? '盈亏: ' + (trade.profit >= 0 ? '+' : '') + trade.profit + '元' : ''}`,
+                showCancel: false
+            })
+        },
+        
+        // 导航到AI学习分析页面
+        navigateToAIAnalysis() {
+            uni.navigateTo({
+                url: '/pages/agent-analysis/learning/index'
+            })
+        }
+    },
+    onLoad() {
+        // 初始化数据
+        this.updateStats()
+    }
+}
+</script>
+
+<style>
+.container {
+    padding: 30rpx;
+}
+
+.header {
+    padding: 20rpx 0;
+    margin-bottom: 30rpx;
+}
+
+.title {
+    font-size: 36rpx;
+    font-weight: bold;
+    margin-bottom: 10rpx;
+}
+
+.subtitle {
+    font-size: 24rpx;
+    color: #666;
+}
+
+.section {
+    margin-bottom: 30rpx;
+    background-color: #fff;
+    border-radius: 12rpx;
+    padding: 20rpx;
+    box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.section-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20rpx;
+}
+
+.section-title {
+    font-size: 28rpx;
+    font-weight: bold;
+}
+
+.picker {
+    font-size: 24rpx;
+    color: #1989fa;
+}
+
+/* 统计卡片样式 */
+.stats-cards {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 20rpx;
+}
+
+.stat-card {
+    width: 25%;
+    padding: 10rpx;
+    align-items: center;
+}
+
+.stat-label {
+    font-size: 22rpx;
+    color: #666;
+    margin-bottom: 10rpx;
+}
+
+.stat-value {
+    font-size: 32rpx;
+    font-weight: bold;
+}
+
+.profit-summary {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 20rpx 0;
+    border-top: 1px solid #f0f0f0;
+}
+
+.summary-item {
+    align-items: center;
+}
+
+.summary-label {
+    font-size: 24rpx;
+    color: #666;
+    margin-bottom: 10rpx;
+}
+
+.summary-value {
+    font-size: 34rpx;
+    font-weight: bold;
+}
+
+/* 筛选栏样式 */
+.filter-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 10rpx 0;
+}
+
+.filter-group {
+    flex: 1;
+}
+
+.filter-label {
+    font-size: 24rpx;
+    color: #666;
+    margin-bottom: 10rpx;
+}
+
+.filter-options {
+    display: flex;
+    flex-direction: row;
+}
+
+.filter-option {
+    padding: 8rpx 20rpx;
+    font-size: 24rpx;
+    background-color: #f5f5f5;
+    margin-right: 10rpx;
+    border-radius: 30rpx;
+}
+
+.filter-option.active {
+    background-color: #1989fa;
+    color: white;
+}
+
+/* 交易记录列表样式 */
+.trade-list {
+    margin-top: 20rpx;
+}
+
+.trade-item {
+    background-color: #fff;
+    border-radius: 12rpx;
+    padding: 20rpx;
+    margin-bottom: 20rpx;
+    box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.trade-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15rpx;
+}
+
+.stock-info {
+    flex-direction: column;
+}
+
+.stock-code {
+    font-size: 24rpx;
+    color: #666;
+}
+
+.stock-name {
+    font-size: 28rpx;
+    font-weight: bold;
+}
+
+.trade-profit {
+    font-size: 32rpx;
+    font-weight: bold;
+}
+
+.trade-details {
+    padding: 15rpx 0;
+    border-top: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 15rpx;
+}
+
+.detail-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    margin-bottom: 10rpx;
+}
+
+.detail-label {
+    font-size: 24rpx;
+    color: #666;
+}
+
+.detail-value {
+    font-size: 24rpx;
+}
+
+.trade-footer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.trade-type {
+    padding: 4rpx 12rpx;
+    font-size: 22rpx;
+    border-radius: 4rpx;
+}
+
+.trade-type.buy {
+    background-color: #e6f7ff;
+    color: #1989fa;
+}
+
+.trade-type.sell {
+    background-color: #fff2e8;
+    color: #fa8c16;
+}
+
+.trade-time {
+    font-size: 22rpx;
+    color: #999;
+}
+
+.profit {
+    color: #f5222d;
+}
+
+.loss {
+    color: #52c41a;
+}
+
+.empty-tip {
+    padding: 50rpx;
+    align-items: center;
+}
+
+.empty-text {
+    font-size: 26rpx;
+    color: #999;
+}
+
+.agent-analysis-button {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    background-color: #f0f7ff;
+    padding: 15rpx;
+    margin-top: 20rpx;
+    border-radius: 8rpx;
+    border: 1px dashed #1989fa;
+}
+
+.agent-analysis-text {
+    font-size: 28rpx;
+    color: #1989fa;
+    font-weight: bold;
+}
+
+.agent-analysis-icon {
+    font-size: 30rpx;
+    margin-left: 10rpx;
+}
+</style> 

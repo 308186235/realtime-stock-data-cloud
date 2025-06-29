@@ -1,0 +1,78 @@
+# Visualization Utilities
+
+This module provides visualization tools for strategy performance analysis and optimization results.
+
+## Overview
+
+The visualization utilities generate various charts and graphs to help users understand trading strategy performance, optimization results, and parameter sensitivity. These charts are encoded as base64 strings that can be embedded in web pages or API responses.
+
+## Available Chart Types
+
+### Strategy Performance Chart
+
+Generates a comprehensive performance chart for a trading strategy, including:
+- Price chart with buy/sell signals
+- Returns distribution histogram
+- Cumulative returns comparison (strategy vs buy & hold)
+- Performance metrics summary
+
+### Parameter Sensitivity Chart
+
+Analyzes how changes to a specific strategy parameter affect various performance metrics:
+- Win rate
+- Profit factor
+- Sharpe ratio
+- Total return
+
+This helps users understand which parameters have the most impact on strategy performance and identify optimal parameter ranges.
+
+### Optimization Comparison Chart
+
+Compares the performance of the original strategy with the optimized version across key metrics:
+- Win rate
+- Profit factor
+- Sharpe ratio
+- Total return
+- Maximum drawdown
+
+Each metric shows the percentage improvement achieved through optimization.
+
+## Usage
+
+The visualization utilities are used by the strategy optimizer to generate performance charts included in optimization results.
+
+### API Request
+
+To include visualization charts in optimization results, set the `include_charts` parameter to `true` in the optimization request:
+
+```json
+{
+  "strategy_id": "ma_cross",
+  "stock_code": "000001.SZ",
+  "include_charts": true
+}
+```
+
+### Response Format
+
+When charts are included, the response will contain a `charts` object with base64-encoded images:
+
+```json
+{
+  "strategy_id": "ma_cross",
+  "stock_code": "000001.SZ",
+  "optimized_parameters": { ... },
+  "expected_performance": { ... },
+  "charts": {
+    "performance": "base64_encoded_image",
+    "comparison": "base64_encoded_image",
+    "sensitivity": {
+      "param1": "base64_encoded_image",
+      "param2": "base64_encoded_image",
+      ...
+    }
+  }
+}
+```
+
+These base64-encoded images can be displayed in the frontend by setting the `src` attribute of an `<img>` tag to `data:image/png;base64,{base64_string}`. 

@@ -1,0 +1,823 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">T Trading Strategy</text>
+      <view class="subtitle">
+        <text>Utilize T+1 system to reduce position costs through intraday trading</text>
+      </view>
+    </view>
+
+    <!-- Control Panel Section -->
+    <view class="control-panel">
+      <view class="panel">
+        <view class="panel-title">
+          <text>Trading Day Control</text>
+        </view>
+        <view class="panel-body">
+          <view class="field">
+            <text class="field-label">Current Date</text>
+            <text class="field-value">{{ currentDate }}</text>
+          </view>
+          <view class="action-buttons">
+            <button class="btn" :disabled="isTrading" @click="startTradingDay">Start Trading</button>
+            <button class="btn btn-warning" :disabled="!isTrading" @click="endTradingDay">End Trading</button>
+          </view>
+        </view>
+      </view>
+
+      <view class="panel">
+        <view class="panel-title">
+          <text>Daily Statistics</text>
+        </view>
+        <view class="panel-body">
+          <view class="field">
+            <text class="field-label">Trade Count</text>
+            <text class="field-value">{{ dailyStats.trades || 0 }}</text>
+          </view>
+          <view class="field">
+            <text class="field-label">Successful Trades</text>
+            <text class="field-value">{{ dailyStats.successful || 0 }}</text>
+          </view>
+          <view class="field">
+            <text class="field-label">Profit Amount</text>
+            <text class="field-value" :class="{'profit': dailyStats.profit > 0, 'loss': dailyStats.profit < 0}">
+              {{ formatMoney(dailyStats.profit || 0) }}
+            </text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Stock Selection -->
+    <view class="panel stock-selector">
+      <view class="panel-title">
+        <text>Select Stock</text>
+      </view>
+      <view class="panel-body">
+        <view class="field-row">
+          <text class="field-label">Stock Code</text>
+          <input type="text" v-model="selectedStock.code" placeholder="Enter stock code" @blur="fetchStockData"/>
+        </view>
+        <view class="field-row">
+          <text class="field-label">Stock Name</text>
+          <input type="text" v-model="selectedStock.name" placeholder="Stock name" disabled/>
+        </view>
+        <view class="field-row">
+          <text class="field-label">Position Size</text>
+          <input type="number" v-model="selectedStock.basePosition" placeholder="Enter base position size"/>
+        </view>
+        <view class="field-row">
+          <text class="field-label">Position Cost</text>
+          <input type="number" v-model="selectedStock.baseCost" placeholder="Enter position cost"/>
+        </view>
+      </view>
+    </view>
+
+    <!-- Market Data -->
+    <view class="panel" v-if="stockInfo.code">
+      <view class="panel-title">
+        <text>{{ stockInfo.code }} {{ stockInfo.name }} Market Data</text>
+        <text class="refresh-btn" @click="fetchStockData">Refresh</text>
+      </view>
+      <view class="panel-body">
+        <view class="price-box">
+          <text class="current-price" :class="{'price-up': stockInfo.priceChange > 0, 'price-down': stockInfo.priceChange < 0}">
+            {{ stockInfo.currentPrice }}
+          </text>
+          <view class="price-change">
+            <text :class="{'price-up': stockInfo.priceChange > 0, 'price-down': stockInfo.priceChange < 0}">
+              {{ stockInfo.priceChange > 0 ? '+' : '' }}{{ stockInfo.priceChange }}
+              ({{ stockInfo.priceChangePercent }}%)
+            </text>
+          </view>
+        </view>
+        
+        <view class="market-info">
+          <view class="info-row">
+            <view class="info-item">
+              <text class="info-label">Open</text>
+              <text class="info-value">{{ stockInfo.open }}</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">High</text>
+              <text class="info-value">{{ stockInfo.high }}</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">Low</text>
+              <text class="info-value">{{ stockInfo.low }}</text>
+            </view>
+          </view>
+          <view class="info-row">
+            <view class="info-item">
+              <text class="info-label">Volume</text>
+              <text class="info-value">{{ formatVolume(stockInfo.volume) }}</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">Amplitude</text>
+              <text class="info-value">{{ stockInfo.amplitude }}%</text>
+            </view>
+            <view class="info-item">
+              <text class="info-label">Turnover</text>
+              <text class="info-value">{{ stockInfo.turnoverRate }}%</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Trading Opportunity Evaluation -->
+    <view class="panel" v-if="stockInfo.code">
+      <view class="panel-title">
+        <text>Trading Opportunity Evaluation</text>
+        <view class="ai-badge" v-if="opportunity && opportunity.evaluation_method === 'ai'">
+          <view class="ai-icon">AI</view>
+          <view class="confidence-meter">
+            <view 
+              class="confidence-bar" 
+              :style="{width: `${(opportunity.ai_confidence || 0) * 100}%`}"
+              :class="{
+                'high': opportunity.ai_confidence > 0.75,
+                'medium': opportunity.ai_confidence <= 0.75 && opportunity.ai_confidence >= 0.6,
+                'low': opportunity.ai_confidence < 0.6
+              }"
+            ></view>
+          </view>
+        </view>
+      </view>
+      <view class="panel-body">
+        <view class="buttons">
+          <button @click="evaluateOpportunity" :disabled="loading">
+            <text class="icon">🔍</text>
+            <text>{{ loading ? 'Analyzing...' : 'Evaluate Opportunity' }}</text>
+          </button>
+        </view>
+        
+        <view class="result" v-if="opportunity">
+          <view class="result-box" :class="{ 'has-opportunity': opportunity.has_opportunity }">
+            <view class="result-header">
+              <text class="result-title">AI Analysis Result</text>
+              <text class="result-time">{{ lastUpdated || 'Now' }}</text>
+            </view>
+            
+            <view class="result-message">{{ opportunity.message }}</view>
+            
+            <view class="result-details" v-if="opportunity.has_opportunity">
+              <view class="detail-item">
+                <text class="detail-label">Recommended Action</text>
+                <text class="detail-value">{{ opportunity.mode === 'positive' ? 'Positive T (Buy first)' : 'Negative T (Sell first)' }}</text>
+              </view>
+              
+              <view class="detail-item">
+                <text class="detail-label">Suggested Quantity</text>
+                <text class="detail-value">{{ opportunity.suggested_quantity }} shares</text>
+              </view>
+              
+              <view class="detail-item" v-if="opportunity.evaluation_method === 'ai'">
+                <text class="detail-label">Confidence</text>
+                <text class="detail-value confidence" :class="getConfidenceClass(opportunity.ai_confidence)">
+                  {{ (opportunity.ai_confidence * 100).toFixed(0) }}%
+                </text>
+              </view>
+              
+              <view class="detail-item" v-if="opportunity.volatility">
+                <text class="detail-label">Volatility</text>
+                <text class="detail-value">{{ (opportunity.volatility * 100).toFixed(2) }}%</text>
+              </view>
+              
+              <view class="ai-decision-panel" v-if="opportunity.evaluation_method === 'ai' && opportunity.has_opportunity">
+                <view class="ai-decision-header">
+                  <view class="ai-decision-icon">🤖</view>
+                  <text class="ai-decision-title">AI Trading Decision</text>
+                </view>
+                
+                <view class="ai-decision-body">
+                  <text class="ai-decision-message">
+                    AI recommends {{ opportunity.mode === 'positive' ? 'buying' : 'selling' }} {{ opportunity.suggested_quantity }} shares of {{ stockInfo.name }}
+                    {{ opportunity.mode === 'positive' ? ', to sell later when price rises' : ', to buy back later when price drops' }}
+                  </text>
+                  
+                  <view class="expected-impact" v-if="opportunity.expected_cost_impact">
+                    <text class="impact-title">Expected Cost Reduction: {{ opportunity.expected_cost_impact.reduction_percentage.toFixed(2) }}%</text>
+                  </view>
+                </view>
+              </view>
+              
+              <view class="action-buttons">
+                <button class="action-btn" 
+                  :class="{'buy': opportunity.mode === 'positive', 'sell': opportunity.mode === 'negative'}"
+                  @click="executeTrade(opportunity.mode === 'positive' ? 'buy' : 'sell')">
+                  {{ opportunity.mode === 'positive' ? 'Buy Now' : 'Sell Now' }}
+                </button>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+import { mapState, mapGetters, mapActions } from 'vuex';
+import { formatMoney, formatVolume, formatDate, parseStockCode } from '../../utils/formatters';
+import WebSocketClient from '../../utils/websocket';
+
+export default {
+  data() {
+    return {
+      // Local component state
+      lastUpdated: '',
+      wsClient: null,
+      
+      // Form data
+      selectedStock: {
+        code: '',
+        name: '',
+        basePosition: 0,
+        baseCost: 0
+      }
+    };
+  },
+  
+  computed: {
+    ...mapState({
+      currentDate: state => formatDate(new Date()),
+      dailyStats: state => state.trading.dailyStats,
+      stockInfo: state => state.stocks.currentStock || {
+        code: '',
+        name: '',
+        currentPrice: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        volume: 0,
+        turnoverRate: 0,
+        amplitude: 0,
+        priceChange: 0,
+        priceChangePercent: 0
+      },
+      opportunity: state => state.trading.currentOpportunity,
+      loading: state => state.trading.evaluationLoading
+    }),
+    
+    ...mapGetters({
+      isTrading: 'trading/isTradingActive',
+      isInWatchlist: 'stocks/isInWatchlist',
+      hasActiveOpportunity: 'trading/hasActiveOpportunity',
+      recommendedAction: 'trading/recommendedAction'
+    })
+  },
+  
+  created() {
+    // Initialize
+    this.initTrading();
+    
+    // Setup WebSocket connection
+    this.setupWebSocket();
+  },
+  
+  beforeDestroy() {
+    // Disconnect WebSocket
+    if (this.wsClient) {
+      this.wsClient.disconnect();
+    }
+  },
+  
+  methods: {
+    // Format helpers
+    formatMoney,
+    formatVolume,
+    formatDate,
+    
+    /**
+     * Initialize trading environment
+     */
+    async initTrading() {
+      try {
+        // Load trading status from store
+        await this.loadTradingStatus();
+      } catch (error) {
+        console.error('Failed to initialize trading:', error);
+        uni.showToast({
+          title: 'Failed to initialize trading',
+          icon: 'none'
+        });
+      }
+    },
+    
+    /**
+     * Set up WebSocket connection for real-time data
+     */
+    setupWebSocket() {
+      // Create WebSocket client
+      this.wsClient = new WebSocketClient();
+      
+      // Handle WebSocket events
+      this.wsClient.on('open', () => {
+        console.log('WebSocket connected');
+      });
+      
+      this.wsClient.on('quote', (data) => {
+        // Check if quote is for current stock
+        if (data && data.code === this.stockInfo.code) {
+          // Update stock info via store
+          this.setCurrentStock({
+            ...this.stockInfo,
+            currentPrice: data.price,
+            priceChange: (data.price - this.stockInfo.open).toFixed(2),
+            priceChangePercent: ((data.price - this.stockInfo.open) / this.stockInfo.open * 100).toFixed(2)
+          });
+        }
+      });
+      
+      // Connect
+      this.wsClient.connect().catch(error => {
+        console.error('WebSocket connection failed:', error);
+      });
+    },
+    
+    /**
+     * Subscribe to stock quotes
+     */
+    subscribeToStockUpdates(stockCode) {
+      if (!this.wsClient || !stockCode) return;
+      
+      // Subscribe to quote updates
+      this.wsClient.subscribe('quote', { code: stockCode });
+    },
+    
+    /**
+     * Fetch stock data
+     */
+    async fetchStockData() {
+      if (!this.selectedStock.code) {
+        return;
+      }
+      
+      try {
+        // Standardize stock code format
+        const stockCode = parseStockCode(this.selectedStock.code);
+        if (!stockCode) {
+          uni.showToast({
+            title: 'Invalid stock code',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        // Update selected stock code with standardized format
+        this.selectedStock.code = stockCode;
+        
+        // Fetch stock quote via store
+        const quote = await this.fetchStockQuote(stockCode);
+        
+        if (quote) {
+          // Subscribe to real-time updates
+          this.subscribeToStockUpdates(stockCode);
+          
+          // Update selected stock name
+          this.selectedStock.name = quote.name;
+        }
+      } catch (error) {
+        console.error('Failed to fetch stock data:', error);
+        uni.showToast({
+          title: 'Failed to fetch stock data',
+          icon: 'none'
+        });
+      }
+    },
+    
+    /**
+     * Evaluate T trading opportunity
+     */
+    async evaluateOpportunity() {
+      if (!this.stockInfo.code || !this.selectedStock.basePosition) {
+        uni.showToast({
+          title: 'Please enter stock code and position size',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      try {
+        const stockData = {
+          code: this.stockInfo.code,
+          name: this.stockInfo.name,
+          currentPrice: this.stockInfo.currentPrice,
+          open: this.stockInfo.open,
+          high: this.stockInfo.high,
+          low: this.stockInfo.low,
+          volume: this.stockInfo.volume,
+          basePosition: parseInt(this.selectedStock.basePosition),
+          baseCost: parseFloat(this.selectedStock.baseCost)
+        };
+        
+        // Evaluate opportunity via store
+        await this.evaluateTradingOpportunity(stockData);
+        this.lastUpdated = formatDate(new Date(), true);
+      } catch (error) {
+        console.error('Failed to evaluate opportunity:', error);
+        uni.showToast({
+          title: 'Failed to evaluate opportunity',
+          icon: 'none'
+        });
+      }
+    },
+    
+    /**
+     * Execute trade action
+     */
+    async executeTrade(tradeType) {
+      if (!this.opportunity || !this.opportunity.has_opportunity) {
+        return;
+      }
+      
+      try {
+        // Execute trade via store
+        await this.executeTradingAction({
+          stockInfo: this.stockInfo,
+          tradeType
+        });
+      } catch (error) {
+        console.error('Failed to execute trade:', error);
+        uni.showToast({
+          title: 'Failed to execute trade',
+          icon: 'none'
+        });
+      }
+    },
+    
+    /**
+     * Add current stock to watchlist
+     */
+    addToWatchlist() {
+      if (!this.stockInfo.code) return;
+      
+      this.addStockToWatchlist({
+        code: this.stockInfo.code,
+        name: this.stockInfo.name,
+        lastPrice: this.stockInfo.currentPrice
+      });
+    },
+    
+    /**
+     * Remove current stock from watchlist
+     */
+    removeFromWatchlist() {
+      if (!this.stockInfo.code) return;
+      
+      this.removeStockFromWatchlist(this.stockInfo.code);
+    },
+    
+    /**
+     * Get confidence class based on confidence level
+     */
+    getConfidenceClass(confidence) {
+      if (confidence > 0.75) {
+        return 'high';
+      } else if (confidence >= 0.6) {
+        return 'medium';
+      } else {
+        return 'low';
+      }
+    },
+    
+    // Map Vuex actions
+    ...mapActions({
+      loadTradingStatus: 'trading/loadTradingStatus',
+      startTradingDay: 'trading/startTradingDay',
+      endTradingDay: 'trading/endTradingDay',
+      evaluateTradingOpportunity: 'trading/evaluateOpportunity',
+      executeTradingAction: 'trading/executeTrade',
+      fetchStockQuote: 'stocks/fetchStockQuote',
+      setCurrentStock: 'stocks/setCurrentStock',
+      addStockToWatchlist: 'stocks/addToWatchlist',
+      removeStockFromWatchlist: 'stocks/removeFromWatchlist'
+    })
+  }
+};
+</script>
+
+<style>
+.container {
+  padding: 15px;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #666;
+}
+
+.control-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.panel {
+  background-color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 15px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.panel-title {
+  background-color: #f5f5f5;
+  padding: 12px 15px;
+  font-size: 16px;
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-body {
+  padding: 15px;
+}
+
+.field {
+  margin-bottom: 10px;
+}
+
+.field-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+.field-value {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.field-row {
+  margin-bottom: 15px;
+}
+
+input {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 8px 12px;
+  width: 100%;
+  font-size: 14px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.btn {
+  padding: 8px 15px;
+  border-radius: 5px;
+  font-size: 14px;
+  background-color: #2196f3;
+  color: white;
+}
+
+.btn-warning {
+  background-color: #ff9800;
+}
+
+.stock-selector {
+  margin-bottom: 20px;
+}
+
+.refresh-btn {
+  font-size: 14px;
+  color: #2196f3;
+  cursor: pointer;
+}
+
+.price-box {
+  margin-bottom: 15px;
+  display: flex;
+  align-items: baseline;
+}
+
+.current-price {
+  font-size: 28px;
+  font-weight: bold;
+  margin-right: 10px;
+}
+
+.price-change {
+  font-size: 14px;
+}
+
+.price-up {
+  color: #f44336;
+}
+
+.price-down {
+  color: #4caf50;
+}
+
+.market-info {
+  margin-top: 10px;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 10px;
+}
+
+.info-item {
+  flex: 1;
+}
+
+.info-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 3px;
+}
+
+.info-value {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.buttons {
+  margin-bottom: 15px;
+}
+
+.result {
+  margin-top: 15px;
+}
+
+.result-box {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 15px;
+  background-color: #f9f9f9;
+}
+
+.has-opportunity {
+  border-color: #2196f3;
+  background-color: #e3f2fd;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.result-title {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.result-time {
+  font-size: 12px;
+  color: #666;
+}
+
+.result-message {
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.detail-item {
+  margin-bottom: 10px;
+}
+
+.detail-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 3px;
+}
+
+.detail-value {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.confidence {
+  font-weight: bold;
+}
+
+.confidence.high {
+  color: #4caf50;
+}
+
+.confidence.medium {
+  color: #ff9800;
+}
+
+.confidence.low {
+  color: #f44336;
+}
+
+.ai-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-icon {
+  background-color: #673ab7;
+  color: white;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.confidence-meter {
+  width: 60px;
+  height: 6px;
+  background-color: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.confidence-bar {
+  height: 100%;
+  background-color: #4caf50;
+}
+
+.confidence-bar.medium {
+  background-color: #ff9800;
+}
+
+.confidence-bar.low {
+  background-color: #f44336;
+}
+
+.ai-decision-panel {
+  margin-top: 15px;
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ai-decision-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-decision-icon {
+  font-size: 18px;
+}
+
+.ai-decision-title {
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.expected-impact {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #2196f3;
+}
+
+.action-buttons {
+  margin-top: 15px;
+  display: flex;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  width: 60%;
+}
+
+.action-btn.buy {
+  background-color: #f44336;
+}
+
+.action-btn.sell {
+  background-color: #4caf50;
+}
+
+.profit {
+  color: #f44336;
+}
+
+.loss {
+  color: #4caf50;
+}
+</style> 
+ 

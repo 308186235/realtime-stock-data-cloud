@@ -1,0 +1,363 @@
+<template>
+  <view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
+    <view class="header">
+      <view class="back-button" @click="goBack">
+        <view class="back-icon"></view>
+      </view>
+      <text class="title">设备迁移指南</text>
+    </view>
+    
+    <view class="guide-content">
+      <view class="section">
+        <view class="section-title">
+          <text class="title-text">为什么需要设备迁移?</text>
+        </view>
+        <view class="section-content">
+          <text class="section-text">当您更换手机或设备时,为了确保交易账户安全,系统不会自动在新设备上登录您的账户。设备迁移功能可以帮助您安全地将账户信息,交易记录和个人设置从旧设备转移到新设备。通过我们的全面数据迁移技术,可以确保您在新设备上拥有与原设备完全一致的体验。</text>
+        </view>
+      </view>
+      
+      <view class="section">
+        <view class="section-title">
+          <text class="title-text">迁移方式</text>
+        </view>
+        <view class="section-content">
+          <view class="method-item">
+            <view class="method-icon code-icon"></view>
+            <view class="method-info">
+              <text class="method-title">迁移码</text>
+              <text class="method-desc">在原设备上生成一个24小时有效的迁移码,在新设备上输入此码完成迁移。最适合没有网络或扫码不便的情况。</text>
+            </view>
+          </view>
+          
+          <view class="method-item">
+            <view class="method-icon cloud-icon"></view>
+            <view class="method-info">
+              <text class="method-title">云端备份/恢复</text>
+              <text class="method-desc">将您的数据备份到云端,然后在新设备上登录同一账户并从云端恢复。适合需要定期备份的用户。</text>
+            </view>
+          </view>
+          
+          <view class="method-item">
+            <view class="method-icon scan-icon"></view>
+            <view class="method-info">
+              <text class="method-title">扫码迁移</text>
+              <text class="method-desc">用新设备扫描旧设备上生成的二维码,快速完成迁移。这是最便捷的方式。</text>
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <view class="section">
+        <view class="section-title">
+          <text class="title-text">完全一致体验</text>
+        </view>
+        <view class="section-content">
+          <text class="section-text">我们的设备迁移功能可以确保新设备与原设备保持完全一致的体验,包括:</text>
+          
+          <view class="feature-list">
+            <view class="feature-item">
+              <view class="feature-icon check-icon"></view>
+              <text class="feature-text">全部交易记录和持仓数据</text>
+            </view>
+            <view class="feature-item">
+              <view class="feature-icon check-icon"></view>
+              <text class="feature-text">所有个人偏好和自定义设置</text>
+            </view>
+            <view class="feature-item">
+              <view class="feature-icon check-icon"></view>
+              <text class="feature-text">交易策略和AI模型参数</text>
+            </view>
+            <view class="feature-item">
+              <view class="feature-icon check-icon"></view>
+              <text class="feature-text">图表配置和技术指标设置</text>
+            </view>
+            <view class="feature-item">
+              <view class="feature-icon check-icon"></view>
+              <text class="feature-text">银行卡绑定和安全设置</text>
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <view class="section">
+        <view class="section-title">
+          <text class="title-text">注意事项</text>
+        </view>
+        <view class="section-content">
+          <text class="warning-text">• 迁移完成后,原设备将自动退出登录,以确保账户安全</text>
+          <text class="warning-text">• 请确保在交易时段之外进行设备迁移</text>
+          <text class="warning-text">• 迁移码包含敏感信息,请勿分享给他人</text>
+          <text class="warning-text">• 建议定期使用云端备份功能保存您的数据</text>
+        </view>
+      </view>
+    </view>
+    
+    <view class="action-buttons">
+      <button class="primary-btn" @click="startTransfer">开始设备迁移</button>
+      <button class="secondary-btn" @click="goBack">返回</button>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      isDarkMode: false
+    }
+  },
+  onLoad() {
+    // 获取当前主题设置
+    const app = getApp();
+    this.isDarkMode = app.globalData.isDarkMode;
+  },
+  methods: {
+    goBack() {
+      uni.navigateBack();
+    },
+    startTransfer() {
+      uni.navigateBack({
+        success: () => {
+          // 通知上一页显示迁移选项
+          setTimeout(() => {
+            uni.$emit('showDeviceTransferOptions');
+          }, 500);
+        }
+      });
+    }
+  }
+}
+</script>
+
+<style>
+/* 通用容器样式 */
+.container {
+  min-height: 100vh;
+  padding: 30rpx;
+}
+
+/* 浅色主题 */
+.light-theme {
+  background-color: #f5f5f5;
+  color: #333333;
+}
+
+.light-theme .header {
+  margin-bottom: 30rpx;
+}
+
+.light-theme .title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #333333;
+}
+
+.light-theme .section {
+  background-color: #ffffff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.light-theme .back-icon {
+  width: 20rpx;
+  height: 20rpx;
+  border-top: 2px solid #333;
+  border-left: 2px solid #333;
+  transform: rotate(-45deg);
+}
+
+/* 深色主题 */
+.dark-theme {
+  background-color: #141414;
+  color: #e0e0e0;
+}
+
+.dark-theme .header {
+  margin-bottom: 30rpx;
+}
+
+.dark-theme .title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.dark-theme .section {
+  background-color: #222222;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.3);
+}
+
+.dark-theme .back-icon {
+  width: 20rpx;
+  height: 20rpx;
+  border-top: 2px solid #fff;
+  border-left: 2px solid #fff;
+  transform: rotate(-45deg);
+}
+
+/* 通用样式 */
+.header {
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin-bottom: 30rpx;
+}
+
+.back-button {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 10rpx;
+}
+
+.section-title {
+  margin-bottom: 20rpx;
+}
+
+.title-text {
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.section-text {
+  font-size: 28rpx;
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}
+
+.method-item {
+  display: flex;
+  margin-bottom: 30rpx;
+}
+
+.method-icon {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.code-icon {
+  background: linear-gradient(135deg, #4c8dff, #1a56b9);
+}
+
+.cloud-icon {
+  background: linear-gradient(135deg, #00c853, #009688);
+}
+
+.scan-icon {
+  background: linear-gradient(135deg, #ff5252, #ff9800);
+}
+
+.method-info {
+  flex: 1;
+}
+
+.method-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  margin-bottom: 10rpx;
+  display: block;
+}
+
+.method-desc {
+  font-size: 26rpx;
+  line-height: 1.5;
+  display: block;
+}
+
+.warning-text {
+  font-size: 26rpx;
+  line-height: 1.6;
+  margin-bottom: 10rpx;
+  display: block;
+  color: #ff5252;
+}
+
+.feature-list {
+  margin-top: 20rpx;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15rpx;
+}
+
+.feature-icon {
+  width: 40rpx;
+  height: 40rpx;
+  margin-right: 15rpx;
+  flex-shrink: 0;
+}
+
+.check-icon {
+  background-color: #4c8dff;
+  border-radius: 50%;
+  position: relative;
+}
+
+.check-icon:after {
+  content: '';
+  position: absolute;
+  width: 20rpx;
+  height: 10rpx;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg);
+  top: 13rpx;
+  left: 10rpx;
+}
+
+.feature-text {
+  font-size: 26rpx;
+  line-height: 1.4;
+  color: #eee;
+}
+
+.light-theme .feature-text {
+  color: #333;
+}
+
+.action-buttons {
+  margin-top: 40rpx;
+}
+
+.primary-btn {
+  background-color: #4c8dff;
+  color: #ffffff;
+  border-radius: 12rpx;
+  font-size: 32rpx;
+  margin-bottom: 20rpx;
+}
+
+.secondary-btn {
+  background-color: transparent;
+  border: 1px solid #999999;
+  color: #999999;
+  border-radius: 12rpx;
+  font-size: 32rpx;
+}
+
+.light-theme .secondary-btn {
+  border: 1px solid #666666;
+  color: #666666;
+}
+
+.dark-theme .secondary-btn {
+  border: 1px solid #999999;
+  color: #999999;
+}
+</style> 

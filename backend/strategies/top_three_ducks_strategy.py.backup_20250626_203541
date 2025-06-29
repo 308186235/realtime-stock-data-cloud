@@ -1,0 +1,506 @@
+import pandas as pd
+import numpy as np
+from .base_strategy import BaseStrategy
+import logging
+
+logger = logging.getLogger(__name__)
+
+class TopThreeDucksStrategy(BaseStrategy):
+    """
+    顶部三鸭形（Top Three Ducks）策略
+    
+    顶部三鸭形是一种顶部反转信号，通常出现在上涨趋势末端，表明多方力量衰竭，空方开始主导市场。
+    
+    核心特征：
+    1. 连续三根阴线，每根K线收盘价低于前一根
+    2. 出现在明显的上涨趋势后（股价创新高或加速上涨后）
+    3. 可能伴随跳空低开、放量下跌或跌破关键支撑（如5日均线）
+    4. 三根阴线实体较大，显示空方控盘有力
+    
+    该策略生成以下信号：
+    - 1 (买入信号)：极为罕见，仅在形态失败（第四天反转）时出现
+    - -1 (卖出/做空信号)：检测到顶部三鸭形态，提示减仓或清仓离场
+    - 0 (观望)：无明显信号
+    """
+    
+    def __init__(self, parameters=None):
+        """
+        初始化顶部三鸭形策略
+        
+        Args:
+            parameters (dict): 策略参数
+        """
+        super().__init__(parameters or self.get_default_parameters())
+        self.name = "顶部三鸭形策略"
+        self.description = "基于顶部三鸭形态的高位见顶预警策略"
+    
+    def get_default_parameters(self):
+        """
+        获取默认策略参数
+        
+        Returns:
+            dict: 默认参数
+        """
+        return {
+            'up_trend_bars': 5,                # 上涨趋势确认K线数量
+            'up_trend_threshold': 0.05,        # 上涨趋势确认阈值(5%)
+            'volume_increase_pct': 0.2,        # 成交量放大确认阈值(20%)
+            'min_body_size_ratio': 0.4,        # 阴线实体占K线的最小比例(40%)
+            'bear_candles_required': 3,        # 需要的连续阴线数量
+            'must_break_ma5': True,            # 是否必须跌破5日均线
+            'check_with_prior_high': True,     # 是否检查是否接近前期高点
+            'prior_high_threshold': 0.03,      # 接近前期高点的阈值(3%)
+            'confirmation_days': 2,            # 形态确认的观察天数
+            'stop_loss_pct': 0.02,             # 止损百分比(2%)
+            'use_macd_filter': True,           # 是否使用MACD顶背离确认
+            'initial_reduce_pct': 0.5,         # 初始减仓比例(50%)
+            'full_exit_on_breakdown': True,    # 跌破支撑是否清仓
+            'bounce_threshold': 0.03           # 反弹确认阈值(3%)
+        }
+    
+    def get_parameter_ranges(self):
+        """
+        获取参数范围，用于优化
+        
+        Returns:
+            dict: 参数范围
+        """
+        return {
+            'up_trend_bars': {'min': 3, 'max': 10, 'step': 1},
+            'up_trend_threshold': {'min': 0.03, 'max': 0.1, 'step': 0.01},
+            'volume_increase_pct': {'min': 0.1, 'max': 0.5, 'step': 0.1},
+            'min_body_size_ratio': {'min': 0.3, 'max': 0.6, 'step': 0.05},
+            'bear_candles_required': {'min': 2, 'max': 4, 'step': 1},
+            'must_break_ma5': {'min': 0, 'max': 1, 'step': 1},
+            'check_with_prior_high': {'min': 0, 'max': 1, 'step': 1},
+            'prior_high_threshold': {'min': 0.01, 'max': 0.05, 'step': 0.01},
+            'stop_loss_pct': {'min': 0.01, 'max': 0.03, 'step': 0.005},
+            'initial_reduce_pct': {'min': 0.3, 'max': 0.7, 'step': 0.1}
+        }
+    
+    def generate_signals(self, data):
+        """
+        生成交易信号
+        
+        Args:
+            data (pd.DataFrame): 包含OHLCV的历史市场数据
+            
+        Returns:
+            pd.Series: 交易信号序列 (1:买入, -1:卖出, 0:持有)
+        """
+        # 确保数据完整性
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        if not all(col in data.columns for col in required_columns):
+            logger.error("缺少所需的数据列，至少需要 OHLCV 数据")
+            return pd.Series(0, index=data.index)
+        
+        # 创建数据副本并进行预处理
+        df = data.copy()
+        
+        # 计算K线特征
+        df['body_size'] = abs(df['close'] - df['open']) / (df['high'] - df['low'])
+        df['is_bearish'] = df['close'] < df['open']
+        
+        # 计算均线
+        df['ma5'] = df['close'].rolling(window=5).mean()
+        df['ma10'] = df['close'].rolling(window=10).mean()
+        df['ma20'] = df['close'].rolling(window=20).mean()
+        
+        # 计算技术指标
+        self._calculate_technical_indicators(df)
+        
+        # 初始化信号列
+        df['signal'] = 0
+        df['ttd_detected'] = False
+        
+        # 检测顶部三鸭形态
+        bc_required = self.parameters['bear_candles_required']
+        ut_bars = self.parameters['up_trend_bars']
+        
+        for i in range(ut_bars + bc_required + 5, len(df)):
+            # 跳过已经检测到形态的区域
+            if i >= bc_required and df['ttd_detected'].iloc[i-1]:
+                continue
+                
+            # 提取用于模式识别的K线
+            window = df.iloc[i-bc_required:i]  # 最近bc_required根K线
+            
+            # 检查上涨趋势
+            trend_window = df.iloc[i-ut_bars-bc_required:i-bc_required]
+            start_price = trend_window['close'].iloc[0]
+            end_price = trend_window['close'].iloc[-1]
+            price_gain = (end_price - start_price) / start_price
+            
+            if price_gain < self.parameters['up_trend_threshold']:
+                continue  # 没有足够的上涨趋势
+            
+            # 检查是否处于高位（接近前期高点）
+            near_prior_high = False
+            if self.parameters['check_with_prior_high']:
+                # 查找前30个交易日的最高价
+                prior_period = 30
+                if i > prior_period + bc_required + ut_bars:
+                    prior_high = df['high'].iloc[i-prior_period-bc_required-ut_bars:i-bc_required-ut_bars].max()
+                    current_high = window['high'].max()
+                    near_prior_high = (abs(current_high - prior_high) / prior_high) <= self.parameters['prior_high_threshold']
+            
+            # 检查是否连续三根阴线
+            if not window['is_bearish'].all():
+                continue
+            
+            # 检查是否连续收低（每根K线收盘价低于前一根）
+            closes = window['close'].values
+            sequential_lower_close = True
+            for j in range(1, len(closes)):
+                if closes[j] >= closes[j-1]:
+                    sequential_lower_close = False
+                    break
+            
+            if not sequential_lower_close:
+                continue
+            
+            # 检查阴线实体是否足够大
+            if not (window['body_size'] >= self.parameters['min_body_size_ratio']).all():
+                # 不强制所有阴线都大实体，至少有2/3的阴线满足条件即可
+                if (window['body_size'] >= self.parameters['min_body_size_ratio']).sum() < bc_required * 2 / 3:
+                    continue
+            
+            # 检查是否有跳空低开
+            has_gap_down = False
+            for j in range(1, len(window)):
+                if window['high'].iloc[j] < window['low'].iloc[j-1]:
+                    has_gap_down = True
+                    break
+            
+            # 检查成交量特征
+            volumes = window['volume'].values
+            volume_increasing = False
+            for j in range(1, len(volumes)):
+                if volumes[j] > volumes[j-1] * (1 + self.parameters['volume_increase_pct']):
+                    volume_increasing = True
+                    break
+            
+            # 检查是否跌破5日均线
+            break_ma5 = False
+            for j in range(len(window)):
+                if window['close'].iloc[j] < window['ma5'].iloc[j]:
+                    break_ma5 = True
+                    break
+            
+            if self.parameters['must_break_ma5'] and not break_ma5:
+                continue
+            
+            # 计算累计跌幅
+            total_decline_pct = (window['open'].iloc[0] - window['close'].iloc[-1]) / window['open'].iloc[0]
+            
+            # 综合判断是否为顶部三鸭形态
+            is_top_three_ducks = sequential_lower_close and (break_ma5 or has_gap_down or volume_increasing)
+            
+            if not is_top_three_ducks:
+                continue
+            
+            # 计算形态可信度
+            confidence = self._calculate_pattern_confidence(
+                window,
+                break_ma5,
+                has_gap_down,
+                volume_increasing,
+                near_prior_high,
+                total_decline_pct,
+                df,
+                i
+            )
+            
+            # 技术指标确认
+            if self.parameters['use_macd_filter'] and df['macd_divergence'].iloc[i-bc_required]:
+                confidence += 0.1  # MACD顶背离，增加可信度
+            
+            # 确认为顶部三鸭形态
+            if confidence >= 0.5:  # 可信度足够高
+                # 计算关键价格水平
+                resistance_level = window['high'].max()  # 阻力位为最高点
+                support_level = window['low'].min()  # 支撑位为最低点
+                
+                # 生成信号强度
+                if confidence >= 0.8:
+                    df.loc[df.index[i-1], 'signal'] = -1.0  # 强烈卖出信号
+                elif confidence >= 0.6:
+                    df.loc[df.index[i-1], 'signal'] = -0.7  # 中等强度卖出信号
+                else:
+                    df.loc[df.index[i-1], 'signal'] = -0.3  # 弱卖出信号
+                
+                # 标记形态及其特征
+                df.loc[df.index[i-1], 'ttd_detected'] = True
+                df.loc[df.index[i-1], 'pattern_confidence'] = confidence
+                df.loc[df.index[i-1], 'pattern_type'] = 'top_three_ducks'
+                
+                # 记录关键价格水平
+                df.loc[df.index[i-1], 'resistance_level'] = resistance_level
+                df.loc[df.index[i-1], 'support_level'] = support_level
+                df.loc[df.index[i-1], 'stop_loss'] = resistance_level * (1 + self.parameters['stop_loss_pct'])
+                
+                # 记录其他形态特征
+                df.loc[df.index[i-1], 'total_decline_pct'] = total_decline_pct
+                df.loc[df.index[i-1], 'has_gap_down'] = has_gap_down
+                df.loc[df.index[i-1], 'break_ma5'] = break_ma5
+                df.loc[df.index[i-1], 'volume_increasing'] = volume_increasing
+        
+        # 检测反弹或继续下跌信号
+        self._detect_followup_signals(df)
+        
+        # 应用形态确认规则
+        if self.parameters['confirmation_days'] > 0:
+            self._apply_confirmation_rules(df)
+        
+        return df['signal']
+    
+    def _calculate_technical_indicators(self, df):
+        """
+        计算用于确认的技术指标
+        
+        Args:
+            df (pd.DataFrame): 市场数据
+            
+        Returns:
+            None (直接修改df)
+        """
+        # 计算RSI
+        window = 14
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        
+        avg_gain = gain.rolling(window=window).mean()
+        avg_loss = loss.rolling(window=window).mean()
+        
+        rs = avg_gain / avg_loss.replace(0, 0.001)  # 避免除以零
+        df['rsi'] = 100 - (100 / (1 + rs))
+        
+        # RSI超买区（高于70）
+        df['rsi_overbought'] = df['rsi'] > 70
+        
+        # 计算MACD
+        df['ema12'] = df['close'].ewm(span=12, adjust=False).mean()
+        df['ema26'] = df['close'].ewm(span=26, adjust=False).mean()
+        
+        # 计算MACD线和信号线
+        df['macd_line'] = df['ema12'] - df['ema26']
+        df['signal_line'] = df['macd_line'].ewm(span=9, adjust=False).mean()
+        df['macd_histogram'] = df['macd_line'] - df['signal_line']
+        
+        # 检测MACD顶背离
+        df['macd_divergence'] = self._detect_macd_divergence(df)
+        
+        # 计算布林带
+        df['sma20'] = df['close'].rolling(window=20).mean()
+        df['std20'] = df['close'].rolling(window=20).std()
+        df['upper_band'] = df['sma20'] + (df['std20'] * 2)
+        df['lower_band'] = df['sma20'] - (df['std20'] * 2)
+    
+    def _detect_macd_divergence(self, df):
+        """
+        检测MACD顶背离
+        
+        Args:
+            df (pd.DataFrame): 市场数据
+            
+        Returns:
+            pd.Series: 表示是否出现顶背离的布尔序列
+        """
+        divergence = pd.Series(False, index=df.index)
+        window = 20  # 寻找背离的窗口大小
+        
+        for i in range(window, len(df)):
+            # 提取窗口内的数据
+            window_df = df.iloc[i-window:i+1]
+            
+            # 找到价格的高点
+            price_highs = window_df[window_df['close'] == window_df['close'].max()]
+            
+            if len(price_highs) < 1:
+                continue
+                
+            price_high_idx = price_highs.index[-1]
+            price_high_val = window_df.loc[price_high_idx, 'close']
+            
+            # 找到MACD的高点
+            if 'macd_line' not in window_df.columns:
+                continue
+                
+            macd_highs = window_df[window_df['macd_line'] == window_df['macd_line'].max()]
+            
+            if len(macd_highs) < 1:
+                continue
+                
+            macd_high_idx = macd_highs.index[-1]
+            macd_high_val = window_df.loc[macd_high_idx, 'macd_line']
+            
+            # 检查是否有新的价格高点
+            if i > 0 and df['close'].iloc[i] > price_high_val:
+                # 检查MACD是否没有创新高 -> 顶背离
+                if df['macd_line'].iloc[i] < macd_high_val:
+                    divergence.iloc[i] = True
+        
+        return divergence
+    
+    def _calculate_pattern_confidence(self, window, break_ma5, has_gap_down, 
+                                    volume_increasing, near_prior_high, 
+                                    total_decline_pct, df, index):
+        """
+        计算顶部三鸭形态的可信度
+        
+        Args:
+            window (pd.DataFrame): K线窗口数据
+            break_ma5 (bool): 是否跌破5日均线
+            has_gap_down (bool): 是否有跳空低开
+            volume_increasing (bool): 成交量是否放大
+            near_prior_high (bool): 是否接近前期高点
+            total_decline_pct (float): 累计跌幅
+            df (pd.DataFrame): 完整市场数据
+            index (int): 当前索引
+            
+        Returns:
+            float: 可信度评分 [0,1]
+        """
+        # 基础可信度为0.5
+        confidence = 0.5
+        
+        # 1. 阴线实体大小（最多+0.1）
+        avg_body_size = window['body_size'].mean()
+        body_score = (avg_body_size - self.parameters['min_body_size_ratio']) / (1 - self.parameters['min_body_size_ratio'])
+        body_score = max(0, min(body_score, 1))
+        confidence += body_score * 0.1
+        
+        # 2. 是否跳空低开（+0.1）
+        if has_gap_down:
+            confidence += 0.1
+        
+        # 3. 成交量特征（最多+0.1）
+        if volume_increasing:
+            last_volume = window['volume'].iloc[-1]
+            first_volume = window['volume'].iloc[0]
+            volume_ratio = last_volume / first_volume
+            
+            if volume_ratio > 1.5:  # 末根K线成交量是首根的1.5倍以上
+                confidence += 0.1
+            else:
+                confidence += 0.05
+        
+        # 4. 跌破5日均线（+0.1）
+        if break_ma5:
+            confidence += 0.1
+        
+        # 5. 接近前期高点（+0.1）
+        if near_prior_high:
+            confidence += 0.1
+        
+        # 6. 累计跌幅（最多+0.1）
+        confidence += min(total_decline_pct / 0.05, 1) * 0.1  # 如果跌幅达到5%，加分0.1
+        
+        # 7. RSI超买确认（+0.05）
+        rsi_before_pattern = df['rsi'].iloc[index - window.shape[0] - 1]
+        if rsi_before_pattern > 70:
+            confidence += 0.05
+        
+        # 限制最大可信度为1.0
+        confidence = min(confidence, 1.0)
+        
+        return confidence
+    
+    def _detect_followup_signals(self, df):
+        """
+        检测顶部三鸭形态后的后续信号，包括反弹或继续下跌
+        
+        Args:
+            df (pd.DataFrame): 市场数据
+            
+        Returns:
+            None (直接修改df)
+        """
+        for i in range(4, len(df)):
+            # 检查是否在前几天检测到了顶部三鸭形态
+            found_pattern = False
+            pattern_idx = -1
+            
+            # 向前查找最近的形态（最多查找5个交易日）
+            for j in range(1, min(6, i)):
+                if df['ttd_detected'].iloc[i-j]:
+                    found_pattern = True
+                    pattern_idx = i-j
+                    break
+            
+            if not found_pattern:
+                continue
+                
+            current_day = df.iloc[i]
+            pattern_day = df.iloc[pattern_idx]
+            
+            # 1. 继续下跌 - 跌破支撑位
+            if current_day['close'] < pattern_day['support_level']:
+                # 如果设置了跌破支撑清仓
+                if self.parameters['full_exit_on_breakdown']:
+                    df.loc[df.index[i], 'signal'] = -1.0  # 强烈卖出信号
+                else:
+                    df.loc[df.index[i], 'signal'] = -0.5  # 中等卖出信号
+                
+                df.loc[df.index[i], 'pattern_type'] = 'ttd_breakdown'
+            
+            # 2. 反弹信号 - 价格反弹且收盘价重返5日均线上方
+            elif (current_day['close'] > current_day['ma5'] and 
+                 current_day['close'] > current_day['open'] and
+                 current_day['close'] > pattern_day['close']):
+                
+                # 检查是否是反弹骗线（假突破）
+                is_valid_rebound = current_day['volume'] > pattern_day['volume'] * 1.2
+                
+                # 确认反弹幅度
+                rebound_pct = (current_day['close'] - pattern_day['close']) / pattern_day['close']
+                
+                if rebound_pct > self.parameters['bounce_threshold'] and is_valid_rebound:
+                    df.loc[df.index[i], 'signal'] = 0.5  # 中等反转信号（形态可能失效）
+                    df.loc[df.index[i], 'pattern_type'] = 'ttd_failure'
+                else:
+                    df.loc[df.index[i], 'signal'] = 0.2  # 弱反弹信号
+                    df.loc[df.index[i], 'pattern_type'] = 'ttd_rebound'
+            
+            # 3. 止损触发 - 价格突破止损位
+            elif current_day['high'] > pattern_day['stop_loss']:
+                df.loc[df.index[i], 'signal'] = 0.0  # 观望信号（止损离场）
+                df.loc[df.index[i], 'pattern_type'] = 'ttd_stop_loss'
+    
+    def _apply_confirmation_rules(self, df):
+        """
+        应用形态确认规则，检查后续几天的走势是否确认或否定形态
+        
+        Args:
+            df (pd.DataFrame): 市场数据
+            
+        Returns:
+            None (直接修改df)
+        """
+        # 临时保存原始信号
+        df['original_signal'] = df['signal'].copy()
+        
+        for i in range(len(df) - 1, self.parameters['confirmation_days'], -1):
+            # 卖出信号 (顶部三鸭形态)
+            if df['original_signal'].iloc[i] < 0 and df['ttd_detected'].iloc[i]:
+                # 检查后续几天是否确认形态
+                confirmed = True
+                for j in range(1, min(self.parameters['confirmation_days'] + 1, len(df) - i)):
+                    next_day = df.iloc[i + j]
+                    
+                    # 如果后续几天价格突破前期阻力位或止损位，则形态可能失效
+                    if 'resistance_level' in df.columns and not pd.isna(df['resistance_level'].iloc[i]):
+                        if next_day['close'] > df['resistance_level'].iloc[i] * 1.01:
+                            confirmed = False
+                            break
+                    
+                    # 如果后续几天出现大阳线反转（阳线实体覆盖最后一根阴线的70%以上）
+                    if next_day['close'] > next_day['open']:  # 是阳线
+                        if next_day['close'] > df['close'].iloc[i-1] + (df['open'].iloc[i-1] - df['close'].iloc[i-1]) * 0.7:
+                            confirmed = False
+                            break
+                
+                # 调整当前信号
+                if not confirmed:
+                    df.loc[df.index[i], 'signal'] = 0  # 取消假信号 

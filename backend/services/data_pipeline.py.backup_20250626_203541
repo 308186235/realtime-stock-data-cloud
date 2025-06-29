@@ -1,0 +1,430 @@
+﻿"""
+数据管道优化服务
+基于VeighNa架构的数据处理流程优化，实现实时数据清洗和质量监控
+注意：此模块不影响现有数据处理，提供额外的数据质量保障
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional, Any, Callable
+import logging
+from datetime import datetime, timedelta
+from dataclasses import dataclass
+import asyncio
+from collections import deque
+import threading
+import time
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class DataQualityMetrics:
+    """数据质量指标"""
+    completeness: float  # 完整性 (0-1)
+    accuracy: float     # 准确性 (0-1)
+    consistency: float  # 一致性 (0-1)
+    timeliness: float   # 及时性 (0-1)
+    validity: float     # 有效性 (0-1)
+    overall_score: float # 综合评分 (0-1)
+
+@dataclass
+class DataPoint:
+    """数据点结构"""
+    timestamp: datetime
+    symbol: str
+    data_type: str  # 'price', 'volume', 'news', etc.
+    value: Any
+    source: str
+    quality_score: float = 1.0
+
+class DataValidator:
+    """数据验证器 - 基于VeighNa思路"""
+    
+    def __init__(self):
+        self.validation_rules = {
+            'price': self._validate_price_data,
+            'volume': self._validate_volume_data,
+            'news': self._validate_news_data,
+            'technical': self._validate_technical_data
+        }
+    
+    def validate_data(self, data_point: DataPoint) -> Tuple[bool, float, List[str]]:
+        """验证数据点"""
+        issues = []
+        quality_score = 1.0
+        
+        try:
+            # 基础验证
+            if not self._basic_validation(data_point):
+                issues.append("基础验证失败")
+                quality_score *= 0.5
+            
+            # 类型特定验证
+            if data_point.data_type in self.validation_rules:
+                is_valid, type_score, type_issues = self.validation_rules[data_point.data_type](data_point)
+                quality_score *= type_score
+                issues.extend(type_issues)
+            
+            # 时效性验证
+            time_diff = (datetime.now() - data_point.timestamp).total_seconds()
+            if time_diff > 300:  # 5分钟以上认为不够及时
+                issues.append("数据时效性不足")
+                quality_score *= 0.8
+            
+            is_valid = len(issues) == 0
+            return is_valid, quality_score, issues
+            
+        except Exception as e:
+            logger.error(f"数据验证失败: {e}")
+            return False, 0.0, [f"验证异常: {str(e)}"]
+    
+    def _basic_validation(self, data_point: DataPoint) -> bool:
+        """基础验证"""
+        if not data_point.symbol or not data_point.data_type:
+            return False
+        if data_point.value is None:
+            return False
+        if not data_point.timestamp:
+            return False
+        return True
+    
+    def _validate_price_data(self, data_point: DataPoint) -> Tuple[bool, float, List[str]]:
+        """验证价格数据"""
+        issues = []
+        score = 1.0
+        
+        try:
+            price = float(data_point.value)
+            
+            # 价格范围检查
+            if price <= 0:
+                issues.append("价格必须大于0")
+                score *= 0.1
+            elif price > 10000:  # 假设最高价格限制
+                issues.append("价格异常高")
+                score *= 0.7
+            
+            # 价格精度检查
+            if len(str(price).split('.')[-1]) > 3:
+                issues.append("价格精度过高")
+                score *= 0.9
+                
+        except (ValueError, TypeError):
+            issues.append("价格数据格式错误")
+            score = 0.0
+        
+        return len(issues) == 0, score, issues
+    
+    def _validate_volume_data(self, data_point: DataPoint) -> Tuple[bool, float, List[str]]:
+        """验证成交量数据"""
+        issues = []
+        score = 1.0
+        
+        try:
+            volume = int(data_point.value)
+            
+            if volume < 0:
+                issues.append("成交量不能为负数")
+                score = 0.0
+            elif volume == 0:
+                issues.append("成交量为0可能异常")
+                score *= 0.8
+                
+        except (ValueError, TypeError):
+            issues.append("成交量数据格式错误")
+            score = 0.0
+        
+        return len(issues) == 0, score, issues
+    
+    def _validate_news_data(self, data_point: DataPoint) -> Tuple[bool, float, List[str]]:
+        """验证新闻数据"""
+        issues = []
+        score = 1.0
+        
+        if not isinstance(data_point.value, (str, dict)):
+            issues.append("新闻数据格式错误")
+            score = 0.0
+        elif isinstance(data_point.value, str) and len(data_point.value) < 10:
+            issues.append("新闻内容过短")
+            score *= 0.7
+        
+        return len(issues) == 0, score, issues
+    
+    def _validate_technical_data(self, data_point: DataPoint) -> Tuple[bool, float, List[str]]:
+        """验证技术指标数据"""
+        issues = []
+        score = 1.0
+        
+        try:
+            if isinstance(data_point.value, dict):
+                for key, value in data_point.value.items():
+                    if value is None:
+                        issues.append(f"技术指标{key}值为空")
+                        score *= 0.8
+            else:
+                float(data_point.value)  # 尝试转换为数字
+                
+        except (ValueError, TypeError):
+            issues.append("技术指标数据格式错误")
+            score = 0.0
+        
+        return len(issues) == 0, score, issues
+
+class DataCleaner:
+    """数据清洗器"""
+    
+    def __init__(self):
+        self.cleaning_rules = {
+            'price': self._clean_price_data,
+            'volume': self._clean_volume_data,
+            'news': self._clean_news_data
+        }
+    
+    def clean_data(self, data_point: DataPoint) -> DataPoint:
+        """清洗数据"""
+        try:
+            if data_point.data_type in self.cleaning_rules:
+                cleaned_value = self.cleaning_rules[data_point.data_type](data_point.value)
+                data_point.value = cleaned_value
+            
+            return data_point
+            
+        except Exception as e:
+            logger.error(f"数据清洗失败: {e}")
+            return data_point
+    
+    def _clean_price_data(self, value: Any) -> float:
+        """清洗价格数据"""
+        try:
+            price = float(value)
+            # 保留3位小数
+            return round(price, 3)
+        except:
+            return 0.0
+    
+    def _clean_volume_data(self, value: Any) -> int:
+        """清洗成交量数据"""
+        try:
+            volume = int(float(value))
+            return max(volume, 0)  # 确保非负
+        except:
+            return 0
+    
+    def _clean_news_data(self, value: Any) -> str:
+        """清洗新闻数据"""
+        if isinstance(value, str):
+            # 去除多余空格和特殊字符
+            cleaned = ' '.join(value.split())
+            return cleaned[:1000]  # 限制长度
+        return str(value)
+
+class DataPipelineOptimizer:
+    """数据管道优化器 - 基于VeighNa架构"""
+    
+    def __init__(self, max_buffer_size: int = 10000):
+        self.validator = DataValidator()
+        self.cleaner = DataCleaner()
+        self.data_buffer = deque(maxlen=max_buffer_size)
+        self.quality_metrics = {}
+        self.processing_stats = {
+            'total_processed': 0,
+            'valid_data': 0,
+            'invalid_data': 0,
+            'cleaned_data': 0
+        }
+        self.is_running = False
+        self.processing_thread = None
+        
+    async def process_data_stream(self, data_stream: List[DataPoint]) -> List[DataPoint]:
+        """处理数据流"""
+        processed_data = []
+        
+        for data_point in data_stream:
+            try:
+                # 数据验证
+                is_valid, quality_score, issues = self.validator.validate_data(data_point)
+                data_point.quality_score = quality_score
+                
+                # 数据清洗
+                if not is_valid:
+                    data_point = self.cleaner.clean_data(data_point)
+                    self.processing_stats['cleaned_data'] += 1
+                
+                # 重新验证清洗后的数据
+                is_valid_after_clean, final_score, _ = self.validator.validate_data(data_point)
+                data_point.quality_score = final_score
+                
+                if is_valid_after_clean:
+                    processed_data.append(data_point)
+                    self.processing_stats['valid_data'] += 1
+                else:
+                    self.processing_stats['invalid_data'] += 1
+                    logger.warning(f"数据质量不合格被丢弃: {data_point.symbol} - {issues}")
+                
+                self.processing_stats['total_processed'] += 1
+                
+            except Exception as e:
+                logger.error(f"处理数据点失败: {e}")
+                self.processing_stats['invalid_data'] += 1
+        
+        # 更新质量指标
+        self._update_quality_metrics(processed_data)
+        
+        return processed_data
+    
+    def _update_quality_metrics(self, data_points: List[DataPoint]):
+        """更新数据质量指标"""
+        if not data_points:
+            return
+        
+        # 按数据类型分组计算质量指标
+        type_groups = {}
+        for dp in data_points:
+            if dp.data_type not in type_groups:
+                type_groups[dp.data_type] = []
+            type_groups[dp.data_type].append(dp)
+        
+        for data_type, points in type_groups.items():
+            quality_scores = [p.quality_score for p in points]
+            
+            # 计算各项指标
+            completeness = len([p for p in points if p.value is not None]) / len(points)
+            accuracy = np.mean(quality_scores)
+            consistency = 1.0 - np.std(quality_scores) if len(quality_scores) > 1 else 1.0
+            
+            # 时效性计算
+            now = datetime.now()
+            time_diffs = [(now - p.timestamp).total_seconds() for p in points]
+            avg_delay = np.mean(time_diffs)
+            timeliness = max(0, 1 - avg_delay / 300)  # 5分钟内为满分
+            
+            # 有效性
+            validity = len([p for p in points if p.quality_score > 0.8]) / len(points)
+            
+            # 综合评分
+            overall_score = (completeness * 0.2 + accuracy * 0.3 + consistency * 0.2 + 
+                           timeliness * 0.15 + validity * 0.15)
+            
+            self.quality_metrics[data_type] = DataQualityMetrics(
+                completeness=completeness,
+                accuracy=accuracy,
+                consistency=consistency,
+                timeliness=timeliness,
+                validity=validity,
+                overall_score=overall_score
+            )
+    
+    def get_quality_report(self) -> Dict:
+        """获取数据质量报告"""
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'processing_stats': self.processing_stats.copy(),
+            'quality_metrics': {
+                data_type: {
+                    'completeness': metrics.completeness,
+                    'accuracy': metrics.accuracy,
+                    'consistency': metrics.consistency,
+                    'timeliness': metrics.timeliness,
+                    'validity': metrics.validity,
+                    'overall_score': metrics.overall_score
+                }
+                for data_type, metrics in self.quality_metrics.items()
+            },
+            'recommendations': self._generate_quality_recommendations()
+        }
+    
+    def _generate_quality_recommendations(self) -> List[str]:
+        """生成数据质量改进建议"""
+        recommendations = []
+        
+        for data_type, metrics in self.quality_metrics.items():
+            if metrics.overall_score < 0.8:
+                recommendations.append(f"{data_type}数据质量偏低，需要改进")
+            
+            if metrics.completeness < 0.9:
+                recommendations.append(f"{data_type}数据完整性不足，检查数据源")
+            
+            if metrics.timeliness < 0.8:
+                recommendations.append(f"{data_type}数据时效性不足，优化数据传输")
+            
+            if metrics.accuracy < 0.85:
+                recommendations.append(f"{data_type}数据准确性有待提高，加强验证")
+        
+        if not recommendations:
+            recommendations.append("数据质量良好，继续保持")
+        
+        return recommendations
+    
+    def start_monitoring(self):
+        """启动数据质量监控"""
+        self.is_running = True
+        self.processing_thread = threading.Thread(target=self._monitoring_loop)
+        self.processing_thread.start()
+        logger.info("数据质量监控已启动")
+    
+    def stop_monitoring(self):
+        """停止数据质量监控"""
+        self.is_running = False
+        if self.processing_thread:
+            self.processing_thread.join()
+        logger.info("数据质量监控已停止")
+    
+    def _monitoring_loop(self):
+        """监控循环"""
+        while self.is_running:
+            try:
+                # 定期生成质量报告
+                if self.processing_stats['total_processed'] > 0:
+                    report = self.get_quality_report()
+                    logger.info(f"数据质量监控报告: 总处理{report['processing_stats']['total_processed']}条")
+                
+                time.sleep(60)  # 每分钟检查一次
+                
+            except Exception as e:
+                logger.error(f"数据质量监控异常: {e}")
+
+# 全局实例
+data_pipeline_optimizer = DataPipelineOptimizer()
+
+async def optimize_data_pipeline(data_stream: List[Dict]) -> Dict:
+    """优化数据管道 - 供其他模块调用"""
+    try:
+        # 转换为DataPoint对象
+        data_points = []
+        for item in data_stream:
+            data_point = DataPoint(
+                timestamp=datetime.fromisoformat(item.get('timestamp', datetime.now().isoformat())),
+                symbol=item.get('symbol', ''),
+                data_type=item.get('data_type', 'unknown'),
+                value=item.get('value'),
+                source=item.get('source', 'unknown')
+            )
+            data_points.append(data_point)
+        
+        # 处理数据流
+        processed_data = await data_pipeline_optimizer.process_data_stream(data_points)
+        
+        # 转换回字典格式
+        result_data = []
+        for dp in processed_data:
+            result_data.append({
+                'timestamp': dp.timestamp.isoformat(),
+                'symbol': dp.symbol,
+                'data_type': dp.data_type,
+                'value': dp.value,
+                'source': dp.source,
+                'quality_score': dp.quality_score
+            })
+        
+        return {
+            'processed_data': result_data,
+            'quality_report': data_pipeline_optimizer.get_quality_report()
+        }
+        
+    except Exception as e:
+        logger.error(f"数据管道优化失败: {e}")
+        return {'error': str(e)}
+
+def get_data_quality_report() -> Dict:
+    """获取数据质量报告 - 供其他模块调用"""
+    return data_pipeline_optimizer.get_quality_report()

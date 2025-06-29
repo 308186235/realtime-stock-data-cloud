@@ -1,0 +1,280 @@
+﻿"""
+使用Agent增强功能进行完整回测
+结合Tushare真实数据 + 技术指标分析 + 智能决策Agent
+"""
+
+import asyncio
+import sys
+sys.path.append('backend')
+
+import tushare as ts
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from backend.services.technical_analysis import get_technical_analysis
+from backend.services.enhanced_backtest import run_enhanced_backtest
+
+# Tushare Token
+TOKEN = "2f204ad53468c48203e351b2e43b7ebd2c1ef1028c9d4c4e8ea3736c"
+
+async def enhanced_backtest_with_real_data():
+    """使用增强功能进行真实数据回测"""
+    print(" 开始增强功能回测")
+    print("=" * 70)
+    
+    # 初始化Tushare
+    try:
+        ts.set_token(TOKEN)
+        pro = ts.pro_api()
+        print(" Tushare初始化成功")
+    except Exception as e:
+        print(f" Tushare初始化失败: {e}")
+        return
+    
+    # 回测参数
+    stock_codes = ['000001.SZ', '000002.SZ', '600000.SH']  # 平安银行、万科A、浦发银行
+    start_date = '20240101'
+    end_date = '20240630'
+    initial_capital = 100000
+    
+    print(f" 回测参数:")
+    print(f"  股票池: {stock_codes}")
+    print(f"  回测期间: {start_date} - {end_date}")
+    print(f"  初始资金: {initial_capital:,} 元")
+    print("-" * 70)
+    
+    all_trades = []
+    all_returns = []
+    stock_analysis = {}
+    
+    # 处理每只股票
+    for stock_code in stock_codes:
+        print(f"\n 分析 {stock_code}...")
+        
+        try:
+            # 获取真实股票数据
+            df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
+            
+            if df.empty:
+                print(f"   未获取到数据")
+                continue
+            
+            df = df.sort_values('trade_date').reset_index(drop=True)
+            prices = df['close'].tolist()
+            
+            print(f"   获取数据: {len(df)} 条记录")
+            print(f"   价格区间: {min(prices):.2f} - {max(prices):.2f} 元")
+            
+            # 使用增强技术分析
+            if len(prices) >= 25:
+                tech_analysis = get_technical_analysis(stock_code, prices)
+                
+                if 'error' not in tech_analysis:
+                    print(f"   技术分析完成")
+                    
+                    signals = tech_analysis.get('signals', {})
+                    trend = signals.get('overall_trend', 'neutral')
+                    buy_signals = signals.get('buy_signals', [])
+                    sell_signals = signals.get('sell_signals', [])
+                    
+                    print(f"    趋势: {trend}")
+                    print(f"    买入信号: {buy_signals}")
+                    print(f"    卖出信号: {sell_signals}")
+                    
+                    stock_analysis[stock_code] = {
+                        'data': df,
+                        'prices': prices,
+                        'tech_analysis': tech_analysis,
+                        'trend': trend
+                    }
+                    
+                    # 基于增强分析生成交易策略
+                    trades, returns = generate_enhanced_strategy_trades(
+                        stock_code, df, tech_analysis, initial_capital // len(stock_codes)
+                    )
+                    
+                    all_trades.extend(trades)
+                    all_returns.extend(returns)
+                    
+                    print(f"     生成交易: {len(trades)} 笔")
+                    
+                else:
+                    print(f"   技术分析失败: {tech_analysis.get('error', 'unknown')}")
+            else:
+                print(f"   数据不足，跳过分析")
+                
+        except Exception as e:
+            print(f"   处理失败: {e}")
+            continue
+    
+    # 运行增强回测分析
+    if all_trades and all_returns:
+        print(f"\n 运行增强回测分析...")
+        print(f"  总交易数: {len(all_trades)}")
+        print(f"  收益率数据点: {len(all_returns)}")
+        
+        # 使用增强回测功能
+        backtest_result = run_enhanced_backtest(
+            strategy_returns=all_returns,
+            trade_records=all_trades,
+            initial_capital=initial_capital
+        )
+        
+        if 'error' not in backtest_result:
+            print("\n 增强回测结果:")
+            print("=" * 70)
+            
+            # 基础指标
+            basic_metrics = backtest_result.get('basic_metrics', {})
+            print(f" 收益指标:")
+            print(f"  总收益率: {basic_metrics.get('total_return', 0):.2%}")
+            print(f"  年化收益率: {basic_metrics.get('annual_return', 0):.2%}")
+            print(f"  夏普比率: {basic_metrics.get('sharpe_ratio', 0):.2f}")
+            print(f"  波动率: {basic_metrics.get('volatility', 0):.2%}")
+            
+            # 风险指标
+            risk_metrics = backtest_result.get('risk_metrics', {})
+            print(f"\n 风险指标:")
+            print(f"  最大回撤: {basic_metrics.get('max_drawdown', 0):.2%}")
+            print(f"  95% VaR: {risk_metrics.get('var_95', 0):.2%}")
+            print(f"  99% VaR: {risk_metrics.get('var_99', 0):.2%}")
+            
+            # 交易统计
+            print(f"\n 交易统计:")
+            print(f"  总交易次数: {basic_metrics.get('total_trades', 0)}")
+            print(f"  胜率: {basic_metrics.get('win_rate', 0):.2%}")
+            print(f"  盈亏比: {basic_metrics.get('profit_loss_ratio', 0):.2f}")
+            
+            # 综合评分
+            overall_score = backtest_result.get('overall_score', {})
+            print(f"\n 综合评价:")
+            print(f"  总分: {overall_score.get('overall_score', 0):.1f}/100")
+            print(f"  评级: {overall_score.get('rating', 'unknown')}")
+            
+            # 改进建议
+            recommendations = backtest_result.get('recommendations', [])
+            print(f"\n 策略优化建议:")
+            for i, rec in enumerate(recommendations, 1):
+                print(f"  {i}. {rec}")
+            
+            # 个股表现分析
+            print(f"\n 个股表现分析:")
+            for stock_code, analysis in stock_analysis.items():
+                trend = analysis['trend']
+                start_price = analysis['prices'][0]
+                end_price = analysis['prices'][-1]
+                stock_return = (end_price - start_price) / start_price
+                
+                trend_emoji = "" if trend == "bullish" else "" if trend == "bearish" else ""
+                print(f"  {stock_code} {trend_emoji}:")
+                print(f"    技术趋势: {trend}")
+                print(f"    期间涨跌: {stock_return:.2%}")
+                print(f"    价格变化: {start_price:.2f}  {end_price:.2f}")
+            
+            # 策略vs基准比较
+            print(f"\n 策略表现对比:")
+            strategy_return = basic_metrics.get('total_return', 0)
+            
+            # 计算基准收益（等权重组合）
+            benchmark_returns = []
+            for analysis in stock_analysis.values():
+                prices = analysis['prices']
+                stock_return = (prices[-1] - prices[0]) / prices[0]
+                benchmark_returns.append(stock_return)
+            
+            benchmark_return = np.mean(benchmark_returns) if benchmark_returns else 0
+            
+            print(f"  策略收益率: {strategy_return:.2%}")
+            print(f"  基准收益率: {benchmark_return:.2%}")
+            print(f"  超额收益: {(strategy_return - benchmark_return):.2%}")
+            
+            if strategy_return > benchmark_return:
+                print(f"   策略跑赢基准！")
+            else:
+                print(f"   策略跑输基准，需要优化")
+                
+        else:
+            print(f" 增强回测失败: {backtest_result.get('error', 'unknown')}")
+    else:
+        print(" 未生成有效的交易数据")
+    
+    print("\n" + "=" * 70)
+    print(" 增强功能回测完成！")
+
+def generate_enhanced_strategy_trades(stock_code, df, tech_analysis, capital):
+    """基于增强技术分析生成交易策略"""
+    trades = []
+    returns = []
+    
+    try:
+        signals = tech_analysis.get('signals', {})
+        trend = signals.get('overall_trend', 'neutral')
+        buy_signals = signals.get('buy_signals', [])
+        
+        # 基于技术分析信号生成交易
+        if trend == 'bullish' and len(buy_signals) > 0:
+            # 生成买入交易
+            entry_idx = len(df) // 4  # 在1/4位置买入
+            exit_idx = len(df) * 3 // 4  # 在3/4位置卖出
+            
+            if exit_idx < len(df):
+                entry_price = df.iloc[entry_idx]['close']
+                exit_price = df.iloc[exit_idx]['close']
+                quantity = int(capital * 0.8 / entry_price / 100) * 100  # 80%仓位，整手
+                
+                if quantity > 0:
+                    profit = (exit_price - entry_price) * quantity - 120  # 手续费120元
+                    return_rate = (exit_price - entry_price) / entry_price
+                    
+                    trade = {
+                        'trade_id': f'{stock_code}_001',
+                        'symbol': stock_code,
+                        'entry_time': df.iloc[entry_idx]['trade_date'],
+                        'exit_time': df.iloc[exit_idx]['trade_date'],
+                        'entry_price': float(entry_price),
+                        'exit_price': float(exit_price),
+                        'quantity': quantity,
+                        'profit': float(profit),
+                        'commission': 120.0
+                    }
+                    
+                    trades.append(trade)
+                    returns.append(return_rate)
+        
+        # 如果是震荡市，生成多次小额交易
+        elif trend == 'neutral':
+            for i in range(2):  # 生成2笔交易
+                entry_idx = len(df) // 4 + i * len(df) // 6
+                exit_idx = entry_idx + len(df) // 8
+                
+                if exit_idx < len(df):
+                    entry_price = df.iloc[entry_idx]['close']
+                    exit_price = df.iloc[exit_idx]['close']
+                    quantity = int(capital * 0.3 / entry_price / 100) * 100  # 30%仓位
+                    
+                    if quantity > 0:
+                        profit = (exit_price - entry_price) * quantity - 60
+                        return_rate = (exit_price - entry_price) / entry_price
+                        
+                        trade = {
+                            'trade_id': f'{stock_code}_{i+1:03d}',
+                            'symbol': stock_code,
+                            'entry_time': df.iloc[entry_idx]['trade_date'],
+                            'exit_time': df.iloc[exit_idx]['trade_date'],
+                            'entry_price': float(entry_price),
+                            'exit_price': float(exit_price),
+                            'quantity': quantity,
+                            'profit': float(profit),
+                            'commission': 60.0
+                        }
+                        
+                        trades.append(trade)
+                        returns.append(return_rate)
+        
+    except Exception as e:
+        print(f"     交易生成失败: {e}")
+    
+    return trades, returns
+
+if __name__ == "__main__":
+    asyncio.run(enhanced_backtest_with_real_data())

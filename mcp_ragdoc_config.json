@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "mcp-ragdoc": {
+      "command": "uvx",
+      "args": ["mcp-ragdoc@latest"],
+      "description": "RAG文档处理服务器 - 用于文档检索和生成"
+    },
+    "rag-toolkit": {
+      "command": "uvx", 
+      "args": ["rag-toolkit-mcp@latest"],
+      "description": "RAG工具包 - 文档向量化和检索"
+    },
+    "document-processor": {
+      "command": "uvx",
+      "args": ["document-processor-mcp@latest"], 
+      "description": "文档处理器 - 解析和分析各种文档格式"
+    }
+  }
+}

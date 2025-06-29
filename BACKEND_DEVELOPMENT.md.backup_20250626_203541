@@ -1,0 +1,159 @@
+# 股票交易回测系统后端开发文档
+
+## 项目介绍
+
+本项目是一个完整的股票交易回测系统，用于测试各种交易策略的效果。系统支持多种策略类型，包括倒三红形、红三兵等多种K线形态策略，以及移动平均线交叉、相对强弱指数等技术指标策略。
+
+## 后端架构
+
+后端采用Python FastAPI框架开发，具有以下特点：
+
+1. **模块化设计**: 业务逻辑、数据访问、API接口彼此分离
+2. **统一的API层**: RESTful API风格，使用JWT认证
+3. **数据库支持**: 使用SQLAlchemy ORM和SQLite/PostgreSQL数据库
+4. **高性能**: 基于异步IO的高性能API框架
+5. **可扩展**: 易于添加新策略和功能模块
+
+## 目录结构
+
+```
+backend/
+├── api/                 # API路由
+│   └── routers/         # 路由模块
+├── models/              # 数据库模型
+├── services/            # 业务服务
+├── strategies/          # 交易策略
+├── data/                # 数据文件目录
+│   └── historical/      # 历史行情数据
+├── utils/               # 工具函数
+├── main.py              # 应用入口
+├── config.py            # 配置管理
+└── init_db.py           # 数据库初始化
+```
+
+## 数据库模型
+
+系统包含以下主要数据模型：
+
+1. **User**: 用户信息
+2. **Backtest**: 回测记录
+3. **Strategy**: 策略定义
+4. **Trade**: 交易记录
+5. **TechnicalIndicator**: 技术指标配置
+6. **Benchmark**: 基准指数定义
+
+## 主要功能模块
+
+### 1. 用户认证
+
+- 基于JWT的身份验证
+- 令牌生成和校验
+- 用户角色管理
+
+### 2. 回测引擎
+
+- 基于历史数据的策略回测
+- 多策略支持
+- 性能指标计算
+- 风险管理
+
+### 3. 数据服务
+
+- 历史行情数据获取
+- 数据缓存
+- 模拟数据生成
+
+### 4. 策略管理
+
+- 预定义策略库
+- 用户自定义策略
+- 参数优化支持
+
+## API接口
+
+### 认证API
+
+- **POST /api/auth/token**: 用户登录获取令牌
+- **GET /api/auth/me**: 获取当前用户信息
+
+### 回测API
+
+- **POST /api/backtesting/run**: 运行回测
+- **GET /api/backtesting/results/{backtest_id}**: 获取回测结果
+- **POST /api/backtesting/save**: 保存回测
+- **GET /api/backtesting/history**: 获取回测历史
+- **GET /api/backtesting/indicators**: 获取可用技术指标
+- **GET /api/backtesting/benchmarks**: 获取可用基准指数
+- **GET /api/backtesting/symbols**: 获取可用股票列表
+
+## 开发指南
+
+### 环境配置
+
+1. 创建虚拟环境:
+   ```
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+
+2. 安装依赖:
+   ```
+   pip install -r requirements.txt
+   ```
+
+3. 初始化数据库:
+   ```
+   python backend\init_db.py
+   ```
+
+4. 启动服务器:
+   ```
+   python run_server.py
+   ```
+
+### 添加新策略
+
+1. 在 `backend/strategies` 目录下创建新策略文件
+2. 继承基础策略类 `BaseStrategy`
+3. 实现 `generate_signal` 方法
+4. 在策略工厂中注册新策略
+
+### 回测流程
+
+1. 客户端发送回测请求，包含策略配置和回测参数
+2. 服务器获取历史数据
+3. 回测引擎基于策略生成交易信号
+4. 模拟交易执行，计算收益和风险指标
+5. 返回回测结果，包括权益曲线、交易记录和性能指标
+6. 客户端可选择保存回测记录
+
+## 部署指南
+
+### 开发环境
+
+使用提供的bat脚本启动服务:
+```
+start_backend_with_db.bat
+```
+
+### 生产环境
+
+1. 配置环境变量:
+   - `DATABASE_URL`: 数据库连接字符串
+   - `JWT_SECRET_KEY`: JWT加密密钥
+   - `ALLOW_ORIGINS`: 允许的CORS源
+
+2. 使用Uvicorn或Gunicorn启动服务:
+   ```
+   uvicorn backend.main:app --host 0.0.0.0 --port 8000
+   ```
+
+3. 推荐使用Nginx作为反向代理，并启用HTTPS
+
+## 未来计划
+
+1. 添加更多策略类型
+2. 实现并行回测，提高性能
+3. 添加机器学习模型支持
+4. 提供Python客户端SDK
+5. 实现实时行情接入 

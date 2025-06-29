@@ -1,0 +1,928 @@
+<template>
+	<view class="container">
+		<view class="header">
+			<text class="title">持仓概览</text>
+			<text class="subtitle">管理您的股票持仓和收益情况</text>
+		</view>
+		
+		<!-- 资产摘要 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">资产摘要</text>
+				<text class="refresh-btn" @click="refreshData">刷新</text>
+			</view>
+			
+			<view class="asset-summary">
+				<view class="asset-cards">
+					<view class="asset-card">
+						<text class="asset-value">¥{{ totalAssets }}</text>
+						<text class="asset-label">总资产</text>
+					</view>
+					
+					<view class="asset-card">
+						<text class="asset-value">¥{{ stockValue }}</text>
+						<text class="asset-label">持仓市值</text>
+					</view>
+					
+					<view class="asset-card">
+						<text class="asset-value">¥{{ availableCash }}</text>
+						<text class="asset-label">可用资金</text>
+					</view>
+				</view>
+				
+				<view class="profit-overview">
+					<view class="profit-row">
+						<text class="profit-label">今日盈亏</text>
+						<text class="profit-value" :class="todayProfit >= 0 ? 'profit' : 'loss'" :style="{ fontWeight: 'bold' }">
+							{{ todayProfit >= 0 ? '+' : '' }}¥{{ formatNumber(todayProfit) }}
+							<text class="profit-percent" :style="{ color: todayProfit >= 0 ? '#ff0000' : '#00cc00', fontWeight: 'bold' }">{{ todayProfitPercent }}%</text>
+						</text>
+					</view>
+					
+					<view class="profit-row">
+						<text class="profit-label">总盈亏</text>
+						<text class="profit-value" :class="totalProfit >= 0 ? 'profit' : 'loss'" :style="{ fontWeight: 'bold' }">
+							{{ totalProfit >= 0 ? '+' : '' }}¥{{ formatNumber(totalProfit) }}
+							<text class="profit-percent" :style="{ color: totalProfit >= 0 ? '#ff0000' : '#00cc00', fontWeight: 'bold' }">{{ totalProfitPercent }}%</text>
+						</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 持仓列表 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">持仓股票</text>
+				<picker @change="changeSortBy" :value="sortIndex" :range="sortOptions">
+					<view class="sort-picker">
+						<text class="sort-label">排序: </text>
+						<text class="sort-value">{{ sortOptions[sortIndex] }}</text>
+					</view>
+				</picker>
+			</view>
+			
+			<view class="holdings-list">
+				<view class="no-data" v-if="holdings.length === 0">
+					<text class="no-data-text">暂无持仓股票</text>
+				</view>
+				
+				<view class="stock-item" v-for="(stock, index) in sortedHoldings" :key="index" @click="showStockDetail(stock)">
+					<view class="stock-header">
+						<view class="stock-info">
+							<text class="stock-name">{{ stock.name }}</text>
+							<text class="stock-code">{{ stock.code }}</text>
+						</view>
+						
+						<view class="stock-profit" :class="stock.profit >= 0 ? 'profit' : 'loss'">
+							<text class="profit-amount" :style="{ color: stock.profit >= 0 ? '#ff0000' : '#00cc00', fontWeight: 'bold' }">
+								{{ stock.profit >= 0 ? '+' : '' }}¥{{ formatNumber(stock.profit) }}
+							</text>
+							<text class="profit-percent" :style="{ color: stock.profit >= 0 ? '#ff0000' : '#00cc00', fontWeight: 'bold' }">
+								{{ stock.profit >= 0 ? '+' : '' }}{{ stock.profitPercent }}%
+							</text>
+						</view>
+					</view>
+					
+					<view class="stock-details">
+						<view class="detail-item">
+							<text class="detail-label">持仓/可用</text>
+							<text class="detail-value">{{ stock.holding }} / {{ stock.available }}</text>
+						</view>
+						
+						<view class="detail-item">
+							<text class="detail-label">成本/现价</text>
+							<text class="detail-value">{{ stock.costPrice }} / {{ stock.currentPrice }}</text>
+						</view>
+						
+						<view class="detail-item">
+							<text class="detail-label">市值</text>
+							<text class="detail-value">¥{{ formatNumber(stock.marketValue) }}</text>
+						</view>
+						
+						<view class="detail-item">
+							<text class="detail-label">占比</text>
+							<text class="detail-value">{{ stock.proportion }}%</text>
+						</view>
+					</view>
+					
+					<view class="stock-actions">
+						<button class="action-btn buy" @click.stop="showTradeModal(stock, 'buy')">买入</button>
+						<button class="action-btn sell" @click.stop="showTradeModal(stock, 'sell')">卖出</button>
+						<button class="action-btn more" @click.stop="showMoreOptions(stock)">更多</button>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 今日交易 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">今日交易</text>
+				<text class="more-btn" @click="navigateToHistory">更多记录</text>
+			</view>
+			
+			<view class="trades-list">
+				<view class="no-data" v-if="todayTrades.length === 0">
+					<text class="no-data-text">今日暂无交易</text>
+				</view>
+				
+				<view class="trade-item" v-for="(trade, index) in todayTrades" :key="index">
+					<view class="trade-info">
+						<text class="trade-time">{{ trade.time }}</text>
+						<text class="trade-stock">{{ trade.stockName }}({{ trade.stockCode }})</text>
+					</view>
+					
+					<view class="trade-details">
+						<view class="trade-type" :class="trade.type">
+							<text class="type-text">{{ trade.type === 'buy' ? '买入' : '卖出' }}</text>
+						</view>
+						<view class="trade-amount">
+							<text class="amount-value">{{ trade.amount }}股</text>
+							<text class="price-value">¥{{ trade.price }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 操作弹窗 -->
+		<view class="action-modal" v-if="showModal">
+			<view class="modal-content">
+				<view class="modal-header">
+					<text class="modal-title">{{ tradeAction === 'buy' ? '买入' : '卖出' }}{{ selectedStock.name }}</text>
+					<text class="close-btn" @click="closeModal">×</text>
+				</view>
+				
+				<view class="modal-body">
+					<view class="price-row">
+						<text class="price-label">价格</text>
+						<input type="digit" class="price-input" v-model="tradePrice" placeholder="请输入价格"/>
+					</view>
+					
+					<view class="amount-row">
+						<text class="amount-label">数量</text>
+						<input type="number" class="amount-input" v-model="tradeAmount" placeholder="请输入数量"/>
+					</view>
+					
+					<view class="total-row">
+						<text class="total-label">交易额</text>
+						<text class="total-value">¥{{ formatNumber(tradePrice * tradeAmount) }}</text>
+					</view>
+					
+					<view class="quick-amounts">
+						<text class="quick-amount" @click="setQuickAmount(0.25)">25%</text>
+						<text class="quick-amount" @click="setQuickAmount(0.5)">50%</text>
+						<text class="quick-amount" @click="setQuickAmount(0.75)">75%</text>
+						<text class="quick-amount" @click="setQuickAmount(1)">100%</text>
+					</view>
+				</view>
+				
+				<view class="modal-footer">
+					<button class="cancel-btn" @click="closeModal">取消</button>
+					<button class="confirm-btn" @click="confirmTrade">确认</button>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script>
+export default {
+	data() {
+		return {
+			// 资产信息
+			totalAssets: '125,680.00',
+			stockValue: '98,450.00',
+			availableCash: '27,230.00',
+			todayProfit: 1250.80,
+			todayProfitPercent: 1.28,
+			totalProfit: 15680.50,
+			totalProfitPercent: 12.5,
+			
+			// 排序选项
+			sortOptions: ['按持仓市值', '按盈亏金额', '按盈亏比例', '按持仓占比'],
+			sortIndex: 0,
+			
+			// 持仓列表
+			holdings: [
+				{
+					name: '贵州茅台',
+					code: 'SH600519',
+					holding: 5,
+					available: 5,
+					costPrice: 1680.50,
+					currentPrice: 1789.50,
+					marketValue: 8947.50,
+					profit: 545.00,
+					profitPercent: 6.48,
+					proportion: 9.09
+				},
+				{
+					name: '中国平安',
+					code: 'SH601318',
+					holding: 800,
+					available: 800,
+					costPrice: 45.20,
+					currentPrice: 48.32,
+					marketValue: 38656.00,
+					profit: 2496.00,
+					profitPercent: 6.90,
+					proportion: 39.27
+				},
+				{
+					name: '五粮液',
+					code: 'SZ000858',
+					holding: 300,
+					available: 300,
+					costPrice: 175.30,
+					currentPrice: 168.75,
+					marketValue: 50625.00,
+					profit: -1965.00,
+					profitPercent: -3.74,
+					proportion: 51.64
+				}
+			],
+			
+			// 今日交易
+			todayTrades: [
+				{
+					time: '14:32',
+					stockName: '贵州茅台',
+					stockCode: 'SH600519',
+					type: 'buy',
+					amount: 2,
+					price: 1789.50
+				},
+				{
+					time: '10:15',
+					stockName: '中国平安',
+					stockCode: 'SH601318',
+					type: 'sell',
+					amount: 200,
+					price: 48.32
+				}
+			],
+			
+			// 交易弹窗
+			showModal: false,
+			selectedStock: {},
+			tradeAction: 'buy',
+			tradePrice: '',
+			tradeAmount: ''
+		}
+	},
+	computed: {
+		// 根据排序条件排序持仓
+		sortedHoldings() {
+			const holdings = [...this.holdings];
+			
+			switch(this.sortIndex) {
+				case 0: // 按持仓市值
+					return holdings.sort((a, b) => b.marketValue - a.marketValue);
+				case 1: // 按盈亏金额
+					return holdings.sort((a, b) => b.profit - a.profit);
+				case 2: // 按盈亏比例
+					return holdings.sort((a, b) => b.profitPercent - a.profitPercent);
+				case 3: // 按持仓占比
+					return holdings.sort((a, b) => b.proportion - a.proportion);
+				default:
+					return holdings;
+			}
+		}
+	},
+	onLoad() {
+		// 加载持仓数据
+		this.loadPortfolioData();
+	},
+	methods: {
+		// 刷新数据
+		refreshData() {
+			uni.showLoading({
+				title: '加载中'
+			});
+			
+			// 模拟刷新延迟
+			setTimeout(() => {
+				this.loadPortfolioData();
+				uni.hideLoading();
+				uni.showToast({
+					title: '数据已刷新',
+					icon: 'success'
+				});
+			}, 1000);
+		},
+		
+		// 改变排序方式
+		changeSortBy(e) {
+			this.sortIndex = e.detail.value;
+		},
+		
+		// 显示股票详情
+		showStockDetail(stock) {
+			uni.showToast({
+				title: '股票详情功能开发中',
+				icon: 'none'
+			});
+			
+			// 实际应跳转到股票详情页
+		},
+		
+		// 显示交易弹窗
+		showTradeModal(stock, action) {
+			this.selectedStock = stock;
+			this.tradeAction = action;
+			this.tradePrice = stock.currentPrice;
+			this.tradeAmount = '';
+			this.showModal = true;
+		},
+		
+		// 关闭交易弹窗
+		closeModal() {
+			this.showModal = false;
+		},
+		
+		// 设置快速交易数量
+		setQuickAmount(percent) {
+			if (this.tradeAction === 'buy') {
+				// 买入根据可用资金计算
+				const maxAmount = Math.floor(parseFloat(this.availableCash.replace(/,/g, '')) / this.tradePrice);
+				this.tradeAmount = Math.floor(maxAmount * percent);
+			} else {
+				// 卖出根据可用股数计算
+				this.tradeAmount = Math.floor(this.selectedStock.available * percent);
+			}
+		},
+		
+		// 确认交易
+		confirmTrade() {
+			if (!this.tradePrice || !this.tradeAmount) {
+				uni.showToast({
+					title: '请输入价格和数量',
+					icon: 'none'
+				});
+				return;
+			}
+			
+			const price = parseFloat(this.tradePrice);
+			const amount = parseInt(this.tradeAmount);
+			
+			if (price <= 0 || amount <= 0) {
+				uni.showToast({
+					title: '价格和数量必须大于0',
+					icon: 'none'
+				});
+				return;
+			}
+			
+			if (this.tradeAction === 'buy') {
+				// 检查是否有足够资金
+				const totalCost = price * amount;
+				const availableCash = parseFloat(this.availableCash.replace(/,/g, ''));
+				
+				if (totalCost > availableCash) {
+					uni.showToast({
+						title: '可用资金不足',
+						icon: 'none'
+					});
+					return;
+				}
+			} else {
+				// 检查是否有足够股票
+				if (amount > this.selectedStock.available) {
+					uni.showToast({
+						title: '可用股数不足',
+						icon: 'none'
+					});
+					return;
+				}
+			}
+			
+			// 模拟交易成功
+			uni.showToast({
+				title: `${this.tradeAction === 'buy' ? '买入' : '卖出'}成功`,
+				icon: 'success'
+			});
+			
+			this.closeModal();
+			
+			// 实际应调用API执行交易
+		},
+		
+		// 显示更多选项
+		showMoreOptions(stock) {
+			uni.showActionSheet({
+				itemList: ['股票详情', '查看K线', '设置止盈', '设置止损', '加入自选'],
+				success: (res) => {
+					uni.showToast({
+						title: '该功能开发中',
+						icon: 'none'
+					});
+				}
+			});
+		},
+		
+		// 前往交易历史页面
+		navigateToHistory() {
+			uni.navigateTo({
+				url: '/pages/trade-history/index'
+			});
+		},
+		
+		// 加载持仓数据
+		loadPortfolioData() {
+			// 实际应用中应从API获取数据
+			// 这里使用模拟数据
+			setTimeout(() => {
+				// 模拟刷新价格变化
+				this.holdings.forEach(stock => {
+					// 随机波动现价
+					const change = (Math.random() - 0.45) * 0.02;
+					const newPrice = Math.max(stock.currentPrice * (1 + change), 0.01);
+					stock.currentPrice = parseFloat(newPrice.toFixed(2));
+					
+					// 更新市值
+					stock.marketValue = stock.holding * stock.currentPrice;
+					
+					// 更新盈亏
+					stock.profit = stock.marketValue - (stock.holding * stock.costPrice);
+					stock.profitPercent = ((stock.currentPrice / stock.costPrice) - 1) * 100;
+					stock.profitPercent = parseFloat(stock.profitPercent.toFixed(2));
+				});
+				
+				// 重新计算总市值和占比
+				const totalValue = this.holdings.reduce((sum, stock) => sum + stock.marketValue, 0);
+				this.holdings.forEach(stock => {
+					stock.proportion = parseFloat(((stock.marketValue / totalValue) * 100).toFixed(2));
+				});
+				
+				// 更新资产概览
+				this.stockValue = totalValue.toLocaleString('zh-CN');
+				this.totalAssets = (totalValue + parseFloat(this.availableCash.replace(/,/g, ''))).toLocaleString('zh-CN');
+				
+				// 更新盈亏
+				const totalProfit = this.holdings.reduce((sum, stock) => sum + stock.profit, 0);
+				this.totalProfit = totalProfit;
+				this.totalProfitPercent = parseFloat(((totalProfit / (parseFloat(this.totalAssets.replace(/,/g, '')) - totalProfit)) * 100).toFixed(2));
+				
+				// 更新今日盈亏(模拟)
+				this.todayProfit = totalProfit * (0.2 + Math.random() * 0.3);
+				this.todayProfitPercent = parseFloat(((this.todayProfit / parseFloat(this.totalAssets.replace(/,/g, ''))) * 100).toFixed(2));
+			}, 500);
+		},
+		
+		// 格式化数字
+		formatNumber(num) {
+			return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+		}
+	}
+}
+</script>
+
+<style>
+.container {
+	padding: 30rpx;
+	background-color: #f5f5f5;
+}
+
+.header {
+	margin-bottom: 30rpx;
+}
+
+.title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.subtitle {
+	font-size: 28rpx;
+	color: #666;
+	margin-top: 10rpx;
+}
+
+.section {
+	margin-bottom: 30rpx;
+	background-color: #fff;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.section-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20rpx;
+	padding-bottom: 16rpx;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.section-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.refresh-btn, .more-btn {
+	font-size: 26rpx;
+	color: #1989fa;
+}
+
+/* 资产摘要 */
+.asset-summary {
+	padding: 10rpx 0;
+}
+
+.asset-cards {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 30rpx;
+}
+
+.asset-card {
+	flex: 1;
+	text-align: center;
+}
+
+.asset-value {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333;
+	display: block;
+	margin-bottom: 10rpx;
+}
+
+.asset-label {
+	font-size: 24rpx;
+	color: #666;
+}
+
+.profit-overview {
+	background-color: #f9f9f9;
+	border-radius: 8rpx;
+	padding: 16rpx;
+}
+
+.profit-row {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 12rpx 0;
+}
+
+.profit-label {
+	font-size: 28rpx;
+	color: #666;
+}
+
+.profit-value {
+	font-size: 28rpx;
+	font-weight: bold;
+}
+
+.profit-percent {
+	font-size: 24rpx;
+	margin-left: 10rpx;
+}
+
+.profit {
+	color: #ff0000 !important;
+	font-weight: bold;
+}
+
+.loss {
+	color: #00cc00 !important;
+	font-weight: bold;
+}
+
+/* 持仓列表 */
+.sort-picker {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	font-size: 26rpx;
+}
+
+.sort-label {
+	color: #666;
+}
+
+.sort-value {
+	color: #1989fa;
+}
+
+.holdings-list {
+	margin-top: 10rpx;
+}
+
+.no-data {
+	padding: 40rpx 0;
+	text-align: center;
+}
+
+.no-data-text {
+	font-size: 28rpx;
+	color: #999;
+}
+
+.stock-item {
+	margin-bottom: 20rpx;
+	padding: 20rpx;
+	background-color: #f9f9f9;
+	border-radius: 8rpx;
+}
+
+.stock-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 16rpx;
+}
+
+.stock-info {
+	display: flex;
+	flex-direction: column;
+}
+
+.stock-name {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.stock-code {
+	font-size: 24rpx;
+	color: #666;
+	margin-top: 6rpx;
+}
+
+.stock-profit {
+	text-align: right;
+}
+
+.profit-amount {
+	font-size: 32rpx;
+	font-weight: bold;
+	display: block;
+}
+
+.profit-percent {
+	font-size: 24rpx;
+	margin-top: 6rpx;
+	display: block;
+}
+
+.stock-details {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 16rpx;
+}
+
+.detail-item {
+	width: 50%;
+	margin-bottom: 12rpx;
+}
+
+.detail-label {
+	font-size: 24rpx;
+	color: #666;
+	display: block;
+	margin-bottom: 6rpx;
+}
+
+.detail-value {
+	font-size: 28rpx;
+	color: #333;
+	font-weight: bold;
+}
+
+.stock-actions {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+}
+
+.action-btn {
+	flex: 1;
+	font-size: 28rpx;
+	color: #fff;
+	padding: 12rpx 0;
+	text-align: center;
+	border-radius: 4rpx;
+	margin: 0 6rpx;
+}
+
+.action-btn.buy {
+	background-color: #f5222d;
+}
+
+.action-btn.sell {
+	background-color: #52c41a;
+}
+
+.action-btn.more {
+	background-color: #1989fa;
+}
+
+/* 交易列表 */
+.trades-list {
+	margin-top: 10rpx;
+}
+
+.trade-item {
+	padding: 20rpx 0;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.trade-item:last-child {
+	border-bottom: none;
+}
+
+.trade-info {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 12rpx;
+}
+
+.trade-time {
+	font-size: 24rpx;
+	color: #999;
+}
+
+.trade-stock {
+	font-size: 28rpx;
+	color: #333;
+	font-weight: bold;
+}
+
+.trade-details {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.trade-type {
+	padding: 4rpx 16rpx;
+	border-radius: 4rpx;
+	font-size: 24rpx;
+}
+
+.trade-type.buy {
+	background-color: #f0f5ff;
+	color: #1890ff;
+}
+
+.trade-type.sell {
+	background-color: #fff7e6;
+	color: #fa8c16;
+}
+
+.trade-amount {
+	text-align: right;
+}
+
+.amount-value {
+	font-size: 28rpx;
+	color: #333;
+	font-weight: bold;
+	display: block;
+}
+
+.price-value {
+	font-size: 24rpx;
+	color: #666;
+	margin-top: 4rpx;
+}
+
+/* 弹窗样式 */
+.action-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+.modal-content {
+	width: 80%;
+	background-color: #fff;
+	border-radius: 12rpx;
+	overflow: hidden;
+}
+
+.modal-header {
+	padding: 20rpx;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.close-btn {
+	font-size: 36rpx;
+	color: #999;
+}
+
+.modal-body {
+	padding: 30rpx 20rpx;
+}
+
+.price-row, .amount-row, .total-row {
+	margin-bottom: 20rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.price-label, .amount-label, .total-label {
+	width: 120rpx;
+	font-size: 28rpx;
+	color: #666;
+}
+
+.price-input, .amount-input {
+	flex: 1;
+	height: 80rpx;
+	border: 1px solid #ddd;
+	border-radius: 6rpx;
+	padding: 0 20rpx;
+	font-size: 28rpx;
+}
+
+.total-value {
+	flex: 1;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #f5222d;
+}
+
+.quick-amounts {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-top: 30rpx;
+}
+
+.quick-amount {
+	flex: 1;
+	text-align: center;
+	padding: 10rpx 0;
+	background-color: #f0f0f0;
+	color: #333;
+	font-size: 28rpx;
+	margin: 0 10rpx;
+	border-radius: 6rpx;
+}
+
+.modal-footer {
+	display: flex;
+	flex-direction: row;
+	border-top: 1px solid #f0f0f0;
+}
+
+.cancel-btn, .confirm-btn {
+	flex: 1;
+	height: 90rpx;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	font-size: 32rpx;
+}
+
+.cancel-btn {
+	background-color: #f5f5f5;
+	color: #666;
+}
+
+.confirm-btn {
+	background-color: #1989fa;
+	color: #fff;
+}
+
+/* 确保所有盈亏显示元素都正确继承样式 */
+.profit .profit-amount, .profit .profit-percent {
+	color: #ff0000 !important;
+}
+
+.loss .profit-amount, .loss .profit-percent {
+	color: #00cc00 !important;
+}
+</style> 

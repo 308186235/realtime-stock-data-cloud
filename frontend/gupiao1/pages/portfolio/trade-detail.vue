@@ -1,0 +1,613 @@
+<template>
+  <view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
+    <view class="header">
+      <view class="back-btn" @click="navigateBack">
+        <text class="back-icon">←</text>
+      </view>
+      <view class="title-container">
+        <text class="title">交易记录</text>
+        <text class="stock-name">{{stockData.name}} ({{stockData.code}})</text>
+      </view>
+    </view>
+    
+    <view class="summary-card">
+      <view class="summary-row">
+        <view class="summary-item">
+          <text class="summary-label">当前持仓</text>
+          <text class="summary-value">{{stockData.quantity}}股</text>
+        </view>
+        <view class="summary-item">
+          <text class="summary-label">最新价</text>
+          <text class="summary-value">¥{{stockData.currentPrice}}</text>
+        </view>
+      </view>
+      <view class="summary-row">
+        <view class="summary-item">
+          <text class="summary-label">平均成本</text>
+          <text class="summary-value">¥{{stockData.costPrice}}</text>
+        </view>
+        <view class="summary-item">
+          <text class="summary-label">持仓市值</text>
+          <text class="summary-value">¥{{stockData.marketValue}}</text>
+        </view>
+      </view>
+      <view class="summary-row">
+        <view class="summary-item">
+          <text class="summary-label">总盈亏</text>
+          <text :class="['summary-value', stockData.profit >= 0 ? 'profit' : 'loss']">
+            {{stockData.profit >= 0 ? '+' : ''}}¥{{stockData.profit}}
+          </text>
+        </view>
+        <view class="summary-item">
+          <text class="summary-label">盈亏比例</text>
+          <text :class="['summary-value', stockData.profitRate >= 0 ? 'profit' : 'loss']">
+            {{stockData.profitRate >= 0 ? '+' : ''}}{{stockData.profitRate}}%
+          </text>
+        </view>
+      </view>
+    </view>
+    
+    <view class="section-title">
+      <text>交易明细</text>
+    </view>
+    
+    <view class="trade-records">
+      <view v-for="(record, index) in tradeRecords" :key="index" class="record-item">
+        <view class="record-date">
+          <text class="date">{{record.date}}</text>
+          <text class="time">{{record.time}}</text>
+        </view>
+        
+        <view class="record-type" :class="record.type">
+          <text class="type-text">{{record.type === 'buy' ? '买入' : '卖出'}}</text>
+        </view>
+        
+        <view class="record-details">
+          <view class="record-row">
+            <text class="detail-label">数量</text>
+            <text class="detail-value">{{record.quantity}}股</text>
+          </view>
+          <view class="record-row">
+            <text class="detail-label">价格</text>
+            <text class="detail-value">¥{{record.price}}</text>
+          </view>
+          <view class="record-row">
+            <text class="detail-label">金额</text>
+            <text class="detail-value">¥{{formatNumber(record.price * record.quantity)}}</text>
+          </view>
+        </view>
+        
+        <view class="record-status">
+          <text class="status-text" :class="record.status">{{getStatusText(record.status)}}</text>
+        </view>
+      </view>
+      
+      <view v-if="tradeRecords.length === 0" class="empty-records">
+        <text class="empty-text">暂无交易记录</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      isDarkMode: false,
+      stockCode: '',
+      stockData: {
+        name: '贵州茅台',
+        code: '600519',
+        currentPrice: '1760.88',
+        quantity: 10,
+        costPrice: '1680.25',
+        marketValue: '17,608.80',
+        profit: 806.30,
+        profitRate: 4.80
+      },
+      tradeRecords: [
+        {
+          date: '2023-06-15',
+          time: '10:25:36',
+          type: 'buy',
+          quantity: 3,
+          price: '1670.50',
+          status: 'completed'
+        },
+        {
+          date: '2023-06-22',
+          time: '14:18:45',
+          type: 'buy',
+          quantity: 2,
+          price: '1685.20',
+          status: 'completed'
+        },
+        {
+          date: '2023-07-03',
+          time: '09:32:10',
+          type: 'buy',
+          quantity: 5,
+          price: '1682.40',
+          status: 'completed'
+        },
+        {
+          date: '2023-07-15',
+          time: '11:45:22',
+          type: 'sell',
+          quantity: 2,
+          price: '1725.80',
+          status: 'completed'
+        },
+        {
+          date: '2023-07-28',
+          time: '15:05:48',
+          type: 'buy',
+          quantity: 2,
+          price: '1690.30',
+          status: 'completed'
+        }
+      ]
+    }
+  },
+  onLoad(options) {
+    if (options.code) {
+      this.stockCode = options.code;
+      // 在实际应用中,根据stockCode从API获取股票信息和交易记录
+      // this.loadStockData(this.stockCode);
+    }
+    
+    // 获取当前主题设置
+    const app = getApp();
+    this.isDarkMode = app.globalData.isDarkMode;
+  },
+  methods: {
+    navigateBack() {
+      uni.navigateBack();
+    },
+    formatNumber(num) {
+      return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    },
+    getStatusText(status) {
+      switch(status) {
+        case 'completed':
+          return '已成交';
+        case 'pending':
+          return '待成交';
+        case 'canceled':
+          return '已撤销';
+        default:
+          return '未知状态';
+      }
+    },
+    loadStockData(code) {
+      // 实际应用中应该从API获取数据
+      // 模拟API调用
+      uni.showLoading({
+        title: '加载中'
+      });
+      
+      setTimeout(() => {
+        // 模拟数据已加载
+        uni.hideLoading();
+      }, 500);
+    }
+  }
+}
+</script>
+
+<style>
+/* 深色主题 */
+.dark-theme {
+  background-color: #121212;
+  min-height: 100vh;
+}
+
+.dark-theme .header {
+  background-color: #1e1e1e;
+  padding: 20rpx 30rpx;
+  display: flex;
+  align-items: center;
+}
+
+.dark-theme .back-btn {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 20rpx;
+}
+
+.dark-theme .back-icon {
+  font-size: 40rpx;
+  color: #ffffff;
+}
+
+.dark-theme .title-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.dark-theme .title {
+  font-size: 32rpx;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.dark-theme .stock-name {
+  font-size: 24rpx;
+  color: #aaaaaa;
+}
+
+.dark-theme .summary-card {
+  background-color: #1e1e1e;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin: 20rpx;
+}
+
+.dark-theme .summary-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15rpx;
+}
+
+.dark-theme .summary-row:last-child {
+  margin-bottom: 0;
+}
+
+.dark-theme .summary-item {
+  flex: 1;
+}
+
+.dark-theme .summary-label {
+  font-size: 24rpx;
+  color: #aaaaaa;
+  margin-bottom: 5rpx;
+}
+
+.dark-theme .summary-value {
+  font-size: 28rpx;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.dark-theme .section-title {
+  padding: 20rpx 30rpx;
+  font-size: 28rpx;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.dark-theme .trade-records {
+  padding: 0 20rpx;
+}
+
+.dark-theme .record-item {
+  background-color: #1e1e1e;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 15rpx;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.dark-theme .record-date {
+  width: 140rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.dark-theme .date {
+  font-size: 24rpx;
+  color: #ffffff;
+  margin-bottom: 5rpx;
+}
+
+.dark-theme .time {
+  font-size: 22rpx;
+  color: #888888;
+}
+
+.dark-theme .record-type {
+  width: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-theme .type-text {
+  padding: 4rpx 10rpx;
+  border-radius: 4rpx;
+  font-size: 24rpx;
+  font-weight: bold;
+}
+
+.dark-theme .record-type.buy .type-text {
+  background-color: rgba(255, 82, 82, 0.2);
+  color: #ff5252;
+}
+
+.dark-theme .record-type.sell .type-text {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.dark-theme .record-details {
+  flex: 1;
+  padding: 0 20rpx;
+}
+
+.dark-theme .record-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.dark-theme .record-row:last-child {
+  margin-bottom: 0;
+}
+
+.dark-theme .detail-label {
+  font-size: 24rpx;
+  color: #aaaaaa;
+}
+
+.dark-theme .detail-value {
+  font-size: 24rpx;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.dark-theme .record-status {
+  width: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-theme .status-text {
+  font-size: 24rpx;
+}
+
+.dark-theme .status-text.completed {
+  color: #4c8dff;
+}
+
+.dark-theme .status-text.pending {
+  color: #ffc107;
+}
+
+.dark-theme .status-text.canceled {
+  color: #9e9e9e;
+}
+
+.dark-theme .empty-records {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200rpx;
+}
+
+.dark-theme .empty-text {
+  font-size: 28rpx;
+  color: #666666;
+}
+
+.dark-theme .profit {
+  color: #ff5252;
+}
+
+.dark-theme .loss {
+  color: #4caf50;
+}
+
+/* 浅色主题 */
+.light-theme {
+  background-color: #f5f5f5;
+  min-height: 100vh;
+}
+
+.light-theme .header {
+  background-color: #ffffff;
+  padding: 20rpx 30rpx;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #eeeeee;
+}
+
+.light-theme .back-btn {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 20rpx;
+}
+
+.light-theme .back-icon {
+  font-size: 40rpx;
+  color: #333333;
+}
+
+.light-theme .title-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.light-theme .title {
+  font-size: 32rpx;
+  color: #333333;
+  font-weight: bold;
+}
+
+.light-theme .stock-name {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+.light-theme .summary-card {
+  background-color: #ffffff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin: 20rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.light-theme .summary-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15rpx;
+}
+
+.light-theme .summary-row:last-child {
+  margin-bottom: 0;
+}
+
+.light-theme .summary-item {
+  flex: 1;
+}
+
+.light-theme .summary-label {
+  font-size: 24rpx;
+  color: #666666;
+  margin-bottom: 5rpx;
+}
+
+.light-theme .summary-value {
+  font-size: 28rpx;
+  color: #333333;
+  font-weight: bold;
+}
+
+.light-theme .section-title {
+  padding: 20rpx 30rpx;
+  font-size: 28rpx;
+  color: #333333;
+  font-weight: bold;
+}
+
+.light-theme .trade-records {
+  padding: 0 20rpx;
+}
+
+.light-theme .record-item {
+  background-color: #ffffff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 15rpx;
+  display: flex;
+  flex-wrap: wrap;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.light-theme .record-date {
+  width: 140rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.light-theme .date {
+  font-size: 24rpx;
+  color: #333333;
+  margin-bottom: 5rpx;
+}
+
+.light-theme .time {
+  font-size: 22rpx;
+  color: #888888;
+}
+
+.light-theme .record-type {
+  width: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.light-theme .type-text {
+  padding: 4rpx 10rpx;
+  border-radius: 4rpx;
+  font-size: 24rpx;
+  font-weight: bold;
+}
+
+.light-theme .record-type.buy .type-text {
+  background-color: rgba(255, 82, 82, 0.1);
+  color: #ff5252;
+}
+
+.light-theme .record-type.sell .type-text {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.light-theme .record-details {
+  flex: 1;
+  padding: 0 20rpx;
+}
+
+.light-theme .record-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.light-theme .record-row:last-child {
+  margin-bottom: 0;
+}
+
+.light-theme .detail-label {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+.light-theme .detail-value {
+  font-size: 24rpx;
+  color: #333333;
+  font-weight: bold;
+}
+
+.light-theme .record-status {
+  width: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.light-theme .status-text {
+  font-size: 24rpx;
+}
+
+.light-theme .status-text.completed {
+  color: #2196f3;
+}
+
+.light-theme .status-text.pending {
+  color: #ff9800;
+}
+
+.light-theme .status-text.canceled {
+  color: #9e9e9e;
+}
+
+.light-theme .empty-records {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200rpx;
+}
+
+.light-theme .empty-text {
+  font-size: 28rpx;
+  color: #999999;
+}
+
+.light-theme .profit {
+  color: #ff5252;
+}
+
+.light-theme .loss {
+  color: #4caf50;
+}
+</style> 

@@ -1,0 +1,324 @@
+﻿"""
+带自动清理功能的交易Agent - 数据提交给agent后自动删除导出文件
+"""
+
+from trading_day_init import quick_init, get_account_info
+from stock_data_receiver import start_stock_service, get_stock_data
+from trader_api_real import api
+import time
+import threading
+import glob
+import os
+from datetime import datetime
+
+class AutoCleanupTradingAgent:
+    def __init__(self):
+        # 基础账户信息
+        self.account_data = {}
+        
+        # 虚拟持仓状态（必须基于持仓导出数据）
+        self.virtual_holdings = {}
+        self.virtual_cash = 0.0
+        
+        # 交易状态
+        self.trading_active = False
+        self.trade_lock = threading.Lock()
+        
+        # 数据刷新
+        self.data_refresh_interval = 3  # 3秒刷新股市数据
+        
+    def cleanup_used_export_files(self):
+        """清理已使用的导出文件"""
+        try:
+            print(" 清理已使用的导出文件...")
+            
+            # 获取所有导出文件
+            patterns = [
+                "持仓数据_*.csv",
+                "成交数据_*.csv", 
+                "委托数据_*.csv"
+            ]
+            
+            deleted_count = 0
+            for pattern in patterns:
+                files = glob.glob(pattern)
+                for file_path in files:
+                    try:
+                        os.remove(file_path)
+                        print(f"    删除已使用文件: {file_path}")
+                        deleted_count += 1
+                    except Exception as e:
+                        print(f"    删除文件失败 {file_path}: {e}")
+            
+            if deleted_count > 0:
+                print(f"    清理完成，删除了 {deleted_count} 个已使用文件")
+            else:
+                print(f"    没有需要清理的文件")
+                
+        except Exception as e:
+            print(f"    清理文件失败: {e}")
+    
+    def initialize_trading_day(self):
+        """交易日初始化"""
+        print(" 自动清理版智能交易Agent - 交易日初始化")
+        print("=" * 60)
+        
+        # 导出持仓数据获取账户信息
+        success = quick_init()
+        if success:
+            self.sync_virtual_from_export()
+            print(f" 账户信息获取成功")
+            print(f"   可用资金: {self.virtual_cash:,.2f}")
+            print(f"   持仓股票: {len(self.virtual_holdings)} 只")
+            return True
+        else:
+            print(" 账户信息获取失败")
+            return False
+    
+    def sync_virtual_from_export(self):
+        """从持仓导出数据同步虚拟持仓"""
+        print(" 从持仓导出数据同步虚拟持仓...")
+        
+        # 获取最新持仓导出数据
+        self.account_data = get_account_info()
+        
+        # 基于真实导出数据更新虚拟状态
+        self.virtual_cash = self.account_data.get('available_cash', 0)
+        self.virtual_holdings = {}
+        
+        for holding in self.account_data.get('holdings', []):
+            code = holding.get('code', '')
+            if code:
+                self.virtual_holdings[code] = {
+                    'quantity': holding.get('quantity', 0),
+                    'available_quantity': holding.get('available_quantity', 0),
+                    'cost_price': holding.get('cost_price', 0),
+                    'current_price': holding.get('current_price', 0),
+                    'market_value': holding.get('market_value', 0),
+                    'profit_loss': holding.get('profit_loss', 0),
+                    'last_sync_time': datetime.now().strftime('%H:%M:%S'),
+                    'data_source': '持仓导出'
+                }
+        
+        print(f" 虚拟持仓已同步: {len(self.virtual_holdings)} 只股票")
+        print(f" 虚拟现金已同步: {self.virtual_cash:,.2f}")
+        print(f" 数据来源: 持仓导出文件")
+        
+        # 数据已提交给agent，清理已使用的导出文件
+        self.cleanup_used_export_files()
+    
+    def update_virtual_holdings_with_realtime_data(self):
+        """用实时数据更新虚拟持仓的价格信息（不改变数量和成本）"""
+        latest_stocks = get_stock_data()
+        
+        for code, holding in self.virtual_holdings.items():
+            if code in latest_stocks:
+                stock_info = latest_stocks[code]
+                current_price = stock_info.get('last_price', 0)
+                
+                if current_price > 0:
+                    # 只更新价格相关信息，数量和成本价保持不变
+                    holding['current_price'] = current_price
+                    holding['market_value'] = holding['quantity'] * current_price
+                    
+                    # 计算盈亏（基于持仓导出的成本价）
+                    cost_value = holding['quantity'] * holding['cost_price']
+                    holding['profit_loss'] = holding['market_value'] - cost_value
+                    holding['profit_loss_pct'] = (holding['profit_loss'] / cost_value * 100) if cost_value > 0 else 0
+                    
+                    holding['price_update_time'] = datetime.now().strftime('%H:%M:%S')
+    
+    def execute_trade_with_priority(self, trade_type, code, quantity, price=None):
+        """优先执行交易，交易后重新导出持仓更新虚拟数据"""
+        with self.trade_lock:
+            print(f" 优先执行交易: {trade_type} {code} {quantity}股")
+            
+            try:
+                if trade_type == 'buy':
+                    result = api.buy(code, quantity, price or "市价")
+                    if result:
+                        print(f" 买入成功: {code} {quantity}股")
+                        # 交易成功后重新导出持仓更新虚拟数据
+                        self.refresh_virtual_holdings_after_trade("买入")
+                    else:
+                        print(f" 买入失败: {code}")
+                    return result
+                    
+                elif trade_type == 'sell':
+                    result = api.sell(code, quantity, price or "市价")
+                    if result:
+                        print(f" 卖出成功: {code} {quantity}股")
+                        # 交易成功后重新导出持仓更新虚拟数据
+                        self.refresh_virtual_holdings_after_trade("卖出")
+                    else:
+                        print(f" 卖出失败: {code}")
+                    return result
+                    
+            except Exception as e:
+                print(f" 交易执行异常: {e}")
+                return False
+    
+    def refresh_virtual_holdings_after_trade(self, trade_type):
+        """交易后重新导出持仓更新虚拟数据"""
+        print(f" {trade_type}完成，重新导出持仓获取真实数据...")
+        
+        # 等待交易系统更新（给系统一点时间处理交易）
+        time.sleep(2)
+        
+        # 重新导出持仓获取最新真实数据
+        success = quick_init()
+        if success:
+            self.sync_virtual_from_export()  # 这里会自动清理文件
+            print(f" 基于最新持仓导出更新虚拟数据完成")
+        else:
+            print(" 持仓导出失败，虚拟数据可能不准确")
+    
+    def analyze_and_trade(self):
+        """分析股票数据并执行交易"""
+        print(f"\n 开始智能交易分析 (数据刷新间隔: {self.data_refresh_interval}秒)")
+        
+        while self.trading_active:
+            try:
+                # 1. 用实时数据更新虚拟持仓的价格信息
+                self.update_virtual_holdings_with_realtime_data()
+                
+                # 2. 获取最新股票数据
+                latest_stocks = get_stock_data()
+                
+                if latest_stocks:
+                    # 3. 分析交易机会
+                    for code, stock_info in latest_stocks.items():
+                        self.check_trading_opportunity(code, stock_info)
+                
+                # 4. 显示虚拟持仓状态
+                self.display_virtual_holdings()
+                
+            except Exception as e:
+                print(f" 交易分析异常: {e}")
+            
+            time.sleep(self.data_refresh_interval)
+    
+    def check_trading_opportunity(self, code, stock_info):
+        """检查交易机会"""
+        change_pct = stock_info.get('change_pct', 0)
+        price = stock_info.get('last_price', 0)
+        
+        # 基于虚拟持仓和实时数据的交易策略
+        if code in self.virtual_holdings:
+            # 已持仓股票的卖出策略
+            holding = self.virtual_holdings[code]
+            profit_pct = holding.get('profit_loss_pct', 0)
+            
+            if profit_pct > 10:  # 盈利超过10%
+                print(f" 盈利卖出机会: {code} 盈利 {profit_pct:.2f}%")
+                self.consider_sell(code, stock_info, "盈利了结")
+            elif profit_pct < -8:  # 亏损超过8%
+                print(f" 止损卖出机会: {code} 亏损 {profit_pct:.2f}%")
+                self.consider_sell(code, stock_info, "止损")
+        else:
+            # 未持仓股票的买入策略
+            if change_pct < -5:  # 跌超5%
+                print(f" 抄底买入机会: {code} 跌幅 {change_pct:.2f}%")
+                self.consider_buy(code, stock_info, "抄底")
+    
+    def consider_buy(self, code, stock_info, reason):
+        """考虑买入"""
+        price = stock_info.get('last_price', 0)
+        
+        if self.virtual_cash > 10000 and price > 0:
+            quantity = int(10000 / price / 100) * 100  # 买入1万元，整百股
+            if quantity >= 100:
+                print(f" 准备买入: {code} {quantity}股 {price:.2f} 原因:{reason}")
+                # 执行买入交易
+                self.execute_trade_with_priority('buy', code, quantity, price)
+    
+    def consider_sell(self, code, stock_info, reason):
+        """考虑卖出"""
+        if code in self.virtual_holdings:
+            holding = self.virtual_holdings[code]
+            available_qty = holding.get('available_quantity', 0)
+            price = stock_info.get('last_price', 0)
+            
+            if available_qty >= 100:
+                print(f" 准备卖出: {code} {available_qty}股 {price:.2f} 原因:{reason}")
+                # 执行卖出交易
+                self.execute_trade_with_priority('sell', code, available_qty, price)
+    
+    def display_virtual_holdings(self):
+        """显示虚拟持仓状态"""
+        if not self.virtual_holdings:
+            return
+            
+        print(f"\n 虚拟持仓状态 (现金: {self.virtual_cash:,.2f})")
+        print("-" * 80)
+        
+        total_market_value = 0
+        for code, holding in self.virtual_holdings.items():
+            market_value = holding.get('market_value', 0)
+            profit_loss = holding.get('profit_loss', 0)
+            profit_pct = holding.get('profit_loss_pct', 0)
+            sync_time = holding.get('last_sync_time', '')
+            
+            status = "" if profit_loss >= 0 else ""
+            print(f"{status} {code} | 持仓:{holding['quantity']}股 | "
+                  f"市值:{market_value:,.2f} | 盈亏:{profit_pct:+.2f}% | {sync_time}")
+            
+            total_market_value += market_value
+        
+        total_assets = self.virtual_cash + total_market_value
+        print(f" 总资产: {total_assets:,.2f} (数据已清理)")
+        print("-" * 80)
+    
+    def start_trading(self, host, port, token):
+        """启动完整的交易流程"""
+        print(" 启动自动清理版智能交易Agent")
+        print("=" * 70)
+        
+        # 1. 交易日初始化
+        if not self.initialize_trading_day():
+            return False
+        
+        # 2. 启动股票数据推送
+        print(f"\n 启动股票数据推送服务...")
+        try:
+            start_stock_service(host, port, token)
+            print(" 股票数据服务启动成功")
+        except Exception as e:
+            print(f" 股票数据服务启动失败: {e}")
+            return False
+        
+        # 3. 等待数据接收
+        print("\n 等待股票数据...")
+        time.sleep(5)
+        
+        # 4. 开始交易分析
+        self.trading_active = True
+        print("\n 开始自动清理版智能交易...")
+        print(" 重要: 导出文件提交给agent后自动删除")
+        
+        try:
+            self.analyze_and_trade()
+        except KeyboardInterrupt:
+            print("\n 用户停止交易")
+        finally:
+            self.trading_active = False
+            print(" 自动清理版交易Agent已停止")
+        
+        return True
+
+# 使用示例
+def main():
+    agent = AutoCleanupTradingAgent()
+    
+    # 配置股票数据服务器信息
+    HOST = ''      # 填入实际服务器地址
+    PORT = 0       # 填入实际端口
+    TOKEN = ''     # 填入实际token
+    
+    if HOST and PORT and TOKEN:
+        agent.start_trading(HOST, PORT, TOKEN)
+    else:
+        print(" 请先配置股票数据服务器信息")
+
+if __name__ == "__main__":
+    main()

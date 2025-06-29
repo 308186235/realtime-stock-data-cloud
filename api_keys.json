@@ -1,0 +1,15 @@
+{
+  "current_key": "test1_admi",
+  "keys": {
+    "prod": {
+      "key": "QT_wat5QfcJ6N9pDZM5",
+      "name": "生产环境",
+      "expire": "2025-07-26"
+    },
+    "test": {
+      "key": "test1_admi",
+      "name": "测试环境",
+      "expire": "2025-06-27"
+    }
+  }
+}

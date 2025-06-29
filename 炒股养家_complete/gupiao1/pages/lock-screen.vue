@@ -1,0 +1,458 @@
+<template>
+  <view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
+    <view class="logo-container">
+      <image class="logo" src="/static/images/logo.png" mode="aspectFit"></image>
+      <text class="app-name">智能交易助手</text>
+    </view>
+    
+    <view class="lock-content">
+      <text class="lock-message">请验证身份以解锁应用</text>
+      
+      <!-- 生物识别解锁选项 -->
+      <view v-if="useFingerprint || useFacialRecognition" class="biometric-options">
+        <view v-if="useFingerprint" class="biometric-button" @click="unlockWithFingerprint">
+          <view class="biometric-icon fingerprint-icon"></view>
+          <text class="biometric-text">指纹解锁</text>
+        </view>
+        
+        <view v-if="useFacialRecognition" class="biometric-button" @click="unlockWithFacialRecognition">
+          <view class="biometric-icon face-icon"></view>
+          <text class="biometric-text">面容解锁</text>
+        </view>
+      </view>
+      
+      <!-- PIN码解锁选项 -->
+      <view v-if="usePINCode" class="pin-code-section">
+        <text class="pin-code-title">请输入密码</text>
+        <view class="pin-code-display">
+          <view 
+            v-for="(digit, index) in 6" 
+            :key="index" 
+            class="pin-digit" 
+            :class="{ 'pin-filled': pinCode.length > index }"
+          ></view>
+        </view>
+        
+        <!-- 密码输入键盘 -->
+        <view class="keypad">
+          <view class="keypad-row">
+            <view class="keypad-key" @click="appendDigit('1')"><text>1</text></view>
+            <view class="keypad-key" @click="appendDigit('2')"><text>2</text></view>
+            <view class="keypad-key" @click="appendDigit('3')"><text>3</text></view>
+          </view>
+          <view class="keypad-row">
+            <view class="keypad-key" @click="appendDigit('4')"><text>4</text></view>
+            <view class="keypad-key" @click="appendDigit('5')"><text>5</text></view>
+            <view class="keypad-key" @click="appendDigit('6')"><text>6</text></view>
+          </view>
+          <view class="keypad-row">
+            <view class="keypad-key" @click="appendDigit('7')"><text>7</text></view>
+            <view class="keypad-key" @click="appendDigit('8')"><text>8</text></view>
+            <view class="keypad-key" @click="appendDigit('9')"><text>9</text></view>
+          </view>
+          <view class="keypad-row">
+            <view class="keypad-key empty-key"></view>
+            <view class="keypad-key" @click="appendDigit('0')"><text>0</text></view>
+            <view class="keypad-key delete-key" @click="deleteDigit">
+              <view class="delete-icon"></view>
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <!-- 错误提示 -->
+      <text v-if="errorMessage" class="error-message">{{ errorMessage }}</text>
+    </view>
+  </view>
+</template>
+
+<script>
+import authService from '../services/auth-service.js';
+import biometricAuth from '../utils/biometric-auth.js';
+
+export default {
+  data() {
+    return {
+      isDarkMode: false,
+      useFingerprint: false,
+      useFacialRecognition: false,
+      usePINCode: false,
+      pinCode: '',
+      errorMessage: '',
+      verifyingBiometrics: false
+    }
+  },
+  onLoad() {
+    // 获取当前主题设置
+    const app = getApp();
+    this.isDarkMode = app.globalData.isDarkMode;
+    
+    // 加载安全设置
+    this.loadSecuritySettings();
+    
+    // 如果有可用的生物识别,自动开始验证
+    this.autoStartBiometricAuth();
+  },
+  methods: {
+    loadSecuritySettings() {
+      const settings = authService.getSecuritySettings();
+      this.useFingerprint = settings.useFingerprint;
+      this.useFacialRecognition = settings.useFacialRecognition;
+      this.usePINCode = settings.usePINCode;
+    },
+    
+    // 自动开始生物识别验证
+    autoStartBiometricAuth() {
+      if (this.useFacialRecognition && !this.verifyingBiometrics) {
+        setTimeout(() => {
+          this.unlockWithFacialRecognition();
+        }, 1000);
+      } else if (this.useFingerprint && !this.verifyingBiometrics) {
+        setTimeout(() => {
+          this.unlockWithFingerprint();
+        }, 1000);
+      }
+    },
+    
+    // 指纹解锁
+    unlockWithFingerprint() {
+      if (this.verifyingBiometrics) return;
+      
+      this.verifyingBiometrics = true;
+      this.errorMessage = '';
+      
+      biometricAuth.verifyFingerprint('请验证指纹以解锁应用')
+        .then(result => {
+          if (result.status === biometricAuth.BIOMETRIC_STATUS.SUCCESS) {
+            this.unlockSuccess();
+          } else if (result.status === biometricAuth.BIOMETRIC_STATUS.CANCELED) {
+            this.verifyingBiometrics = false;
+          }
+        })
+        .catch(error => {
+          this.verifyingBiometrics = false;
+          this.errorMessage = error.message || '指纹验证失败';
+          console.error('指纹验证失败', error);
+        });
+    },
+    
+    // 面容解锁
+    unlockWithFacialRecognition() {
+      if (this.verifyingBiometrics) return;
+      
+      this.verifyingBiometrics = true;
+      this.errorMessage = '';
+      
+      biometricAuth.verifyFacial('请面向屏幕验证身份')
+        .then(result => {
+          if (result.status === biometricAuth.BIOMETRIC_STATUS.SUCCESS) {
+            this.unlockSuccess();
+          } else if (result.status === biometricAuth.BIOMETRIC_STATUS.CANCELED) {
+            this.verifyingBiometrics = false;
+          }
+        })
+        .catch(error => {
+          this.verifyingBiometrics = false;
+          this.errorMessage = error.message || '面容验证失败';
+          console.error('面容验证失败', error);
+        });
+    },
+    
+    // 添加密码数字
+    appendDigit(digit) {
+      if (this.pinCode.length < 6) {
+        this.pinCode += digit;
+        
+        // 当密码输入完成时验证
+        if (this.pinCode.length === 6) {
+          this.verifyPINCode();
+        }
+      }
+    },
+    
+    // 删除密码数字
+    deleteDigit() {
+      if (this.pinCode.length > 0) {
+        this.pinCode = this.pinCode.substring(0, this.pinCode.length - 1);
+      }
+    },
+    
+    // 验证密码
+    verifyPINCode() {
+      this.errorMessage = '';
+      
+      const result = authService.unlockWithPINCode(this.pinCode);
+      
+      if (result.status === 'success') {
+        this.unlockSuccess();
+      } else {
+        this.errorMessage = '密码错误,请重试';
+        this.pinCode = '';
+        
+        // 震动反馈
+        try {
+          uni.vibrateShort();
+        } catch (e) {
+          console.error('震动失败', e);
+        }
+      }
+    },
+    
+    // 解锁成功
+    unlockSuccess() {
+      // 设置应用未锁定状态
+      authService.setAppLocked(false);
+      
+      // 成功反馈
+      uni.showToast({
+        title: '验证成功',
+        icon: 'success',
+        duration: 1500
+      });
+      
+      // 延迟后跳转到首页
+      setTimeout(() => {
+        uni.reLaunch({
+          url: '/pages/index/index'
+        });
+      }, 1500);
+    }
+  }
+}
+</script>
+
+<style>
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  padding: 60rpx 40rpx;
+}
+
+.light-theme {
+  background-color: #f8f9fa;
+}
+
+.dark-theme {
+  background-color: #121212;
+}
+
+.logo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 80rpx;
+  margin-bottom: 80rpx;
+}
+
+.logo {
+  width: 160rpx;
+  height: 160rpx;
+  margin-bottom: 20rpx;
+}
+
+.app-name {
+  font-size: 36rpx;
+  font-weight: bold;
+}
+
+.light-theme .app-name {
+  color: #333333;
+}
+
+.dark-theme .app-name {
+  color: #ffffff;
+}
+
+.lock-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lock-message {
+  font-size: 32rpx;
+  margin-bottom: 60rpx;
+  text-align: center;
+}
+
+.light-theme .lock-message {
+  color: #333333;
+}
+
+.dark-theme .lock-message {
+  color: #ffffff;
+}
+
+.biometric-options {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  margin-bottom: 60rpx;
+}
+
+.biometric-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 30rpx;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  width: 180rpx;
+}
+
+.light-theme .biometric-button {
+  background-color: #ffffff;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .biometric-button {
+  background-color: #2a2a2a;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.2);
+}
+
+.biometric-icon {
+  width: 80rpx;
+  height: 80rpx;
+  margin-bottom: 16rpx;
+}
+
+.fingerprint-icon {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%234c8dff"><path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.09.18-.26.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.98 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4.01-1.36.7-2.5 1.7-3.4 2.96-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.15-.37.15zm7.17-1.85c-1.19 0-2.24-.3-3.1-.89-1.49-1.01-2.38-2.65-2.38-4.39 0-.28.22-.5.5-.5s.5.22.5.5c0 1.41.72 2.74 1.94 3.56.71.48 1.54.71 2.54.71.24 0 .64-.03 1.04-.1.27-.05.53.13.58.41.05.27-.13.53-.41.58-.57.11-1.07.12-1.21.12zM14.91 22c-.04 0-.09-.01-.13-.02-1.59-.44-2.63-1.03-3.72-2.1-1.4-1.39-2.17-3.24-2.17-5.22 0-1.62 1.38-2.94 3.08-2.94 1.7 0 3.08 1.32 3.08 2.94 0 1.07.93 1.94 2.08 1.94s2.08-.87 2.08-1.94c0-3.77-3.25-6.83-7.25-6.83-2.84 0-5.44 1.58-6.61 4.03-.39.81-.59 1.76-.59 2.8 0 .78.07 2.01.67 3.61.1.26-.03.55-.29.64-.26.1-.55-.04-.64-.29-.49-1.31-.73-2.61-.73-3.96 0-1.2.23-2.29.68-3.24 1.33-2.79 4.28-4.6 7.51-4.6 4.55 0 8.25 3.51 8.25 7.83 0 1.62-1.38 2.94-3.08 2.94s-3.08-1.32-3.08-2.94c0-1.07-.93-1.94-2.08-1.94s-2.08.87-2.08 1.94c0 1.71.66 3.31 1.87 4.51.95.94 1.86 1.46 3.27 1.85.27.07.42.35.35.61-.05.23-.26.38-.47.38z"/></svg>');
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.face-icon {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%234c8dff"><path d="M9 11.75c-.69 0-1.25.56-1.25 1.25s.56 1.25 1.25 1.25 1.25-.56 1.25-1.25-.56-1.25-1.25-1.25zM6 12c0-.69.56-1.25 1.25-1.25S8.5 11.31 8.5 12 7.94 13.25 7.25 13.25 6 12.69 6 12zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8 0-.29.02-.58.05-.86 2.36-1.05 4.23-2.98 5.21-5.37C11.07 8.33 14.05 10 17.42 10c.78 0 1.53-.09 2.25-.26.21.71.33 1.47.33 2.26 0 4.41-3.59 8-8 8z"/></svg>');
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.biometric-text {
+  font-size: 28rpx;
+}
+
+.light-theme .biometric-text {
+  color: #333333;
+}
+
+.dark-theme .biometric-text {
+  color: #ffffff;
+}
+
+.pin-code-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 20rpx;
+}
+
+.pin-code-title {
+  font-size: 32rpx;
+  margin-bottom: 40rpx;
+}
+
+.light-theme .pin-code-title {
+  color: #333333;
+}
+
+.dark-theme .pin-code-title {
+  color: #ffffff;
+}
+
+.pin-code-display {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  margin-bottom: 60rpx;
+}
+
+.pin-digit {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  margin: 0 10rpx;
+}
+
+.light-theme .pin-digit {
+  border: 2rpx solid #333333;
+}
+
+.dark-theme .pin-digit {
+  border: 2rpx solid #ffffff;
+}
+
+.pin-filled {
+  background-color: #4c8dff;
+  border-color: #4c8dff !important;
+}
+
+.keypad {
+  width: 100%;
+  max-width: 600rpx;
+}
+
+.keypad-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 30rpx;
+}
+
+.keypad-key {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.light-theme .keypad-key {
+  background-color: #ffffff;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .keypad-key {
+  background-color: #2a2a2a;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.2);
+}
+
+.keypad-key text {
+  font-size: 40rpx;
+  font-weight: bold;
+}
+
+.light-theme .keypad-key text {
+  color: #333333;
+}
+
+.dark-theme .keypad-key text {
+  color: #ffffff;
+}
+
+.empty-key {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.delete-icon {
+  width: 40rpx;
+  height: 40rpx;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%234c8dff"><path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/></svg>');
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.error-message {
+  font-size: 28rpx;
+  color: #ff5252;
+  margin-top: 40rpx;
+  text-align: center;
+}
+</style> 

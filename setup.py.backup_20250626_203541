@@ -1,0 +1,109 @@
+import subprocess
+import os
+import sys
+import platform
+
+def print_header(text):
+    print("\n" + "="*60)
+    print(f" {text} ".center(60))
+    print("="*60)
+
+def print_step(text):
+    print(f"\n==> {text}")
+
+def run_command(command, shell=False):
+    try:
+        if shell:
+            subprocess.run(command, shell=True, check=True)
+        else:
+            subprocess.run(command, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: {e}")
+        return False
+
+def create_directories():
+    print_step("Creating necessary directories")
+    directories = [
+        "logs",
+        "data",
+        "data/t_trading_logs",
+        "models",
+        "models/t_trading"
+    ]
+    
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+        print(f"Created directory: {directory}")
+
+def install_dependencies():
+    print_step("Installing dependencies")
+    
+    # Check if virtualenv is installed
+    try:
+        subprocess.run(["pip", "show", "virtualenv"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    except:
+        print("Installing virtualenv...")
+        run_command(["pip", "install", "virtualenv"])
+    
+    # Create virtual environment
+    if not os.path.exists("venv"):
+        print("Creating virtual environment...")
+        run_command(["virtualenv", "venv"])
+    
+    # Activate virtual environment and install dependencies
+    activate_cmd = "venv\\Scripts\\activate" if platform.system() == "Windows" else "source venv/bin/activate"
+    install_cmd = f"{activate_cmd} && pip install -r requirements.txt"
+    
+    print("Installing required packages...")
+    run_command(install_cmd, shell=True)
+
+def setup_database():
+    print_step("Setting up database")
+    # This would normally set up your database, but for simplicity we're skipping actual DB setup
+    print("Database setup would go here in a real application")
+
+def run_application():
+    print_step("Starting the application")
+    
+    # Activate virtual environment and start the server
+    activate_cmd = "venv\\Scripts\\activate" if platform.system() == "Windows" else "source venv/bin/activate"
+    start_cmd = f"{activate_cmd} && cd backend && uvicorn app:app --reload --host 0.0.0.0 --port 8000"
+    
+    print("Starting the server...")
+    print("The application will be available at http://localhost:8000")
+    print("Press Ctrl+C to stop the server")
+    
+    run_command(start_cmd, shell=True)
+
+def main():
+    print_header("T Trading System Setup")
+    
+    print("This script will set up the T Trading System with AI-driven trading capabilities.")
+    print("It will:")
+    print("1. Create necessary directories")
+    print("2. Install dependencies")
+    print("3. Set up the database")
+    print("4. Start the application")
+    
+    confirmation = input("\nDo you want to continue? (y/n): ")
+    if confirmation.lower() != 'y':
+        print("Setup cancelled.")
+        return
+    
+    create_directories()
+    install_dependencies()
+    setup_database()
+    
+    start_app = input("\nDo you want to start the application now? (y/n): ")
+    if start_app.lower() == 'y':
+        run_application()
+    else:
+        print("\nSetup complete! To start the application later, run:")
+        if platform.system() == "Windows":
+            print("venv\\Scripts\\activate && cd backend && uvicorn app:app --reload --host 0.0.0.0 --port 8000")
+        else:
+            print("source venv/bin/activate && cd backend && uvicorn app:app --reload --host 0.0.0.0 --port 8000")
+
+if __name__ == "__main__":
+    main() 

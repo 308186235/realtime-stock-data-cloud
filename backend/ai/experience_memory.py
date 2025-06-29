@@ -1,0 +1,717 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+import os
+import pickle
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+import traceback
+from collections import deque
+import random
+import sqlite3
+
+# 设置日志
+logger = logging.getLogger("ExperienceMemory")
+
+class ExperienceMemory:
+    """
+    交易经验记忆库 - 存储和管理历史交易数据,用于智能体学习
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化交易经验记忆库
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 记忆库参数
+        self.memory_limit = self.config.get("memory_limit", 10000)  # 记忆库大小限制
+        self.batch_size = self.config.get("batch_size", 64)         # 默认批次大小
+        
+        # 数据库配置
+        self.use_db = self.config.get("use_db", False)              # 是否使用数据库存储
+        self.db_path = self.config.get("db_path", "memory.db")      # 数据库路径
+        
+        # 内存缓存
+        self.memory_cache = deque(maxlen=self.memory_limit)
+        
+        # 初始化数据库(如果启用)
+        if self.use_db:
+            self._init_database()
+            
+        # 记忆统计
+        self.stats = {
+            "total_experiences": 0,
+            "positive_rewards": 0,
+            "negative_rewards": 0,
+            "successful_trades": 0,
+            "failed_trades": 0,
+            "avg_reward": 0.0
+        }
+        
+        logger.info(f"Experience Memory initialized with limit: {self.memory_limit}")
+    
+    def _init_database(self):
+        """初始化数据库"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 创建经验表
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS experiences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                state_json TEXT,
+                action_json TEXT,
+                reward REAL,
+                next_state_json TEXT,
+                done INTEGER,
+                metadata_json TEXT
+            )
+            ''')
+            
+            # 创建索引
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON experiences (timestamp)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reward ON experiences (reward)')
+            
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"Database initialized at: {self.db_path}")
+        except Exception as e:
+            logger.error(f"Error initializing database: {str(e)}")
+            traceback.print_exc()
+            self.use_db = False
+    
+    def add_experience(self, 
+                      state: Dict[str, Any], 
+                      action: Dict[str, Any], 
+                      reward: float, 
+                      next_state: Dict[str, Any], 
+                      done: bool,
+                      metadata: Dict[str, Any] = None) -> bool:
+        """
+        添加交易经验
+        
+        Args:
+            state: 决策时的状态
+            action: 执行的动作
+            reward: 获得的奖励
+            next_state: 执行后的新状态
+            done: 是否完成交易
+            metadata: 额外元数据
+            
+        Returns:
+            是否添加成功
+        """
+        try:
+            # 创建经验记录
+            timestamp = datetime.now().isoformat()
+            
+            experience = {
+                "timestamp": timestamp,
+                "state": state,
+                "action": action,
+                "reward": float(reward),
+                "next_state": next_state,
+                "done": bool(done),
+                "metadata": metadata or {}
+            }
+            
+            # 添加到内存缓存
+            self.memory_cache.append(experience)
+            
+            # 如果启用数据库,也保存到数据库
+            if self.use_db:
+                self._save_to_database(experience)
+            
+            # 更新统计信息
+            self.stats["total_experiences"] += 1
+            
+            if reward > 0:
+                self.stats["positive_rewards"] += 1
+                if done:
+                    self.stats["successful_trades"] += 1
+            elif reward < 0:
+                self.stats["negative_rewards"] += 1
+                if done:
+                    self.stats["failed_trades"] += 1
+            
+            # 更新平均奖励
+            self.stats["avg_reward"] = (
+                (self.stats["avg_reward"] * (self.stats["total_experiences"] - 1) + reward) / 
+                self.stats["total_experiences"]
+            )
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error adding experience: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def _save_to_database(self, experience: Dict[str, Any]) -> bool:
+        """保存经验到数据库"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                'INSERT INTO experiences (timestamp, state_json, action_json, reward, next_state_json, done, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (
+                    experience["timestamp"],
+                    json.dumps(experience["state"]),
+                    json.dumps(experience["action"]),
+                    experience["reward"],
+                    json.dumps(experience["next_state"]),
+                    1 if experience["done"] else 0,
+                    json.dumps(experience["metadata"])
+                )
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error saving to database: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def get_batch(self, batch_size: int = None) -> List[Dict[str, Any]]:
+        """
+        获取经验批次
+        
+        Args:
+            batch_size: 批次大小
+            
+        Returns:
+            经验批次
+        """
+        batch_size = batch_size or self.batch_size
+        
+        # 如果缓存中的经验不足,返回所有可用经验
+        if len(self.memory_cache) < batch_size:
+            return list(self.memory_cache)
+        
+        # 随机抽样
+        return random.sample(list(self.memory_cache), batch_size)
+    
+    def get_successful_experiences(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        获取成功的交易经验
+        
+        Args:
+            limit: 数量限制
+            
+        Returns:
+            成功的交易经验列表
+        """
+        # 从内存缓存中筛选
+        successful = [exp for exp in self.memory_cache if exp["reward"] > 0 and exp["done"]]
+        
+        # 如果数量不足且启用了数据库,从数据库补充
+        if len(successful) < limit and self.use_db:
+            additional = self._query_successful_from_db(limit - len(successful))
+            successful.extend(additional)
+        
+        # 限制数量
+        return successful[:limit]
+    
+    def get_failed_experiences(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        获取失败的交易经验
+        
+        Args:
+            limit: 数量限制
+            
+        Returns:
+            失败的交易经验列表
+        """
+        # 从内存缓存中筛选
+        failed = [exp for exp in self.memory_cache if exp["reward"] < 0 and exp["done"]]
+        
+        # 如果数量不足且启用了数据库,从数据库补充
+        if len(failed) < limit and self.use_db:
+            additional = self._query_failed_from_db(limit - len(failed))
+            failed.extend(additional)
+        
+        # 限制数量
+        return failed[:limit]
+    
+    def _query_successful_from_db(self, limit: int) -> List[Dict[str, Any]]:
+        """从数据库查询成功的交易经验"""
+        if not self.use_db:
+            return []
+            
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                'SELECT timestamp, state_json, action_json, reward, next_state_json, done, metadata_json FROM experiences WHERE reward > 0 AND done = 1 ORDER BY reward DESC LIMIT ?',
+                (limit,)
+            )
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            # 转换为字典
+            experiences = []
+            for row in results:
+                experiences.append({
+                    "timestamp": row[0],
+                    "state": json.loads(row[1]),
+                    "action": json.loads(row[2]),
+                    "reward": row[3],
+                    "next_state": json.loads(row[4]),
+                    "done": bool(row[5]),
+                    "metadata": json.loads(row[6])
+                })
+            
+            return experiences
+            
+        except Exception as e:
+            logger.error(f"Error querying successful experiences: {str(e)}")
+            traceback.print_exc()
+            return []
+    
+    def _query_failed_from_db(self, limit: int) -> List[Dict[str, Any]]:
+        """从数据库查询失败的交易经验"""
+        if not self.use_db:
+            return []
+            
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                'SELECT timestamp, state_json, action_json, reward, next_state_json, done, metadata_json FROM experiences WHERE reward < 0 AND done = 1 ORDER BY reward ASC LIMIT ?',
+                (limit,)
+            )
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            # 转换为字典
+            experiences = []
+            for row in results:
+                experiences.append({
+                    "timestamp": row[0],
+                    "state": json.loads(row[1]),
+                    "action": json.loads(row[2]),
+                    "reward": row[3],
+                    "next_state": json.loads(row[4]),
+                    "done": bool(row[5]),
+                    "metadata": json.loads(row[6])
+                })
+            
+            return experiences
+            
+        except Exception as e:
+            logger.error(f"Error querying failed experiences: {str(e)}")
+            traceback.print_exc()
+            return []
+    
+    def get_experience_stats(self) -> Dict[str, Any]:
+        """
+        获取经验统计信息
+        
+        Returns:
+            统计信息
+        """
+        # 更新统计信息中的内存使用情况
+        self.stats["memory_usage"] = len(self.memory_cache)
+        
+        # 如果启用数据库,查询数据库中的记录数
+        if self.use_db:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                
+                cursor.execute('SELECT COUNT(*) FROM experiences')
+                total_db = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT COUNT(*) FROM experiences WHERE reward > 0')
+                positive_db = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT COUNT(*) FROM experiences WHERE reward < 0')
+                negative_db = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT AVG(reward) FROM experiences')
+                avg_reward_db = cursor.fetchone()[0] or 0.0
+                
+                conn.close()
+                
+                self.stats["db_total"] = total_db
+                self.stats["db_positive"] = positive_db
+                self.stats["db_negative"] = negative_db
+                self.stats["db_avg_reward"] = avg_reward_db
+            
+            except Exception as e:
+                logger.error(f"Error querying database stats: {str(e)}")
+                traceback.print_exc()
+        
+        return self.stats
+    
+    def clear_memory(self, keep_best: bool = False) -> bool:
+        """
+        清除内存
+        
+        Args:
+            keep_best: 是否保留最佳经验
+            
+        Returns:
+            是否成功
+        """
+        try:
+            if keep_best:
+                # 保留奖励最高的经验
+                best_experiences = sorted(
+                    self.memory_cache, 
+                    key=lambda x: x["reward"], 
+                    reverse=True
+                )[:int(self.memory_limit * 0.1)]  # 保留10%
+                
+                self.memory_cache.clear()
+                for exp in best_experiences:
+                    self.memory_cache.append(exp)
+            else:
+                self.memory_cache.clear()
+            
+            # 重置部分统计信息
+            self.stats["memory_usage"] = len(self.memory_cache)
+            
+            logger.info(f"Memory cleared, kept {len(self.memory_cache)} experiences")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error clearing memory: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def save_to_file(self, filepath: str) -> bool:
+        """
+        保存经验到文件
+        
+        Args:
+            filepath: 文件路径
+            
+        Returns:
+            是否成功
+        """
+        try:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+            
+            # 保存到文件
+            with open(filepath, 'wb') as f:
+                pickle.dump(list(self.memory_cache), f)
+            
+            logger.info(f"Experiences saved to file: {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving experiences to file: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def load_from_file(self, filepath: str) -> bool:
+        """
+        从文件加载经验
+        
+        Args:
+            filepath: 文件路径
+            
+        Returns:
+            是否成功
+        """
+        try:
+            # 检查文件是否存在
+            if not os.path.exists(filepath):
+                logger.warning(f"Experience file not found: {filepath}")
+                return False
+            
+            # 加载文件
+            with open(filepath, 'rb') as f:
+                experiences = pickle.load(f)
+            
+            # 清除现有经验
+            self.memory_cache.clear()
+            
+            # 添加加载的经验
+            for exp in experiences:
+                self.memory_cache.append(exp)
+            
+            # 更新统计信息
+            self._update_stats_from_memory()
+            
+            logger.info(f"Loaded {len(self.memory_cache)} experiences from file: {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading experiences from file: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def _update_stats_from_memory(self):
+        """根据内存中的经验更新统计信息"""
+        # 重置统计信息
+        self.stats = {
+            "total_experiences": len(self.memory_cache),
+            "positive_rewards": 0,
+            "negative_rewards": 0,
+            "successful_trades": 0,
+            "failed_trades": 0,
+            "avg_reward": 0.0
+        }
+        
+        # 统计数据
+        total_reward = 0.0
+        
+        for exp in self.memory_cache:
+            reward = exp["reward"]
+            total_reward += reward
+            
+            if reward > 0:
+                self.stats["positive_rewards"] += 1
+                if exp["done"]:
+                    self.stats["successful_trades"] += 1
+            elif reward < 0:
+                self.stats["negative_rewards"] += 1
+                if exp["done"]:
+                    self.stats["failed_trades"] += 1
+        
+        # 计算平均奖励
+        if self.stats["total_experiences"] > 0:
+            self.stats["avg_reward"] = total_reward / self.stats["total_experiences"]
+    
+    def get_best_actions(self, state_key: str, top_n: int = 3) -> List[Dict[str, Any]]:
+        """
+        获取特定状态下表现最好的动作
+        
+        Args:
+            state_key: 状态键(用于匹配相似状态)
+            top_n: 返回前N个最佳动作
+            
+        Returns:
+            最佳动作列表
+        """
+        # 找到相似状态的经验
+        similar_experiences = self._find_similar_states(state_key)
+        
+        if not similar_experiences:
+            return []
+        
+        # 按照奖励降序排列
+        sorted_experiences = sorted(
+            similar_experiences, 
+            key=lambda x: x["reward"], 
+            reverse=True
+        )
+        
+        # 提取动作
+        best_actions = []
+        seen_actions = set()
+        
+        for exp in sorted_experiences:
+            action_key = exp["action"].get("action", "")
+            
+            # 如果动作不在已见列表中,添加它
+            if action_key and action_key not in seen_actions:
+                seen_actions.add(action_key)
+                best_actions.append({
+                    "action": exp["action"],
+                    "reward": exp["reward"],
+                    "timestamp": exp["timestamp"]
+                })
+            
+            # 如果已收集足够动作,退出
+            if len(best_actions) >= top_n:
+                break
+        
+        return best_actions
+    
+    def _find_similar_states(self, state_key: str) -> List[Dict[str, Any]]:
+        """查找相似状态的经验"""
+        # 简单实现:查找状态中包含相同市场状态的经验
+        # 实际应用中可能需要更复杂的相似度匹配算法
+        
+        similar_experiences = []
+        
+        for exp in self.memory_cache:
+            exp_state = exp["state"]
+            
+            # 检查市场状态
+            if exp_state.get("market_state", {}).get("market_regime") == state_key:
+                similar_experiences.append(exp)
+        
+        return similar_experiences
+    
+    def analyze_memory_patterns(self) -> Dict[str, Any]:
+        """
+        分析记忆中的模式
+        
+        Returns:
+            模式分析结果
+        """
+        if len(self.memory_cache) < 10:
+            return {"error": "Insufficient data for pattern analysis"}
+        
+        try:
+            # 计算各种状态和动作的统计信息
+            market_regimes = {}
+            risk_levels = {}
+            action_stats = {}
+            success_by_regime = {}
+            
+            for exp in self.memory_cache:
+                # 提取关键信息
+                state = exp["state"]
+                action = exp["action"].get("action", "unknown")
+                reward = exp["reward"]
+                done = exp["done"]
+                
+                # 市场状态
+                market_regime = state.get("market_state", {}).get("market_regime", "unknown")
+                market_regimes[market_regime] = market_regimes.get(market_regime, 0) + 1
+                
+                # 风险级别
+                risk_level = state.get("risk_state", {}).get("level", "unknown")
+                risk_levels[risk_level] = risk_levels.get(risk_level, 0) + 1
+                
+                # 动作统计
+                if action not in action_stats:
+                    action_stats[action] = {"count": 0, "total_reward": 0.0, "success": 0, "failure": 0}
+                
+                action_stats[action]["count"] += 1
+                action_stats[action]["total_reward"] += reward
+                
+                if done:
+                    if reward > 0:
+                        action_stats[action]["success"] += 1
+                    elif reward < 0:
+                        action_stats[action]["failure"] += 1
+                
+                # 不同市场状态下的成功率
+                if market_regime not in success_by_regime:
+                    success_by_regime[market_regime] = {"trades": 0, "success": 0, "failure": 0}
+                
+                if done:
+                    success_by_regime[market_regime]["trades"] += 1
+                    if reward > 0:
+                        success_by_regime[market_regime]["success"] += 1
+                    elif reward < 0:
+                        success_by_regime[market_regime]["failure"] += 1
+            
+            # 计算动作的平均奖励和成功率
+            for action, stats in action_stats.items():
+                if stats["count"] > 0:
+                    stats["avg_reward"] = stats["total_reward"] / stats["count"]
+                    stats["success_rate"] = stats["success"] / (stats["success"] + stats["failure"]) if (stats["success"] + stats["failure"]) > 0 else 0
+            
+            # 计算各市场状态下的成功率
+            for regime, stats in success_by_regime.items():
+                if stats["trades"] > 0:
+                    stats["success_rate"] = stats["success"] / stats["trades"]
+            
+            # 构建分析结果
+            analysis = {
+                "market_regimes": market_regimes,
+                "risk_levels": risk_levels,
+                "action_stats": action_stats,
+                "success_by_regime": success_by_regime,
+                "sample_size": len(self.memory_cache),
+                "analysis_time": datetime.now().isoformat()
+            }
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error analyzing memory patterns: {str(e)}")
+            traceback.print_exc()
+            return {"error": f"Analysis failed: {str(e)}"}
+
+
+# 主函数(用于测试)
+def main():
+    """测试ExperienceMemory功能"""
+    # 创建记忆库
+    memory = ExperienceMemory({
+        "memory_limit": 1000,
+        "use_db": False
+    })
+    
+    # 添加一些模拟经验
+    for i in range(100):
+        # 模拟状态
+        state = {
+            "market_state": {
+                "market_regime": random.choice([
+                    "bull_trending", "bear_trending", "neutral_low_vol", "transition_bullish"
+                ])
+            },
+            "risk_state": {
+                "level": random.choice(["low", "medium", "high"])
+            }
+        }
+        
+        # 模拟动作
+        action = {
+            "action": random.choice(["buy", "sell", "hold"]),
+            "confidence": random.random()
+        }
+        
+        # 模拟奖励(与动作匹配的市场状态有更高奖励)
+        reward = 0.0
+        if (action["action"] == "buy" and state["market_state"]["market_regime"] in ["bull_trending", "transition_bullish"]) or \
+           (action["action"] == "sell" and state["market_state"]["market_regime"] == "bear_trending"):
+            reward = random.uniform(0.01, 0.1)
+        else:
+            reward = random.uniform(-0.1, 0.05)
+        
+        # 模拟下一个状态(简单复制)
+        next_state = state.copy()
+        
+        # 添加经验
+        memory.add_experience(
+            state, action, reward, next_state, 
+            done=(i % 10 == 0),  # 每10个经验完成一次交易
+            metadata={"simulation": True}
+        )
+    
+    # 获取统计信息
+    stats = memory.get_experience_stats()
+    print(f"Experience stats: {json.dumps(stats, indent=2)}")
+    
+    # 获取批次
+    batch = memory.get_batch(10)
+    print(f"Sample batch (10): {len(batch)} experiences")
+    
+    # 获取成功的经验
+    successful = memory.get_successful_experiences(5)
+    print(f"Successful experiences (5): {len(successful)} found")
+    
+    # 分析模式
+    patterns = memory.analyze_memory_patterns()
+    print(f"Pattern analysis: {json.dumps(patterns, indent=2)}")
+    
+    # 保存到文件
+    memory.save_to_file("test_memory.pkl")
+    
+    # 清除内存
+    memory.clear_memory()
+    print(f"After clearing, memory size: {len(memory.memory_cache)}")
+    
+    # 从文件加载
+    memory.load_from_file("test_memory.pkl")
+    print(f"After loading, memory size: {len(memory.memory_cache)}")
+
+if __name__ == "__main__":
+    main() 

@@ -1,0 +1,51 @@
+# API接口文档
+
+## 接口规范
+1. 认证方式：Bearer Token
+2. 响应格式：JSON
+3. 版本控制：/api/v1/
+
+## 核心接口
+### 策略优化接口
+`POST /api/v1/strategies/optimize`
+
+**请求示例：**
+```json
+{
+  "strategy_id": "moving_average",
+  "parameters": {
+    "short_window": 5,
+    "long_window": 20
+  }
+}
+```
+
+**响应字段说明：**
+- optimized_params: 优化后的参数组合
+- sharpe_ratio: 夏普比率
+- max_drawdown: 最大回撤
+
+## 数据流图示
+```mermaid
+graph TD
+    A[行情数据] --> B(策略分析)
+    B --> C{AI决策}
+    C -->|买入信号| D[用户界面]
+    C -->|卖出信号| D
+    C -->|持仓建议| D
+
+    系统时钟 --> E[定时训练]
+    E --> F[模型更新]
+    F --> B
+
+    style A fill:#f9f,stroke:#333
+    style B fill:#ccf,stroke:#333
+    style C fill:#f96,stroke:#333
+```
+
+## 错误代码
+| 代码 | 说明 |
+|------|------|
+| 400 | 参数校验失败 |
+| 401 | 认证失败 |
+| 503 | 策略计算超时 |

@@ -1,0 +1,128 @@
+import pandas as pd
+import numpy as np
+from abc import ABC, abstractmethod
+
+class BaseStrategy(ABC):
+    """
+    Base class for all trading strategies.
+    All strategy implementations should inherit from this class and implement the required methods.
+    """
+    
+    def __init__(self, parameters=None):
+        """
+        Initialize the strategy with parameters.
+        
+        Args:
+            parameters (dict): Strategy parameters
+        """
+        self.parameters = parameters or {}
+        self.name = "Base Strategy"
+        self.description = "Abstract base strategy"
+    
+    @abstractmethod
+    def generate_signals(self, data):
+        """
+        Generate trading signals based on market data.
+        
+        Args:
+            data (pd.DataFrame): Historical market data
+            
+        Returns:
+            pd.Series: Series of trading signals (1 for buy, -1 for sell, 0 for hold)
+        """
+        pass
+    
+    @abstractmethod
+    def get_default_parameters(self):
+        """
+        Get default parameters for the strategy.
+        
+        Returns:
+            dict: Default parameters
+        """
+        pass
+    
+    @abstractmethod
+    def get_parameter_ranges(self):
+        """
+        Get valid ranges for strategy parameters, used for optimization.
+        
+        Returns:
+            dict: Parameter ranges with min, max, and step values
+        """
+        pass
+    
+    def backtest(self, data, initial_capital=10000.0):
+        """
+        Backtest the strategy on historical data.
+        
+        Args:
+            data (pd.DataFrame): Historical market data with OHLCV
+            initial_capital (float): Initial capital
+            
+        Returns:
+            dict: Backtest results including performance metrics
+        """
+        signals = self.generate_signals(data)
+        
+        # Create position column (1 if we have a position, 0 otherwise)
+        positions = signals.shift(1).fillna(0)
+        
+        # Calculate returns
+        data['returns'] = data['close'].pct_change()
+        data['strategy_returns'] = data['returns'] * positions
+        
+        # Calculate cumulative returns
+        data['cum_returns'] = (1 + data['returns']).cumprod()
+        data['cum_strategy_returns'] = (1 + data['strategy_returns']).cumprod()
+        
+        # Calculate portfolio value
+        data['portfolio_value'] = initial_capital * data['cum_strategy_returns']
+        
+        # Calculate performance metrics
+        total_trades = positions.diff().fillna(0).abs().sum() / 2
+        winning_trades = ((positions == 1) & (data['returns'] > 0)).sum() + ((positions == -1) & (data['returns'] < 0)).sum()
+        
+        if total_trades > 0:
+            win_rate = winning_trades / total_trades
+        else:
+            win_rate = 0
+            
+        # Calculate profit factor
+        gross_profits = data.loc[data['strategy_returns'] > 0, 'strategy_returns'].sum()
+        gross_losses = abs(data.loc[data['strategy_returns'] < 0, 'strategy_returns'].sum())
+        
+        if gross_losses > 0:
+            profit_factor = gross_profits / gross_losses
+        else:
+            profit_factor = float('inf') if gross_profits > 0 else 0
+            
+        # Calculate Sharpe ratio (annualized)
+        risk_free_rate = 0.0
+        sharpe_ratio = (data['strategy_returns'].mean() - risk_free_rate) / data['strategy_returns'].std() * np.sqrt(252) if data['strategy_returns'].std() > 0 else 0
+        
+        return {
+            'win_rate': float(win_rate),
+            'profit_factor': float(profit_factor),
+            'sharpe_ratio': float(sharpe_ratio),
+            'total_return': float(data['cum_strategy_returns'].iloc[-1] - 1),
+            'max_drawdown': float(self._calculate_max_drawdown(data['portfolio_value'])),
+            'total_trades': int(total_trades)
+        }
+    
+    def _calculate_max_drawdown(self, equity_curve):
+        """
+        Calculate maximum drawdown from equity curve.
+        
+        Args:
+            equity_curve (pd.Series): Equity curve
+            
+        Returns:
+            float: Maximum drawdown as a percentage
+        """
+        # Calculate drawdown
+        rolling_max = equity_curve.cummax()
+        drawdown = (equity_curve - rolling_max) / rolling_max
+        
+        # Return the maximum drawdown
+        return abs(drawdown.min()) 

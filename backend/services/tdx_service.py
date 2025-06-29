@@ -1,0 +1,345 @@
+import os
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+
+from data_fetchers.tdx_crawler import TdxDataCrawler
+
+logger = logging.getLogger(__name__)
+
+class TdxService:
+    """
+    通达信数据服务
+    提供股票数据获取,处理和缓存功能
+    """
+    
+    def __init__(self, tdx_path=None, cache_dir='data/cache'):
+        """
+        初始化通达信数据服务
+        
+        Args:
+            tdx_path: 通达信安装路径,如果为None则自动寻找
+            cache_dir: 数据缓存目录
+        """
+        self.crawler = TdxDataCrawler(tdx_path)
+        self.cache_dir = cache_dir
+        
+        # 创建缓存目录
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        # 股票基础数据缓存
+        self.stock_list_cache = None
+        self.stock_list_cache_time = None
+        
+        # 指数数据缓存
+        self.index_data_cache = {}
+        
+    def get_stock_list(self, use_cache=True, cache_days=1):
+        """
+        获取股票列表
+        
+        Args:
+            use_cache: 是否使用缓存
+            cache_days: 缓存天数,超过则重新获取
+            
+        Returns:
+            pd.DataFrame: 股票基本信息
+        """
+        cache_file = os.path.join(self.cache_dir, 'stock_list.csv')
+        
+        # 如果使用缓存且缓存存在,则加载缓存
+        if use_cache:
+            # 检查内存缓存
+            if self.stock_list_cache is not None and self.stock_list_cache_time is not None:
+                cache_age = (datetime.now() - self.stock_list_cache_time).days
+                if cache_age < cache_days:
+                    return self.stock_list_cache
+            
+            # 检查文件缓存
+            if os.path.exists(cache_file):
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(cache_file))
+                file_age = (datetime.now() - file_mtime).days
+                
+                if file_age < cache_days:
+                    try:
+                        df = pd.read_csv(cache_file)
+                        self.stock_list_cache = df
+                        self.stock_list_cache_time = file_mtime
+                        return df
+                    except Exception as e:
+                        logger.warning(f"读取股票列表缓存失败: {e}")
+        
+        # 如果没有缓存或缓存过期,则重新获取
+        df = self.crawler.get_stock_list()
+        
+        # 更新缓存
+        if not df.empty:
+            self.stock_list_cache = df
+            self.stock_list_cache_time = datetime.now()
+            
+            try:
+                df.to_csv(cache_file, index=False)
+            except Exception as e:
+                logger.warning(f"保存股票列表缓存失败: {e}")
+        
+        return df
+    
+    def get_k_data(self, code, start_date=None, end_date=None, freq='daily', use_cache=True, cache_days=1):
+        """
+        获取股票K线数据
+        
+        Args:
+            code: 股票代码
+            start_date: 开始日期,格式:'YYYY-MM-DD'
+            end_date: 结束日期,格式:'YYYY-MM-DD'
+            freq: 数据频率,支持 'daily', 'weekly', 'monthly'
+            use_cache: 是否使用缓存
+            cache_days: 缓存天数,超过则重新获取
+            
+        Returns:
+            pd.DataFrame: K线数据
+        """
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            
+        # 缓存文件命名
+        cache_file = os.path.join(self.cache_dir, f"{code}_{freq}_{start_date}_{end_date}.csv")
+        
+        # 如果使用缓存且缓存存在,则加载缓存
+        if use_cache and os.path.exists(cache_file):
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(cache_file))
+            file_age = (datetime.now() - file_mtime).days
+            
+            if file_age < cache_days:
+                try:
+                    df = pd.read_csv(cache_file)
+                    # 转换日期列
+                    if 'date' in df.columns:
+                        df['date'] = pd.to_datetime(df['date'])
+                    return df
+                except Exception as e:
+                    logger.warning(f"读取K线数据缓存失败 - 股票: {code}, 错误: {e}")
+        
+        # 如果没有缓存或缓存过期,则重新获取
+        df = self.crawler.get_k_data(code, start_date, end_date, freq)
+        
+        # 更新缓存
+        if not df.empty:
+            try:
+                df.to_csv(cache_file, index=False)
+            except Exception as e:
+                logger.warning(f"保存K线数据缓存失败 - 股票: {code}, 错误: {e}")
+        
+        return df
+    
+    def get_realtime_quotes(self, codes):
+        """
+        获取实时行情数据,不缓存
+        
+        Args:
+            codes: 股票代码列表,如 ['000001', '600000']
+            
+        Returns:
+            pd.DataFrame: 实时行情数据
+        """
+        return self.crawler.get_realtime_quotes(codes)
+    
+    def get_index_data(self, index_code, start_date=None, end_date=None, use_cache=True, cache_days=1):
+        """
+        获取指数数据
+        
+        Args:
+            index_code: 指数代码,如 '000001' (上证指数)
+            start_date: 开始日期,格式:'YYYY-MM-DD'
+            end_date: 结束日期,格式:'YYYY-MM-DD'
+            use_cache: 是否使用缓存
+            cache_days: 缓存天数,超过则重新获取
+            
+        Returns:
+            pd.DataFrame: 指数数据
+        """
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            
+        # 缓存文件命名
+        cache_file = os.path.join(self.cache_dir, f"index_{index_code}_{start_date}_{end_date}.csv")
+        
+        # 如果使用缓存且缓存存在,则加载缓存
+        if use_cache:
+            # 检查内存缓存
+            cache_key = f"{index_code}_{start_date}_{end_date}"
+            if cache_key in self.index_data_cache:
+                cache_time, df = self.index_data_cache[cache_key]
+                cache_age = (datetime.now() - cache_time).days
+                if cache_age < cache_days:
+                    return df.copy()
+            
+            # 检查文件缓存
+            if os.path.exists(cache_file):
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(cache_file))
+                file_age = (datetime.now() - file_mtime).days
+                
+                if file_age < cache_days:
+                    try:
+                        df = pd.read_csv(cache_file)
+                        # 转换日期列
+                        if 'date' in df.columns:
+                            df['date'] = pd.to_datetime(df['date'])
+                        # 更新内存缓存
+                        self.index_data_cache[cache_key] = (file_mtime, df)
+                        return df
+                    except Exception as e:
+                        logger.warning(f"读取指数数据缓存失败 - 指数: {index_code}, 错误: {e}")
+        
+        # 如果没有缓存或缓存过期,则重新获取
+        df = self.crawler.get_index_data(index_code, start_date, end_date)
+        
+        # 更新缓存
+        if not df.empty:
+            # 更新内存缓存
+            cache_key = f"{index_code}_{start_date}_{end_date}"
+            self.index_data_cache[cache_key] = (datetime.now(), df.copy())
+            
+            try:
+                df.to_csv(cache_file, index=False)
+            except Exception as e:
+                logger.warning(f"保存指数数据缓存失败 - 指数: {index_code}, 错误: {e}")
+        
+        return df
+    
+    def get_industry_stocks(self, industry, use_cache=True):
+        """
+        获取指定行业的股票列表
+        
+        Args:
+            industry: 行业名称,如 '银行', '证券' 等
+            use_cache: 是否使用缓存
+            
+        Returns:
+            pd.DataFrame: 指定行业的股票列表
+        """
+        # 获取股票列表,使用相同的缓存设置
+        stock_list = self.get_stock_list(use_cache=use_cache)
+        
+        return self.crawler.get_industry_stocks(industry)
+    
+    def get_stock_fundamentals(self, code):
+        """
+        从网络获取股票基本面数据
+        
+        Args:
+            code: 股票代码
+            
+        Returns:
+            Dict: 股票基本面数据
+        """
+        market = '1' if code.startswith('6') else '0'
+        try:
+            import requests
+            url = f"http://push2.eastmoney.com/api/qt/stock/get?secid={market}.{code}&fields=f57,f58,f59,f60,f61,f127,f128,f129,f130,f131,f132,f133,f134,f135,f136,f137,f138,f139,f140,f141,f142,f143,f144,f145,f146,f147,f148,f149,f150,f151,f152,f153,f154,f155,f156,f157,f158,f159,f160,f161,f162,f163,f164,f165,f166,f167,f168,f169,f170,f171,f172,f173,f257,f258,f259,f260,f261,f262,f263,f264,f265,f266,f267,f268,f269"
+            response = requests.get(url, headers=self.crawler.headers)
+            data = response.json()
+            
+            if data.get('data') is None:
+                return {}
+                
+            result = {
+                'code': code,
+                'market_value': data['data'].get('f116', 0),  # 市值
+                'pe': data['data'].get('f162', 0),  # 市盈率
+                'pb': data['data'].get('f167', 0),  # 市净率
+                'eps': data['data'].get('f163', 0),  # 每股收益
+                'bps': data['data'].get('f167', 0),  # 每股净资产
+                'roe': data['data'].get('f168', 0)   # 净资产收益率
+            }
+            
+            return result
+        except Exception as e:
+            logger.error(f"获取股票基本面数据失败 - 股票: {code}, 错误: {e}")
+            return {}
+    
+    def get_main_finance_indicators(self, code):
+        """
+        获取主要财务指标
+        
+        Args:
+            code: 股票代码
+            
+        Returns:
+            pd.DataFrame: 主要财务指标
+        """
+        try:
+            import requests
+            import json
+            
+            market = '1' if code.startswith('6') else '0'
+            url = f"http://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code={market}{code}"
+            
+            response = requests.get(url, headers=self.crawler.headers)
+            data = response.json()
+            
+            if data.get('data') is None:
+                return pd.DataFrame()
+                
+            records = []
+            for item in data['data']:
+                record = {
+                    'report_date': item.get('REPORT_DATE', ''),
+                    'eps': item.get('EPSBASIC', 0),  # 每股收益
+                    'revenue': item.get('BIZINCO', 0),  # 营业收入
+                    'net_profit': item.get('NETPROFIT', 0),  # 净利润
+                    'growth_rate': item.get('PARENTNETPROFITGROWRATE', 0),  # 净利润增长率
+                    'roe': item.get('ROEAVG', 0),  # 净资产收益率
+                    'debt_ratio': item.get('TATURNOVERATIO', 0),  # 资产负债率
+                    'gross_margin': item.get('XSMLL', 0)  # 毛利率
+                }
+                records.append(record)
+                
+            df = pd.DataFrame(records)
+            return df
+        except Exception as e:
+            logger.error(f"获取主要财务指标失败 - 股票: {code}, 错误: {e}")
+            return pd.DataFrame()
+    
+    def clear_cache(self, older_than_days=None, pattern=None):
+        """
+        清除缓存文件
+        
+        Args:
+            older_than_days: 清除早于指定天数的缓存
+            pattern: 文件名匹配模式,如 'index_*.csv'
+        """
+        import glob
+        
+        if pattern:
+            files = glob.glob(os.path.join(self.cache_dir, pattern))
+        else:
+            files = glob.glob(os.path.join(self.cache_dir, '*.csv'))
+            
+        now = datetime.now()
+        count = 0
+        
+        for file in files:
+            delete = True
+            
+            if older_than_days is not None:
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(file))
+                file_age = (now - file_mtime).days
+                
+                if file_age < older_than_days:
+                    delete = False
+                    
+            if delete:
+                try:
+                    os.remove(file)
+                    count += 1
+                except Exception as e:
+                    logger.error(f"删除缓存文件失败: {file}, 错误: {e}")
+                    
+        return count 

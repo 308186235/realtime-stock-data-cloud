@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-06-26T20:48:28.128798",
+  "issues": [
+    {
+      "type": "port",
+      "description": "端口 8001 未被使用",
+      "severity": "high",
+      "timestamp": "2025-06-26T20:48:27.971972"
+    },
+    {
+      "type": "spam",
+      "description": "过多连接到端口8001: 262",
+      "severity": "medium",
+      "timestamp": "2025-06-26T20:48:28.001785"
+    }
+  ],
+  "fixes": [
+    {
+      "type": "route",
+      "description": "添加 /test 路由",
+      "success": true,
+      "timestamp": "2025-06-26T20:48:28.002618"
+    },
+    {
+      "type": "restart",
+      "description": "建议手动重启服务器",
+      "success": true,
+      "timestamp": "2025-06-26T20:48:28.128201"
+    }
+  ],
+  "summary": {
+    "total_issues": 2,
+    "total_fixes": 2,
+    "successful_fixes": 2
+  }
+}

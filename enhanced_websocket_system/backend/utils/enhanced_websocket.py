@@ -1,0 +1,548 @@
+"""
+增强版WebSocket处理器
+提供安全性和性能优化的WebSocket实现
+"""
+
+import json
+import time
+import asyncio
+import logging
+from typing import Dict, List, Any, Optional, Callable, Set
+from datetime import datetime
+
+import jwt
+from fastapi import WebSocket, WebSocketDisconnect, Query, Header, HTTPException
+from starlette.websockets import WebSocketState
+from pydantic import BaseModel, ValidationError
+import orjson  # 高性能JSON库
+
+# 配置日志
+logger = logging.getLogger("enhanced_websocket")
+
+# WebSocket连接管理器
+class WebSocketConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+        self.user_connections: Dict[str, Set[str]] = {}  # 用户ID -> 连接ID集合
+        self.subscriptions: Dict[str, Dict[str, Any]] = {}  # 连接ID -> 订阅信息
+        self.connection_stats: Dict[str, Dict[str, Any]] = {}  # 连接统计信息
+        self.rate_limits: Dict[str, List[float]] = {}  # IP -> 时间戳列表,用于速率限制
+        self.max_connections_per_ip = 5  # 每IP最大连接数
+        self.rate_limit_per_minute = 300  # 每分钟最大消息数
+        self.secret_key = "your-secret-key"  # 生产环境应从环境变量或配置文件加载
+        
+        # 启动后台任务
+        asyncio.create_task(self._background_tasks())
+    
+    async def _background_tasks(self):
+        """运行后台维护任务"""
+        while True:
+            try:
+                # 清理过期速率限制记录
+                self._clean_rate_limits()
+                # 发送心跳消息
+                await self._send_heartbeats()
+                # 记录连接统计信息
+                self._record_stats()
+            except Exception as e:
+                logger.error(f"后台任务错误: {str(e)}")
+            
+            # 每30秒运行一次
+            await asyncio.sleep(30)
+    
+    def _clean_rate_limits(self):
+        """清理过期的速率限制记录"""
+        now = time.time()
+        for ip in list(self.rate_limits.keys()):
+            # 只保留最近一分钟的记录
+            self.rate_limits[ip] = [t for t in self.rate_limits[ip] if now - t < 60]
+            if not self.rate_limits[ip]:
+                del self.rate_limits[ip]
+    
+    async def _send_heartbeats(self):
+        """向所有客户端发送心跳消息"""
+        heartbeat = {
+            "type": "heartbeat",
+            "timestamp": time.time()
+        }
+        message = orjson.dumps(heartbeat)
+        
+        for connection_id, websocket in list(self.active_connections.items()):
+            try:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.send_bytes(message)
+            except Exception as e:
+                logger.warning(f"发送心跳失败 {connection_id}: {str(e)}")
+    
+    def _record_stats(self):
+        """记录连接统计信息"""
+        total_connections = len(self.active_connections)
+        total_users = len(self.user_connections)
+        total_subscriptions = sum(len(subs) for subs in self.subscriptions.values())
+        
+        logger.info(f"WebSocket统计: {total_connections}连接, {total_users}用户, {total_subscriptions}订阅")
+    
+    async def connect(self, websocket: WebSocket, token: Optional[str] = None, ip: str = None) -> str:
+        """
+        处理新的WebSocket连接
+        
+        Args:
+            websocket: WebSocket连接
+            token: 可选的JWT认证令牌
+            ip: 客户端IP地址
+            
+        Returns:
+            str: 连接ID
+            
+        Raises:
+            HTTPException: 如果连接被拒绝
+        """
+        # 检查IP连接限制
+        if ip:
+            ip_connections = sum(1 for conn in self.active_connections.values() 
+                               if getattr(conn, "client", None) and conn.client.host == ip)
+            if ip_connections >= self.max_connections_per_ip:
+                await websocket.close(code=1008, reason="Too many connections from this IP")
+                raise HTTPException(403, "Too many connections")
+        
+        # 解析用户信息
+        user_id = "anonymous"
+        if token:
+            try:
+                payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
+                user_id = payload.get("sub", "anonymous")
+            except jwt.PyJWTError as e:
+                logger.warning(f"无效的Token: {str(e)}")
+                await websocket.close(code=1008, reason="Invalid token")
+                raise HTTPException(401, "Invalid authentication token")
+        
+        # 接受连接
+        await websocket.accept()
+        
+        # 生成连接ID并保存连接
+        connection_id = f"{user_id}_{id(websocket)}"
+        self.active_connections[connection_id] = websocket
+        
+        # 更新用户连接映射
+        if user_id not in self.user_connections:
+            self.user_connections[user_id] = set()
+        self.user_connections[user_id].add(connection_id)
+        
+        # 初始化订阅和统计
+        self.subscriptions[connection_id] = {}
+        self.connection_stats[connection_id] = {
+            "connected_at": time.time(),
+            "messages_received": 0,
+            "messages_sent": 0,
+            "last_activity": time.time(),
+            "user_id": user_id,
+            "ip": ip
+        }
+        
+        logger.info(f"WebSocket连接已建立: {connection_id} (用户: {user_id}, IP: {ip})")
+        return connection_id
+    
+    def disconnect(self, connection_id: str):
+        """处理连接断开"""
+        if connection_id in self.active_connections:
+            # 获取用户ID
+            user_id = self.connection_stats.get(connection_id, {}).get("user_id", "anonymous")
+            
+            # 清理连接数据
+            del self.active_connections[connection_id]
+            if connection_id in self.subscriptions:
+                del self.subscriptions[connection_id]
+            if connection_id in self.connection_stats:
+                del self.connection_stats[connection_id]
+            
+            # 更新用户连接映射
+            if user_id in self.user_connections:
+                self.user_connections[user_id].discard(connection_id)
+                if not self.user_connections[user_id]:
+                    del self.user_connections[user_id]
+            
+            logger.info(f"WebSocket连接已断开: {connection_id}")
+    
+    def check_rate_limit(self, ip: str) -> bool:
+        """
+        检查IP是否超过速率限制
+        
+        Args:
+            ip: 客户端IP地址
+            
+        Returns:
+            bool: 如果未超过限制则返回True,否则返回False
+        """
+        if not ip:
+            return True
+            
+        now = time.time()
+        
+        if ip not in self.rate_limits:
+            self.rate_limits[ip] = []
+        
+        # 添加当前时间戳
+        self.rate_limits[ip].append(now)
+        
+        # 只保留最近一分钟的记录
+        self.rate_limits[ip] = [t for t in self.rate_limits[ip] if now - t < 60]
+        
+        # 检查是否超过限制
+        return len(self.rate_limits[ip]) <= self.rate_limit_per_minute
+    
+    async def broadcast(self, message: Dict[str, Any], channel: Optional[str] = None):
+        """
+        广播消息给多个客户端
+        
+        Args:
+            message: 要发送的消息字典
+            channel: 可选的频道名称,如果指定则只发送给订阅该频道的客户端
+        """
+        # 使用orjson序列化消息(比标准json更快)
+        encoded_message = orjson.dumps(message)
+        
+        send_count = 0
+        for connection_id, websocket in list(self.active_connections.items()):
+            try:
+                # 如果指定了频道,检查订阅
+                if channel:
+                    if (connection_id not in self.subscriptions or 
+                        channel not in self.subscriptions[connection_id]):
+                        continue
+                
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.send_bytes(encoded_message)
+                    
+                    # 更新统计信息
+                    if connection_id in self.connection_stats:
+                        self.connection_stats[connection_id]["messages_sent"] += 1
+                        self.connection_stats[connection_id]["last_activity"] = time.time()
+                    
+                    send_count += 1
+            except Exception as e:
+                logger.error(f"发送消息给 {connection_id} 失败: {str(e)}")
+        
+        logger.debug(f"消息广播给 {send_count} 个客户端" + (f", 频道: {channel}" if channel else ""))
+        return send_count
+    
+    async def send_personal(self, user_id: str, message: Dict[str, Any]) -> int:
+        """
+        发送个人消息给特定用户的所有连接
+        
+        Args:
+            user_id: 用户ID
+            message: 要发送的消息
+            
+        Returns:
+            int: 成功发送的连接数
+        """
+        if user_id not in self.user_connections:
+            return 0
+        
+        encoded_message = orjson.dumps(message)
+        send_count = 0
+        
+        for connection_id in list(self.user_connections[user_id]):
+            if connection_id not in self.active_connections:
+                continue
+                
+            websocket = self.active_connections[connection_id]
+            try:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.send_bytes(encoded_message)
+                    
+                    # 更新统计信息
+                    if connection_id in self.connection_stats:
+                        self.connection_stats[connection_id]["messages_sent"] += 1
+                        self.connection_stats[connection_id]["last_activity"] = time.time()
+                    
+                    send_count += 1
+            except Exception as e:
+                logger.error(f"发送个人消息给 {connection_id} 失败: {str(e)}")
+        
+        return send_count
+    
+    def add_subscription(self, connection_id: str, channel: str, params: Dict[str, Any] = None):
+        """添加订阅"""
+        if connection_id not in self.subscriptions:
+            self.subscriptions[connection_id] = {}
+        
+        self.subscriptions[connection_id][channel] = params or {}
+        logger.debug(f"添加订阅: {connection_id} -> {channel}")
+    
+    def remove_subscription(self, connection_id: str, channel: str):
+        """移除订阅"""
+        if (connection_id in self.subscriptions and 
+            channel in self.subscriptions[connection_id]):
+            del self.subscriptions[connection_id][channel]
+            logger.debug(f"移除订阅: {connection_id} -> {channel}")
+    
+    def get_connection_info(self, connection_id: str) -> Dict[str, Any]:
+        """获取连接信息"""
+        if connection_id not in self.connection_stats:
+            return {}
+        
+        stats = self.connection_stats[connection_id].copy()
+        
+        # 添加订阅信息
+        if connection_id in self.subscriptions:
+            stats["subscriptions"] = list(self.subscriptions[connection_id].keys())
+        else:
+            stats["subscriptions"] = []
+            
+        # 计算连接时长
+        stats["connection_duration"] = time.time() - stats["connected_at"]
+        
+        return stats
+    
+    def get_system_stats(self) -> Dict[str, Any]:
+        """获取系统统计信息"""
+        now = time.time()
+        total_connections = len(self.active_connections)
+        
+        # 计算消息统计
+        total_received = sum(stats.get("messages_received", 0) 
+                           for stats in self.connection_stats.values())
+        total_sent = sum(stats.get("messages_sent", 0) 
+                       for stats in self.connection_stats.values())
+        
+        # 计算连接时长
+        connection_times = [now - stats.get("connected_at", now) 
+                          for stats in self.connection_stats.values()]
+        avg_connection_time = sum(connection_times) / max(len(connection_times), 1)
+        
+        # 用户统计
+        user_count = len(self.user_connections)
+        
+        # 订阅统计
+        channel_counts = {}
+        for subs in self.subscriptions.values():
+            for channel in subs:
+                channel_counts[channel] = channel_counts.get(channel, 0) + 1
+        
+        return {
+            "total_connections": total_connections,
+            "total_users": user_count,
+            "total_messages_received": total_received,
+            "total_messages_sent": total_sent,
+            "avg_connection_time": avg_connection_time,
+            "channels": channel_counts,
+            "timestamp": now
+        }
+
+# 全局连接管理器实例
+connection_manager = WebSocketConnectionManager()
+
+# 消息模式验证
+class SubscribeMessage(BaseModel):
+    type: str
+    channel: str
+    params: Dict[str, Any] = {}
+
+class UnsubscribeMessage(BaseModel):
+    type: str
+    channel: str
+
+class PingMessage(BaseModel):
+    type: str
+    timestamp: Optional[float] = None
+
+# WebSocket处理器
+async def handle_websocket(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None)
+):
+    """
+    主WebSocket处理函数,提供安全认证和消息处理
+    """
+    # 提取授权信息
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+    
+    # 获取客户端IP
+    client_ip = websocket.client.host if hasattr(websocket, "client") else None
+    
+    # 检查速率限制
+    if client_ip and not connection_manager.check_rate_limit(client_ip):
+        await websocket.close(code=1008, reason="Rate limit exceeded")
+        logger.warning(f"速率限制超出: {client_ip}")
+        return
+    
+    try:
+        # 建立连接
+        connection_id = await connection_manager.connect(websocket, token, client_ip)
+        
+        # 发送欢迎消息
+        await websocket.send_text(json.dumps({
+            "type": "welcome",
+            "connection_id": connection_id,
+            "timestamp": time.time()
+        }))
+        
+        # 消息处理循环
+        try:
+            while True:
+                # 接收消息
+                data = await websocket.receive_text()
+                
+                # 更新统计信息
+                if connection_id in connection_manager.connection_stats:
+                    connection_manager.connection_stats[connection_id]["messages_received"] += 1
+                    connection_manager.connection_stats[connection_id]["last_activity"] = time.time()
+                
+                # 检查速率限制
+                if client_ip and not connection_manager.check_rate_limit(client_ip):
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "error": "Rate limit exceeded",
+                        "timestamp": time.time()
+                    }))
+                    continue
+                
+                # 处理消息
+                try:
+                    message = json.loads(data)
+                    message_type = message.get("type", "")
+                    
+                    # 处理订阅请求
+                    if message_type == "subscribe":
+                        try:
+                            subscribe_msg = SubscribeMessage(**message)
+                            connection_manager.add_subscription(
+                                connection_id, 
+                                subscribe_msg.channel, 
+                                subscribe_msg.params
+                            )
+                            await websocket.send_text(json.dumps({
+                                "type": "subscription",
+                                "status": "success",
+                                "channel": subscribe_msg.channel,
+                                "timestamp": time.time()
+                            }))
+                        except ValidationError as e:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "error": "Invalid subscription message",
+                                "details": str(e),
+                                "timestamp": time.time()
+                            }))
+                    
+                    # 处理取消订阅
+                    elif message_type == "unsubscribe":
+                        try:
+                            unsubscribe_msg = UnsubscribeMessage(**message)
+                            connection_manager.remove_subscription(
+                                connection_id, 
+                                unsubscribe_msg.channel
+                            )
+                            await websocket.send_text(json.dumps({
+                                "type": "unsubscription",
+                                "status": "success",
+                                "channel": unsubscribe_msg.channel,
+                                "timestamp": time.time()
+                            }))
+                        except ValidationError as e:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "error": "Invalid unsubscription message",
+                                "details": str(e),
+                                "timestamp": time.time()
+                            }))
+                    
+                    # 处理心跳
+                    elif message_type == "ping":
+                        try:
+                            PingMessage(**message)
+                            await websocket.send_text(json.dumps({
+                                "type": "pong",
+                                "timestamp": time.time()
+                            }))
+                        except ValidationError:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "error": "Invalid ping message",
+                                "timestamp": time.time()
+                            }))
+                    
+                    # 其他消息类型
+                    else:
+                        await websocket.send_text(json.dumps({
+                            "type": "echo",
+                            "data": message,
+                            "timestamp": time.time()
+                        }))
+                
+                except json.JSONDecodeError:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "error": "Invalid JSON",
+                        "timestamp": time.time()
+                    }))
+                
+                except Exception as e:
+                    logger.error(f"处理消息错误: {str(e)}")
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "error": "Internal error processing message",
+                        "timestamp": time.time()
+                    }))
+        
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket断开: {connection_id}")
+        
+        except Exception as e:
+            logger.error(f"WebSocket错误: {str(e)}")
+            
+        finally:
+            # 清理连接
+            connection_manager.disconnect(connection_id)
+    
+    except HTTPException:
+        # 连接被拒绝,已经在connect方法中处理了
+        pass
+    except Exception as e:
+        logger.error(f"处理WebSocket连接错误: {str(e)}")
+        try:
+            await websocket.close(code=1011, reason="Server error")
+        except:
+            pass
+
+# 辅助函数:创建JWT令牌
+def create_token(user_id: str, expires_delta: int = 86400) -> str:
+    """
+    创建JWT认证令牌
+    
+    Args:
+        user_id: 用户ID
+        expires_delta: 过期时间(秒),默认24小时
+        
+    Returns:
+        str: JWT令牌
+    """
+    expires = datetime.utcnow() + timedelta(seconds=expires_delta)
+    payload = {
+        "sub": user_id,
+        "exp": expires
+    }
+    token = jwt.encode(payload, connection_manager.secret_key, algorithm="HS256")
+    return token
+
+# 添加到FastAPI应用的辅助函数
+def add_websocket_endpoint(app, path="/ws"):
+    """
+    将WebSocket端点添加到FastAPI应用
+    
+    Args:
+        app: FastAPI应用实例
+        path: WebSocket路径,默认为/ws
+    """
+    @app.websocket(path)
+    async def websocket_endpoint(
+        websocket: WebSocket, 
+        token: Optional[str] = Query(None),
+        authorization: Optional[str] = Header(None)
+    ):
+        await handle_websocket(websocket, token, authorization)
+
+    logger.info(f"WebSocket端点已添加: {path}") 

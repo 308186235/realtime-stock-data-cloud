@@ -1,0 +1,660 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">账户设置</text>
+      <text class="subtitle">完成身份验证和账户绑定</text>
+    </view>
+
+    <!-- 账户验证状态 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">账户状态</text>
+      </view>
+      <view class="status-card" :class="accountVerified ? 'verified' : 'unverified'">
+        <view class="status-icon">
+          <text class="iconfont" :class="accountVerified ? 'icon-verified' : 'icon-warning'">
+            {{ accountVerified ? '✓' : '!' }}
+          </text>
+        </view>
+        <view class="status-info">
+          <text class="status-title">{{ accountVerified ? '账户已验证' : '账户未验证' }}</text>
+          <text class="status-desc">{{ accountVerified ? '您的交易账户已完成验证，可以进行自动交易' : '请完成身份验证以启用自动交易功能' }}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 账户信息表单 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">账户信息</text>
+      </view>
+      
+      <view class="form-group">
+        <view class="form-item">
+          <text class="form-label">交易平台</text>
+          <picker @change="handlePlatformChange" :value="platformIndex" :range="tradePlatforms">
+            <view class="picker-view">
+              {{ tradePlatforms[platformIndex] }}
+              <text class="iconfont icon-arrow-down">▼</text>
+            </view>
+          </picker>
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">账户ID</text>
+          <input 
+            type="text" 
+            v-model="accountForm.accountId" 
+            placeholder="输入您的交易账户ID" 
+            class="form-input"
+          />
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">API密钥</text>
+          <input 
+            type="text" 
+            v-model="accountForm.apiKey" 
+            placeholder="输入API密钥" 
+            class="form-input"
+          />
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">API密钥密码</text>
+          <input 
+            type="password" 
+            v-model="accountForm.apiSecret" 
+            placeholder="输入密钥密码" 
+            class="form-input password-input"
+          />
+        </view>
+      </view>
+    </view>
+
+    <!-- 身份验证部分 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">身份验证</text>
+      </view>
+      
+      <view class="identity-steps">
+        <view class="step-item" :class="idVerifySteps.uploadId ? 'completed' : ''">
+          <view class="step-number">1</view>
+          <view class="step-content">
+            <text class="step-title">上传身份证明</text>
+            <text class="step-desc">上传有效身份证件的正反面照片</text>
+            <view class="upload-area" v-if="!idVerifySteps.uploadId" @tap="uploadIdentity">
+              <text class="upload-icon">+</text>
+              <text class="upload-text">点击上传</text>
+            </view>
+            <view class="upload-preview" v-else>
+              <text class="preview-text">已上传身份证件</text>
+              <text class="preview-action" @tap="uploadIdentity">重新上传</text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="step-item" :class="idVerifySteps.bankInfo ? 'completed' : ''">
+          <view class="step-number">2</view>
+          <view class="step-content">
+            <text class="step-title">绑定银行卡</text>
+            <text class="step-desc">绑定您的银行账户用于资金转账</text>
+            <view class="upload-area" v-if="!idVerifySteps.bankInfo" @tap="linkBankAccount">
+              <text class="upload-icon">+</text>
+              <text class="upload-text">点击绑定</text>
+            </view>
+            <view class="upload-preview" v-else>
+              <text class="preview-text">已绑定银行卡 ({{ bankInfo.lastFourDigits }})</text>
+              <text class="preview-action" @tap="linkBankAccount">修改</text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="step-item" :class="idVerifySteps.facialVerify ? 'completed' : ''">
+          <view class="step-number">3</view>
+          <view class="step-content">
+            <text class="step-title">人脸验证</text>
+            <text class="step-desc">完成实时人脸验证以确认身份</text>
+            <view class="verify-button" v-if="!idVerifySteps.facialVerify" @tap="startFacialVerify">
+              开始验证
+            </view>
+            <view class="upload-preview" v-else>
+              <text class="preview-text">已完成人脸验证</text>
+              <text class="preview-action" @tap="startFacialVerify">重新验证</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 资金设置 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">资金设置</text>
+      </view>
+      
+      <view class="fund-status">
+        <view class="fund-item">
+          <text class="fund-label">当前账户余额</text>
+          <text class="fund-value">{{ accountBalance }}</text>
+        </view>
+        
+        <view class="fund-item">
+          <text class="fund-label">自动交易资金池</text>
+          <view class="fund-input-wrapper">
+            <input 
+              type="digit" 
+              v-model="tradingFund" 
+              class="fund-input"
+              @input="validateTradingFund"
+            />
+            <text class="fund-unit">元</text>
+          </view>
+        </view>
+        
+        <view class="warning-message" v-if="showFundWarning">
+          <text class="warning-text">自动交易资金池不能超过账户余额的90%</text>
+        </view>
+        
+        <view class="notice-box">
+          <text class="notice-title">重要提示</text>
+          <text class="notice-text">为确保交易安全，请确保您的账户有足够的资金。建议预留至少10%的资金作为保证金。</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 操作按钮 -->
+    <view class="action-buttons">
+      <button class="btn-cancel" @tap="navigateBack">取消</button>
+      <button class="btn-submit" @tap="saveAccountSettings" :disabled="!formValid">保存设置</button>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      accountVerified: false,
+      tradePlatforms: ['东方财富', '华泰证券', '国泰君安', '招商证券', '中信证券'],
+      platformIndex: 0,
+      accountForm: {
+        accountId: '',
+        apiKey: '',
+        apiSecret: ''
+      },
+      idVerifySteps: {
+        uploadId: false,
+        bankInfo: false,
+        facialVerify: false
+      },
+      bankInfo: {
+        lastFourDigits: '6688'
+      },
+      accountBalance: '50,000.00',
+      tradingFund: '30000',
+      showFundWarning: false
+    }
+  },
+  computed: {
+    formValid() {
+      return this.accountForm.accountId && 
+             this.accountForm.apiKey && 
+             this.accountForm.apiSecret &&
+             this.idVerifySteps.uploadId &&
+             this.idVerifySteps.bankInfo &&
+             this.idVerifySteps.facialVerify &&
+             !this.showFundWarning;
+    }
+  },
+  methods: {
+    handlePlatformChange(e) {
+      this.platformIndex = e.detail.value;
+    },
+    uploadIdentity() {
+      uni.showActionSheet({
+        itemList: ['拍照', '从相册选择'],
+        success: (res) => {
+          // 实际应用中这里应该调用相机或相册
+          setTimeout(() => {
+            this.idVerifySteps.uploadId = true;
+            uni.showToast({
+              title: '身份证上传成功',
+              icon: 'success'
+            });
+          }, 1000);
+        }
+      });
+    },
+    linkBankAccount() {
+      uni.showModal({
+        title: '绑定银行卡',
+        content: '是否前往银行卡绑定流程？',
+        success: (res) => {
+          if (res.confirm) {
+            // 实际应用中这里应该跳转到银行卡绑定页面
+            setTimeout(() => {
+              this.idVerifySteps.bankInfo = true;
+              this.bankInfo.lastFourDigits = '6688';  // 实际应用中这应该是真实的银行卡信息
+              uni.showToast({
+                title: '银行卡绑定成功',
+                icon: 'success'
+              });
+            }, 1000);
+          }
+        }
+      });
+    },
+    startFacialVerify() {
+      uni.showModal({
+        title: '人脸验证',
+        content: '将开始人脸识别验证，请确保光线充足且面部清晰可见',
+        success: (res) => {
+          if (res.confirm) {
+            // 实际应用中这里应该启动人脸识别模块
+            setTimeout(() => {
+              this.idVerifySteps.facialVerify = true;
+              uni.showToast({
+                title: '人脸验证成功',
+                icon: 'success'
+              });
+            }, 1500);
+          }
+        }
+      });
+    },
+    validateTradingFund() {
+      const balance = parseFloat(this.accountBalance.replace(/,/g, ''));
+      const fund = parseFloat(this.tradingFund);
+      this.showFundWarning = fund > balance * 0.9;
+    },
+    saveAccountSettings() {
+      if (!this.formValid) {
+        uni.showToast({
+          title: '请完成所有必要的设置',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      uni.showLoading({
+        title: '保存设置中'
+      });
+      
+      // 模拟API调用
+      setTimeout(() => {
+        uni.hideLoading();
+        this.accountVerified = true;
+        
+        uni.showModal({
+          title: '设置成功',
+          content: '您的账户已成功验证，现在可以使用自动交易功能',
+          showCancel: false,
+          success: (res) => {
+            if (res.confirm) {
+              this.navigateBack();
+            }
+          }
+        });
+      }, 2000);
+    },
+    navigateBack() {
+      uni.navigateBack();
+    }
+  }
+}
+</script>
+
+<style>
+.container {
+  padding: 20px;
+  background-color: #f5f5f5;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #666;
+}
+
+.section {
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.section-header {
+  margin-bottom: 15px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #333;
+}
+
+/* 账户状态卡片 */
+.status-card {
+  display: flex;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.verified {
+  background-color: #e8f5e9;
+}
+
+.unverified {
+  background-color: #ffebee;
+}
+
+.status-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 15px;
+}
+
+.verified .status-icon {
+  background-color: #4caf50;
+}
+
+.unverified .status-icon {
+  background-color: #f44336;
+}
+
+.iconfont {
+  font-size: 24px;
+  color: white;
+}
+
+.status-info {
+  flex: 1;
+}
+
+.status-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.verified .status-title {
+  color: #2e7d32;
+}
+
+.unverified .status-title {
+  color: #c62828;
+}
+
+.status-desc {
+  font-size: 14px;
+  color: #666;
+}
+
+/* 表单样式 */
+.form-group {
+  margin-bottom: 10px;
+}
+
+.form-item {
+  margin-bottom: 15px;
+}
+
+.form-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  font-size: 16px;
+}
+
+.picker-view {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+}
+
+.icon-arrow-down {
+  font-size: 12px;
+  color: #999;
+}
+
+/* 身份验证步骤 */
+.identity-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.step-item {
+  display: flex;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.step-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.step-number {
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  background-color: #e0e0e0;
+  color: #666;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 15px;
+  font-weight: bold;
+}
+
+.completed .step-number {
+  background-color: #4caf50;
+  color: white;
+}
+
+.step-content {
+  flex: 1;
+}
+
+.step-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.step-desc {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+.upload-area {
+  border: 1px dashed #ccc;
+  border-radius: 4px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-icon {
+  font-size: 24px;
+  color: #999;
+  margin-bottom: 5px;
+}
+
+.upload-text {
+  font-size: 14px;
+  color: #666;
+}
+
+.upload-preview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #f0f0f0;
+  padding: 10px 15px;
+  border-radius: 4px;
+}
+
+.preview-text {
+  font-size: 14px;
+  color: #333;
+}
+
+.preview-action {
+  font-size: 14px;
+  color: #0066cc;
+}
+
+.verify-button {
+  background-color: #0066cc;
+  color: white;
+  padding: 10px 0;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* 资金设置 */
+.fund-status {
+  margin-bottom: 10px;
+}
+
+.fund-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.fund-label {
+  font-size: 14px;
+  color: #666;
+}
+
+.fund-value {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.fund-input-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.fund-input {
+  width: 120px;
+  height: 40px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0 12px;
+  text-align: right;
+  font-size: 16px;
+}
+
+.fund-unit {
+  margin-left: 5px;
+  font-size: 14px;
+  color: #666;
+}
+
+.warning-message {
+  background-color: #fff8e1;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.warning-text {
+  color: #ff6f00;
+  font-size: 14px;
+}
+
+.notice-box {
+  background-color: #e3f2fd;
+  padding: 15px;
+  border-radius: 4px;
+}
+
+.notice-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: #0066cc;
+  margin-bottom: 5px;
+}
+
+.notice-text {
+  font-size: 14px;
+  color: #333;
+}
+
+/* 操作按钮 */
+.action-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.btn-cancel, .btn-submit {
+  width: 48%;
+  height: 44px;
+  border-radius: 4px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-cancel {
+  background-color: #f0f0f0;
+  color: #666;
+}
+
+.btn-submit {
+  background-color: #0066cc;
+  color: white;
+}
+
+.btn-submit:disabled {
+  background-color: #cccccc;
+  color: #999;
+}
+</style> 

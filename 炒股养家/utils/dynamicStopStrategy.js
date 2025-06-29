@@ -1,0 +1,1042 @@
+/**
+ * 动态止盈止损策略工具
+ * 根据市场波动自动调整止盈止损位置
+ */
+
+// 基于ATR(平均真实波幅)的动态止损计算
+export function calculateATRStopLoss(currentPrice, atrValue, multiplier = 2.0, direction = 'long') {
+  // direction: 'long'表示做多,'short'表示做空
+  if (direction === 'long') {
+    // 做多时,止损点位 = 当前价格 - (ATR * 乘数)
+    return currentPrice - (atrValue * multiplier);
+  } else {
+    // 做空时,止损点位 = 当前价格 + (ATR * 乘数)
+    return currentPrice + (atrValue * multiplier);
+  }
+}
+
+// 基于价格走势的动态跟踪止盈
+export function calculateTrailingStop(entryPrice, currentPrice, highestPrice, percentageRisk = 0.02, trailingPercent = 0.5, direction = 'long') {
+  if (direction === 'long') {
+    // 基础止损位(基于入场价和风险百分比)
+    const baseStopLoss = entryPrice * (1 - percentageRisk);
+    
+    // 动态止损位(基于最高价和回撤百分比)
+    const trailingStopLoss = highestPrice * (1 - trailingPercent);
+    
+    // 取两者中较高的值作为最终止损位
+    return Math.max(baseStopLoss, trailingStopLoss);
+  } else {
+    // 做空情况
+    const baseStopLoss = entryPrice * (1 + percentageRisk);
+    const trailingStopLoss = highestPrice * (1 + trailingPercent);
+    
+    // 取两者中较低的值作为最终止损位
+    return Math.min(baseStopLoss, trailingStopLoss);
+  }
+}
+
+// 基于波动率的动态止盈止损
+export function calculateVolatilityStopLoss(entryPrice, volatility, stopMultiplier = 2.0, direction = 'long') {
+  if (direction === 'long') {
+    // 做多情况,止损点位 = 入场价格 - (波动率 * 乘数)
+    return entryPrice - (entryPrice * volatility * stopMultiplier);
+  } else {
+    // 做空情况,止损点位 = 入场价格 + (波动率 * 乘数)
+    return entryPrice + (entryPrice * volatility * stopMultiplier);
+  }
+}
+
+// 基于价格突破的动态止盈
+export function calculateBreakoutTakeProfit(entryPrice, currentPrice, volatility, direction = 'long', profitMultiplier = 1.5) {
+  if (direction === 'long') {
+    // 基础止盈位
+    const baseTakeProfit = entryPrice * (1 + volatility * profitMultiplier);
+    
+    // 如果价格已经突破基础止盈位,提高止盈位
+    if (currentPrice > baseTakeProfit) {
+      // 根据突破幅度计算新的止盈位
+      const breakoutRatio = (currentPrice - baseTakeProfit) / baseTakeProfit;
+      return baseTakeProfit * (1 + breakoutRatio * 0.5);
+    }
+    
+    return baseTakeProfit;
+  } else {
+    // 做空情况
+    const baseTakeProfit = entryPrice * (1 - volatility * profitMultiplier);
+    
+    if (currentPrice < baseTakeProfit) {
+      const breakoutRatio = (baseTakeProfit - currentPrice) / baseTakeProfit;
+      return baseTakeProfit * (1 - breakoutRatio * 0.5);
+    }
+    
+    return baseTakeProfit;
+  }
+}
+
+// 趋势跟踪止盈止损
+export function calculateTrendStopLoss(priceHistory, lookbackPeriod = 5, direction = 'long') {
+  if (!priceHistory || priceHistory.length < lookbackPeriod) {
+    return null;
+  }
+  
+  // 获取最近N个周期的价格
+  const recentPrices = priceHistory.slice(-lookbackPeriod);
+  
+  if (direction === 'long') {
+    // 做多情况,使用近期最低价作为止损点
+    return Math.min(...recentPrices.map(p => p.low));
+  } else {
+    // 做空情况,使用近期最高价作为止损点
+    return Math.max(...recentPrices.map(p => p.high));
+  }
+}
+
+// 时间周期加权止盈止损
+export function calculateTimeWeightedStop(entryPrice, holdingDays, maxHoldingPeriod, targetProfit, direction = 'long') {
+  // 根据持仓时间调整止盈止损比例
+  const timeRatio = holdingDays / maxHoldingPeriod;
+  
+  if (direction === 'long') {
+    if (timeRatio < 0.3) {
+      // 持仓初期,保守止盈,宽松止损
+      return {
+        takeProfit: entryPrice * (1 + targetProfit * 1.5),
+        stopLoss: entryPrice * 0.95
+      };
+    } else if (timeRatio < 0.7) {
+      // 持仓中期,平衡止盈止损
+      return {
+        takeProfit: entryPrice * (1 + targetProfit),
+        stopLoss: entryPrice * 0.97
+      };
+    } else {
+      // 持仓后期,降低止盈目标,收紧止损
+      return {
+        takeProfit: entryPrice * (1 + targetProfit * 0.8),
+        stopLoss: entryPrice * 0.98
+      };
+    }
+  } else {
+    // 做空情况
+    if (timeRatio < 0.3) {
+      return {
+        takeProfit: entryPrice * (1 - targetProfit * 1.5),
+        stopLoss: entryPrice * 1.05
+      };
+    } else if (timeRatio < 0.7) {
+      return {
+        takeProfit: entryPrice * (1 - targetProfit),
+        stopLoss: entryPrice * 1.03
+      };
+    } else {
+      return {
+        takeProfit: entryPrice * (1 - targetProfit * 0.8),
+        stopLoss: entryPrice * 1.02
+      };
+    }
+  }
+}
+
+// 价格形态识别的动态止损
+export function calculatePatternBasedStop(entryPrice, patternHeight, supportLevels, direction = 'long') {
+  if (direction === 'long') {
+    // 做多情况,找到最近的支撑位作为止损点
+    const validSupports = supportLevels.filter(level => level < entryPrice);
+    
+    if (validSupports.length > 0) {
+      // 使用最近的支撑位
+      return Math.max(...validSupports);
+    } else {
+      // 如果没有有效支撑位,使用形态高度的一定比例
+      return entryPrice - (patternHeight * 0.5);
+    }
+  } else {
+    // 做空情况,找到最近的阻力位作为止损点
+    const validResistances = supportLevels.filter(level => level > entryPrice);
+    
+    if (validResistances.length > 0) {
+      // 使用最近的阻力位
+      return Math.min(...validResistances);
+    } else {
+      // 如果没有有效阻力位,使用形态高度的一定比例
+      return entryPrice + (patternHeight * 0.5);
+    }
+  }
+}
+
+// 综合动态止盈止损策略
+export function calculateDynamicStopStrategy(position, currentData, marketCondition) {
+  const {
+    entryPrice,
+    direction, // 'long' 或 'short'
+    holdingDays,
+    highestPrice, // 持仓期间的最高价
+    lowestPrice, // 持仓期间的最低价
+  } = position;
+  
+  const {
+    currentPrice,
+    atr, // 平均真实波幅
+    volatility, // 波动率
+    priceHistory, // 历史价格数据
+    supportLevels, // 支撑位
+    resistanceLevels, // 阻力位
+    klines, // K线数据
+    volume, // 当前成交量数据
+  } = currentData;
+  
+  const {
+    trend, // 市场趋势: 'bullish', 'bearish', 'sideways'
+    volume: marketVolume, // 成交量
+    marketVolatility, // 市场波动率
+  } = marketCondition;
+  
+  let stopLoss, takeProfit;
+  let strategyReason = '';
+  let confidenceLevel = 'medium'; // 默认置信度
+  
+  // 检查是否适用阴阳双阴战法
+  if (klines && klines.length >= 8) {
+    const yinYangResult = calculateYinYangDoubleYinStrategy(klines, position);
+    
+    // 如果符合阴阳双阴形态,优先使用该策略
+    if (yinYangResult) {
+      // 如果是高置信度的阴阳双阴形态,直接使用其结果
+      if (yinYangResult.confidence === 'high') {
+        return yinYangResult;
+      }
+      
+      // 如果是中等置信度,保存结果稍后与其他策略整合
+      stopLoss = yinYangResult.stopLoss;
+      takeProfit = yinYangResult.takeProfit;
+      strategyReason = '阴阳双阴';
+      confidenceLevel = yinYangResult.confidence;
+    }
+  }
+  
+  // 如果阴阳双阴策略未产生高置信度信号,继续评估其他策略
+  if (!strategyReason) {
+    // 根据市场环境选择合适的策略
+    if (marketCondition.volatility > 0.03) {
+      // 高波动市场环境,使用ATR策略,更宽松的止损
+      stopLoss = calculateATRStopLoss(currentPrice, atr, 3.0, direction);
+      strategyReason = 'ATR高波动';
+    } else if (trend === 'strong_bullish' || trend === 'strong_bearish') {
+      // 强趋势市场,使用跟踪止损
+      stopLoss = calculateTrailingStop(entryPrice, currentPrice, 
+                                      direction === 'long' ? highestPrice : lowestPrice, 
+                                      0.02, 0.4, direction);
+      strategyReason = '趋势跟踪';
+    } else {
+      // 一般市场环境,使用综合止损策略
+      const atrStop = calculateATRStopLoss(currentPrice, atr, 2.0, direction);
+      const trendStop = calculateTrendStopLoss(priceHistory, 5, direction);
+      
+      // 综合多种策略,取最合适的止损位
+      if (direction === 'long') {
+        stopLoss = trendStop ? Math.max(atrStop, trendStop) : atrStop;
+      } else {
+        stopLoss = trendStop ? Math.min(atrStop, trendStop) : atrStop;
+      }
+      strategyReason = '综合';
+    }
+    
+    // 动态止盈策略
+    if (trend === 'strong_bullish' && direction === 'long' || 
+        trend === 'strong_bearish' && direction === 'short') {
+      // 强趋势顺势而为,使用突破策略设置较远的止盈位
+      takeProfit = calculateBreakoutTakeProfit(entryPrice, currentPrice, volatility, direction, 2.5);
+    } else {
+      // 非强趋势或逆势操作,设置更保守的止盈位
+      const volStop = calculateVolatilityStopLoss(entryPrice, volatility, 3.0, direction === 'long' ? 'short' : 'long');
+      takeProfit = direction === 'long' ? entryPrice * 1.1 : entryPrice * 0.9;
+    }
+  }
+  
+  // 根据持仓时间调整
+  const timeWeighted = calculateTimeWeightedStop(entryPrice, holdingDays, 20, 0.15, direction);
+  
+  // 整合支撑位和阻力位信息(如果有)
+  if (supportLevels && supportLevels.length > 0 && resistanceLevels && resistanceLevels.length > 0) {
+    // 找出最接近当前价格的支撑位和阻力位
+    let nearestSupport = Math.min(...supportLevels);
+    let nearestResistance = Math.max(...resistanceLevels);
+    
+    if (direction === 'long') {
+      // 做多情况下,找出低于当前价格的最高支撑位作为止损参考
+      const validSupports = supportLevels.filter(level => level < currentPrice);
+      if (validSupports.length > 0) {
+        nearestSupport = Math.max(...validSupports);
+        // 结合支撑位和现有止损,取较高者(避免止损过于激进)
+        stopLoss = Math.max(stopLoss, nearestSupport * 0.995);
+      }
+      
+      // 做多情况下,找出高于当前价格的最低阻力位作为止盈参考
+      const validResistances = resistanceLevels.filter(level => level > currentPrice);
+      if (validResistances.length > 0) {
+        nearestResistance = Math.min(...validResistances);
+        // 结合阻力位和现有止盈,取较低者(避免止盈过于激进)
+        takeProfit = Math.min(takeProfit, nearestResistance * 0.98);
+      }
+    } else {
+      // 做空情况,与做多相反
+      const validResistances = resistanceLevels.filter(level => level > currentPrice);
+      if (validResistances.length > 0) {
+        nearestResistance = Math.min(...validResistances);
+        stopLoss = Math.min(stopLoss, nearestResistance * 1.005);
+      }
+      
+      const validSupports = supportLevels.filter(level => level < currentPrice);
+      if (validSupports.length > 0) {
+        nearestSupport = Math.max(...validSupports);
+        takeProfit = Math.max(takeProfit, nearestSupport * 1.02);
+      }
+    }
+    
+    // 更新策略原因说明
+    strategyReason = `${strategyReason}+支撑阻力`;
+  }
+  
+  // 成交量分析增强
+  if (volume && Array.isArray(volume) && volume.length > 5) {
+    // 计算近期成交量均值
+    const avgVolume = volume.slice(-5).reduce((sum, vol) => sum + vol, 0) / 5;
+    const currentVol = volume[volume.length - 1];
+    
+    // 根据成交量变化调整止盈止损
+    if (currentVol > avgVolume * 1.5) {
+      // 成交量显著放大,可能是突破或反转信号
+      if (direction === 'long') {
+        if (currentPrice > entryPrice) {
+          // 做多获利情况下成交量放大,可能是加速上涨,适当提高止盈
+          takeProfit = takeProfit * 1.1;
+          strategyReason = `${strategyReason}+量增价升`;
+        } else {
+          // 做多亏损情况下成交量放大,可能是加速下跌,收紧止损
+          stopLoss = (stopLoss + currentPrice) / 2;
+          strategyReason = `${strategyReason}+量增价跌`;
+        }
+      } else {
+        if (currentPrice < entryPrice) {
+          // 做空获利情况下成交量放大,可能是加速下跌,适当提高止盈
+          takeProfit = takeProfit * 0.9;
+          strategyReason = `${strategyReason}+量增价跌`;
+        } else {
+          // 做空亏损情况下成交量放大,可能是加速上涨,收紧止损
+          stopLoss = (stopLoss + currentPrice) / 2;
+          strategyReason = `${strategyReason}+量增价升`;
+        }
+      }
+    }
+  }
+  
+  // 最终确定止盈止损位
+  const finalStopLoss = direction === 'long' 
+    ? Math.max(stopLoss, timeWeighted.stopLoss, entryPrice * 0.85) // 防止止损过于激进
+    : Math.min(stopLoss, timeWeighted.stopLoss, entryPrice * 1.15);
+    
+  const finalTakeProfit = direction === 'long'
+    ? Math.min(takeProfit, timeWeighted.takeProfit, entryPrice * 1.5) // 防止止盈过于激进
+    : Math.max(takeProfit, timeWeighted.takeProfit, entryPrice * 0.5);
+  
+  return {
+    stopLoss: finalStopLoss,
+    takeProfit: finalTakeProfit,
+    confidence: confidenceLevel,
+    reason: `基于${strategyReason}策略计算,并结合持仓时间进行调整`
+  };
+}
+
+// 阴阳双阴战法的动态止盈止损
+export function calculateYinYangDoubleYinStrategy(klines, currentPosition, riskMultiplier = 1.0) {
+  // 确保K线数据足够
+  if (!klines || klines.length < 8) { // 需要更多K线来分析支撑阻力位和成交量
+    return null;
+  }
+  
+  // 获取最近的K线数据
+  const recentKlines = klines.slice(-8);
+  
+  // 判断是否符合阴阳双阴形态
+  // 阴阳双阴形态: 一根阴线(1),一根阳线(2),然后两根阴线(3,4)
+  const isYinYangDoubleYin = 
+    recentKlines[2].close < recentKlines[2].open && // 第一根是阴线
+    recentKlines[3].close > recentKlines[3].open && // 第二根是阳线
+    recentKlines[4].close < recentKlines[4].open && // 第三根是阴线
+    recentKlines[5].close < recentKlines[5].open;   // 第四根是阴线
+  
+  if (!isYinYangDoubleYin) {
+    return null; // 不符合形态,返回null
+  }
+  
+  // ---------- 成交量分析 ----------
+  // 获取最近5天的成交量数据
+  const volumes = recentKlines.map(k => k.volume);
+  
+  // 计算成交量的均值和标准差
+  const avgVolume = volumes.reduce((sum, vol) => sum + vol, 0) / volumes.length;
+  const volumeStdDev = Math.sqrt(
+    volumes.reduce((sum, vol) => sum + Math.pow(vol - avgVolume, 2), 0) / volumes.length
+  );
+  
+  // 确认成交量特征:阳线(第2根)成交量明显放大,后两根阴线成交量逐渐减小
+  const volumeConfirmation = 
+    recentKlines[3].volume > avgVolume * 1.2 && // 阳线成交量明显高于平均
+    recentKlines[4].volume < recentKlines[3].volume && // 第一根阴线成交量低于阳线
+    recentKlines[5].volume < recentKlines[4].volume; // 第二根阴线成交量低于第一根阴线
+  
+  // 成交量确认增加信号强度
+  const volumeStrengthFactor = volumeConfirmation ? 1.2 : 0.8;
+  
+  // ---------- 支撑阻力位分析 ----------
+  // 提取价格数据
+  const highs = recentKlines.map(k => k.high);
+  const lows = recentKlines.map(k => k.low);
+  const closes = recentKlines.map(k => k.close);
+  
+  // 识别支撑位:最近8根K线的低点
+  const supportLevels = [];
+  for (let i = 1; i < lows.length - 1; i++) {
+    if (lows[i] < lows[i-1] && lows[i] < lows[i+1]) {
+      supportLevels.push(lows[i]);
+    }
+  }
+  
+  // 识别阻力位:最近8根K线的高点
+  const resistanceLevels = [];
+  for (let i = 1; i < highs.length - 1; i++) {
+    if (highs[i] > highs[i-1] && highs[i] > highs[i+1]) {
+      resistanceLevels.push(highs[i]);
+    }
+  }
+  
+  // 找出最接近当前价格的支撑位和阻力位
+  const { entryPrice, direction } = currentPosition;
+  const currentPrice = recentKlines[7].close; // 当前价格(最新K线收盘价)
+  
+  // 找出最接近当前价格的支撑位和阻力位
+  let nearestSupport = Math.min(...lows); // 默认为最低点
+  let nearestResistance = Math.max(...highs); // 默认为最高点
+  
+  if (supportLevels.length > 0) {
+    // 找出低于当前价格的最高支撑位
+    const validSupports = supportLevels.filter(level => level < currentPrice);
+    if (validSupports.length > 0) {
+      nearestSupport = Math.max(...validSupports);
+    }
+  }
+  
+  if (resistanceLevels.length > 0) {
+    // 找出高于当前价格的最低阻力位
+    const validResistances = resistanceLevels.filter(level => level > currentPrice);
+    if (validResistances.length > 0) {
+      nearestResistance = Math.min(...validResistances);
+    }
+  }
+  
+  // ---------- 策略整合 ----------
+  // 获取价格区间
+  const priceRange = nearestResistance - nearestSupport;
+  
+  // 计算止损止盈
+  if (direction === 'long') {
+    // 做多情况
+    // 止损位:整合K线形态和支撑位
+    const formationLow = Math.min(
+      recentKlines[3].low, // 阳线低点
+      recentKlines[4].low, // 第一阴线低点
+      recentKlines[5].low  // 第二阴线低点
+    );
+    
+    // 根据支撑位和形态低点调整止损位
+    const stopLoss = Math.max(
+      nearestSupport * 0.995, // 支撑位稍低一点
+      formationLow * 0.99,
+      entryPrice * (1 - (0.02 * riskMultiplier)) // 基于入场价的基础止损
+    );
+    
+    // 基于阻力位和波动范围的止盈位
+    const takeProfit = Math.min(
+      nearestResistance * 0.98, // 阻力位稍低一点
+      entryPrice + (priceRange * 1.5 * volumeStrengthFactor) // 根据成交量强度调整止盈
+    );
+    
+    return {
+      stopLoss,
+      takeProfit,
+      confidence: volumeConfirmation ? 'high' : 'medium',
+      supportLevel: nearestSupport,
+      resistanceLevel: nearestResistance,
+      reason: `基于阴阳双阴形态的做多策略${volumeConfirmation ? ',成交量确认信号强度' : ''},支撑位于${nearestSupport.toFixed(2)},阻力位于${nearestResistance.toFixed(2)}`
+    };
+  } else {
+    // 做空情况
+    // 止损位:整合K线形态和阻力位
+    const formationHigh = Math.max(
+      recentKlines[3].high, // 阳线高点
+      recentKlines[4].high, // 第一阴线高点
+      recentKlines[5].high  // 第二阴线高点
+    );
+    
+    // 根据阻力位和形态高点调整止损位
+    const stopLoss = Math.min(
+      nearestResistance * 1.005, // 阻力位稍高一点
+      formationHigh * 1.01,
+      entryPrice * (1 + (0.02 * riskMultiplier)) // 基于入场价的基础止损
+    );
+    
+    // 基于支撑位和波动范围的止盈位
+    const takeProfit = Math.max(
+      nearestSupport * 1.02, // 支撑位稍高一点
+      entryPrice - (priceRange * 1.5 * volumeStrengthFactor) // 根据成交量强度调整止盈
+    );
+    
+    return {
+      stopLoss,
+      takeProfit,
+      confidence: volumeConfirmation ? 'high' : 'medium',
+      supportLevel: nearestSupport,
+      resistanceLevel: nearestResistance,
+      reason: `基于阴阳双阴形态的做空策略${volumeConfirmation ? ',成交量确认信号强度' : ''},支撑位于${nearestSupport.toFixed(2)},阻力位于${nearestResistance.toFixed(2)}`
+    };
+  }
+}
+
+// 多时间周期确认的阴阳双阴战法
+export function calculateMultiTimeframeYinYangStrategy(data, currentPosition, marketEnvironment) {
+  // 确保有足够的数据
+  if (!data || !data.klines || !data.klines.daily || !data.klines.hourly) {
+    return null;
+  }
+  
+  const {
+    klines: {
+      daily,     // 日线K线数据
+      hourly,    // 小时线K线数据
+      minute30   // 30分钟K线数据
+    },
+    indexData,   // 大盘指数数据
+    sectorData,  // 行业板块数据
+    tradingTime  // 当前交易时间信息
+  } = data;
+  
+  // 避开早盘和尾盘高波动时段
+  if (tradingTime && tradingTime.isTradeTime) {
+    const hourNow = tradingTime.currentTime.getHours();
+    const minuteNow = tradingTime.currentTime.getMinutes();
+    
+    // 早盘前30分钟(9:30-10:00)和尾盘最后30分钟(14:30-15:00)
+    if ((hourNow === 9 && minuteNow >= 30) || (hourNow === 10 && minuteNow < 0) || 
+        (hourNow === 14 && minuteNow >= 30) || hourNow === 15) {
+      return {
+        shouldTrade: false,
+        reason: '避开早盘和尾盘高波动时段',
+        confidence: 'low'
+      };
+    }
+  }
+  
+  // 检查日线阴阳双阴形态
+  const dailySignal = checkYinYangDoubleYinPattern(daily, currentPosition);
+  
+  // 如果日线没有信号,直接返回null
+  if (!dailySignal) {
+    return null;
+  }
+  
+  // 检查小时线和30分钟线是否有确认信号
+  const hourlySignal = checkYinYangDoubleYinPattern(hourly, currentPosition);
+  const minute30Signal = hourly && minute30 ? checkYinYangDoubleYinPattern(minute30, currentPosition) : null;
+  
+  // 计算多时间周期共振程度
+  let timeframeConfirmation = 1;
+  let confirmationReason = '日线阴阳双阴';
+  
+  if (hourlySignal) {
+    timeframeConfirmation += 1;
+    confirmationReason += '+小时线确认';
+  }
+  
+  if (minute30Signal) {
+    timeframeConfirmation += 0.5;
+    confirmationReason += '+30分钟线确认';
+  }
+  
+  // 市场环境过滤
+  let environmentScore = 1;
+  let environmentReason = '';
+  
+  // 检查大盘环境
+  if (indexData && indexData.trend) {
+    // 做多信号,大盘上涨,加分
+    if (dailySignal.direction === 'long' && 
+       (indexData.trend === 'bullish' || indexData.trend === 'strong_bullish')) {
+      environmentScore += 0.5;
+      environmentReason = '大盘上涨趋势';
+    } 
+    // 做多信号,大盘下跌,降分
+    else if (dailySignal.direction === 'long' && 
+            (indexData.trend === 'bearish' || indexData.trend === 'strong_bearish')) {
+      environmentScore -= 0.5;
+      environmentReason = '大盘下跌趋势不利';
+    }
+    // 做空信号,大盘下跌,加分
+    else if (dailySignal.direction === 'short' && 
+            (indexData.trend === 'bearish' || indexData.trend === 'strong_bearish')) {
+      environmentScore += 0.5;
+      environmentReason = '大盘下跌趋势';
+    }
+    // 做空信号,大盘上涨,降分
+    else if (dailySignal.direction === 'short' && 
+            (indexData.trend === 'bullish' || indexData.trend === 'strong_bullish')) {
+      environmentScore -= 0.5;
+      environmentReason = '大盘上涨趋势不利';
+    }
+  }
+  
+  // 检查行业板块强弱
+  if (sectorData && sectorData.strength) {
+    // 获取行业强度指数 (0-10)
+    const sectorStrength = sectorData.strength;
+    
+    // 做多信号,强势行业,加分
+    if (dailySignal.direction === 'long' && sectorStrength >= 7) {
+      environmentScore += 0.5;
+      environmentReason += environmentReason ? '+强势行业' : '强势行业';
+    }
+    // 做多信号,弱势行业,降分
+    else if (dailySignal.direction === 'long' && sectorStrength <= 3) {
+      environmentScore -= 0.5;
+      environmentReason += environmentReason ? '+弱势行业不利' : '弱势行业不利';
+    }
+    // 做空信号,弱势行业,加分
+    else if (dailySignal.direction === 'short' && sectorStrength <= 3) {
+      environmentScore += 0.5;
+      environmentReason += environmentReason ? '+弱势行业' : '弱势行业';
+    }
+    // 做空信号,强势行业,降分
+    else if (dailySignal.direction === 'short' && sectorStrength >= 7) {
+      environmentScore -= 0.5;
+      environmentReason += environmentReason ? '+强势行业不利' : '强势行业不利';
+    }
+  }
+  
+  // 结合指标进行信号确认
+  let indicatorConfirmation = checkTechnicalIndicators(
+    daily, 
+    dailySignal.direction
+  );
+  
+  // 计算总体置信度分数 (范围1-5)
+  const totalScore = timeframeConfirmation + environmentScore + indicatorConfirmation.score;
+  
+  // 确定置信度级别
+  let confidence;
+  if (totalScore >= 4) {
+    confidence = 'very_high';
+  } else if (totalScore >= 3) {
+    confidence = 'high';
+  } else if (totalScore >= 2) {
+    confidence = 'medium';
+  } else {
+    confidence = 'low';
+  }
+  
+  // 确定交易数量比例 (0.2-1.0)
+  const positionSizeRatio = Math.min(1.0, Math.max(0.2, totalScore / 5));
+  
+  // 结合日线信号和增强因素
+  const enhancedSignal = {
+    ...dailySignal,
+    confidence,
+    positionSizeRatio,
+    confirmation: {
+      timeframe: confirmationReason,
+      environment: environmentReason,
+      indicators: indicatorConfirmation.reason
+    },
+    reason: `${confirmationReason}${environmentReason ? ', ' + environmentReason : ''}${indicatorConfirmation.reason ? ', ' + indicatorConfirmation.reason : ''}`
+  };
+  
+  // 根据置信度调整止盈止损
+  if (confidence === 'very_high' || confidence === 'high') {
+    // 高置信度,更激进的止盈,更宽松的止损
+    if (dailySignal.direction === 'long') {
+      enhancedSignal.takeProfit = dailySignal.takeProfit * 1.2;
+      enhancedSignal.stopLoss = dailySignal.stopLoss * 0.95;
+    } else {
+      enhancedSignal.takeProfit = dailySignal.takeProfit * 0.8;
+      enhancedSignal.stopLoss = dailySignal.stopLoss * 1.05;
+    }
+  } else if (confidence === 'low') {
+    // 低置信度,更保守的止盈,更严格的止损
+    if (dailySignal.direction === 'long') {
+      enhancedSignal.takeProfit = (dailySignal.takeProfit + dailySignal.entryPrice) / 2;
+      enhancedSignal.stopLoss = (dailySignal.stopLoss + dailySignal.entryPrice) / 2;
+    } else {
+      enhancedSignal.takeProfit = (dailySignal.takeProfit + dailySignal.entryPrice) / 2;
+      enhancedSignal.stopLoss = (dailySignal.stopLoss + dailySignal.entryPrice) / 2;
+    }
+  }
+  
+  return enhancedSignal;
+}
+
+// 检查阴阳双阴形态
+function checkYinYangDoubleYinPattern(klines, currentPosition) {
+  // 确保K线数据足够
+  if (!klines || klines.length < 8) {
+    return null;
+  }
+  
+  // 复用之前的策略代码基础
+  const recentKlines = klines.slice(-8);
+  
+  // 判断是否符合阴阳双阴形态
+  const isYinYangDoubleYin = 
+    recentKlines[2].close < recentKlines[2].open && // 第一根是阴线
+    recentKlines[3].close > recentKlines[3].open && // 第二根是阳线
+    recentKlines[4].close < recentKlines[4].open && // 第三根是阴线
+    recentKlines[5].close < recentKlines[5].open;   // 第四根是阴线
+  
+  if (!isYinYangDoubleYin) {
+    return null; // 不符合形态,返回null
+  }
+  
+  // 判断是否有异常成交量
+  const isAbnormalVolume = checkAbnormalVolume(recentKlines);
+  if (isAbnormalVolume) {
+    return null; // 异常成交量,不可靠,返回null
+  }
+  
+  // 获取阴阳双阴形态的基本属性
+  const { direction, entryPrice, stopLoss, takeProfit, supportLevel, resistanceLevel } = 
+    calculateYinYangDoubleYinBasics(recentKlines, currentPosition);
+  
+  return {
+    direction,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    supportLevel,
+    resistanceLevel,
+    pattern: 'yin_yang_double_yin'
+  };
+}
+
+// 检查异常成交量
+function checkAbnormalVolume(klines) {
+  // 提取成交量数据
+  const volumes = klines.map(k => k.volume);
+  
+  // 计算成交量平均值和标准差
+  const avgVolume = volumes.reduce((sum, vol) => sum + vol, 0) / volumes.length;
+  const stdDev = Math.sqrt(
+    volumes.reduce((sum, vol) => sum + Math.pow(vol - avgVolume, 2), 0) / volumes.length
+  );
+  
+  // 判断最近几根K线是否有异常成交量 (超过平均值3个标准差)
+  for (let i = klines.length - 4; i < klines.length; i++) {
+    if (klines[i].volume > avgVolume + 3 * stdDev) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// 计算阴阳双阴形态的基本属性
+function calculateYinYangDoubleYinBasics(klines, currentPosition) {
+  // 提取关键K线
+  const firstYin = klines[2];   // 第一根阴线
+  const yang = klines[3];       // 阳线
+  const secondYin = klines[4];  // 第二根阴线
+  const thirdYin = klines[5];   // 第三根阴线
+  const currentK = klines[7];   // 当前K线
+  
+  // 检测形态的方向
+  // 如果第一阴线和阳线是上升趋势,且两阴线是回调,则看多
+  const isLong = yang.high > firstYin.high && secondYin.low > firstYin.low;
+  const direction = isLong ? 'long' : 'short';
+  
+  // 入场价格
+  const entryPrice = currentK.close;
+  
+  // 确定支撑位和阻力位
+  const highs = klines.map(k => k.high);
+  const lows = klines.map(k => k.low);
+  
+  // 支撑位:最低点
+  const supportLevel = Math.min(...lows);
+  
+  // 阻力位:最高点
+  const resistanceLevel = Math.max(...highs);
+  
+  // 价格区间
+  const priceRange = resistanceLevel - supportLevel;
+  
+  // 止损位
+  let stopLoss;
+  if (direction === 'long') {
+    // 做多情况,止损设在形态最低点下方
+    const patternLow = Math.min(yang.low, secondYin.low, thirdYin.low);
+    stopLoss = patternLow - (priceRange * 0.05);
+  } else {
+    // 做空情况,止损设在形态最高点上方
+    const patternHigh = Math.max(yang.high, secondYin.high, thirdYin.high);
+    stopLoss = patternHigh + (priceRange * 0.05);
+  }
+  
+  // 止盈位
+  let takeProfit;
+  if (direction === 'long') {
+    // 做多情况,止盈设为价格区间的1.5倍
+    takeProfit = entryPrice + (priceRange * 0.75);
+  } else {
+    // 做空情况,止盈设为价格区间的1.5倍
+    takeProfit = entryPrice - (priceRange * 0.75);
+  }
+  
+  return {
+    direction,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    supportLevel,
+    resistanceLevel
+  };
+}
+
+// 检查技术指标确认
+function checkTechnicalIndicators(klines, direction) {
+  // 确保有足够的数据
+  if (!klines || klines.length < 14) {
+    return { score: 0, reason: '' };
+  }
+  
+  let score = 0;
+  let reasons = [];
+  
+  // 1. 计算MACD
+  const macdResult = calculateMACD(klines);
+  
+  // 2. 计算KDJ
+  const kdjResult = calculateKDJ(klines);
+  
+  // 3. 计算布林带
+  const bbandsResult = calculateBollingerBands(klines);
+  
+  // 方向为多头
+  if (direction === 'long') {
+    // MACD金叉或柱状图由负转正
+    if (macdResult.histogram > 0 && macdResult.histogramPrev < 0) {
+      score += 0.5;
+      reasons.push('MACD金叉');
+    }
+    
+    // KDJ金叉且在超卖区
+    if (kdjResult.k > kdjResult.d && kdjResult.j < 30) {
+      score += 0.5;
+      reasons.push('KDJ金叉超卖');
+    }
+    
+    // 价格触及布林带下轨
+    if (klines[klines.length - 1].close <= bbandsResult.lower) {
+      score += 0.5;
+      reasons.push('布林带下轨支撑');
+    }
+  } 
+  // 方向为空头
+  else {
+    // MACD死叉或柱状图由正转负
+    if (macdResult.histogram < 0 && macdResult.histogramPrev > 0) {
+      score += 0.5;
+      reasons.push('MACD死叉');
+    }
+    
+    // KDJ死叉且在超买区
+    if (kdjResult.k < kdjResult.d && kdjResult.j > 70) {
+      score += 0.5;
+      reasons.push('KDJ死叉超买');
+    }
+    
+    // 价格触及布林带上轨
+    if (klines[klines.length - 1].close >= bbandsResult.upper) {
+      score += 0.5;
+      reasons.push('布林带上轨压制');
+    }
+  }
+  
+  // 如果有背离,增加分数
+  if (checkDivergence(klines, direction)) {
+    score += 0.5;
+    reasons.push('价格与指标背离');
+  }
+  
+  return {
+    score,
+    reason: reasons.join('+')
+  };
+}
+
+// 计算MACD
+function calculateMACD(klines, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
+  const closes = klines.map(k => k.close);
+  
+  // 简化计算,实际应用中应使用更精确的EMA计算
+  const shortEMA = simpleAverage(closes.slice(-shortPeriod));
+  const longEMA = simpleAverage(closes.slice(-longPeriod));
+  
+  const macdLine = shortEMA - longEMA;
+  
+  // 上一周期柱状图值
+  const shortEMAPrev = simpleAverage(closes.slice(-shortPeriod - 1, -1));
+  const longEMAPrev = simpleAverage(closes.slice(-longPeriod - 1, -1));
+  const macdLinePrev = shortEMAPrev - longEMAPrev;
+  
+  // 信号线(简化计算)
+  const signalLine = simpleAverage(
+    Array(signalPeriod).fill(0).map((_, i) => {
+      const idx = closes.length - signalPeriod + i;
+      return simpleAverage(closes.slice(0, idx)) - simpleAverage(closes.slice(-longPeriod, idx));
+    })
+  );
+  
+  return {
+    macdLine,
+    signalLine,
+    histogram: macdLine - signalLine,
+    histogramPrev: macdLinePrev - signalLine
+  };
+}
+
+// 计算KDJ
+function calculateKDJ(klines, period = 9) {
+  const slicedKlines = klines.slice(-period * 2); // 确保有足够的数据
+  
+  // 计算RSV
+  let rsv = [];
+  for (let i = period - 1; i < slicedKlines.length; i++) {
+    const periodKlines = slicedKlines.slice(i - period + 1, i + 1);
+    const highestHigh = Math.max(...periodKlines.map(k => k.high));
+    const lowestLow = Math.min(...periodKlines.map(k => k.low));
+    const close = slicedKlines[i].close;
+    
+    if (highestHigh === lowestLow) {
+      rsv.push(50);
+    } else {
+      rsv.push(((close - lowestLow) / (highestHigh - lowestLow)) * 100);
+    }
+  }
+  
+  // 简化计算K,D值
+  let k = 50;
+  let d = 50;
+  
+  // 最后一个周期的KDJ
+  k = (2/3) * k + (1/3) * rsv[rsv.length - 1];
+  d = (2/3) * d + (1/3) * k;
+  const j = 3 * k - 2 * d;
+  
+  return { k, d, j };
+}
+
+// 计算布林带
+function calculateBollingerBands(klines, period = 20, multiplier = 2) {
+  const closes = klines.slice(-period).map(k => k.close);
+  const sma = simpleAverage(closes);
+  
+  // 计算标准差
+  const squaredDifferences = closes.map(close => Math.pow(close - sma, 2));
+  const standardDeviation = Math.sqrt(simpleAverage(squaredDifferences));
+  
+  return {
+    middle: sma,
+    upper: sma + (standardDeviation * multiplier),
+    lower: sma - (standardDeviation * multiplier)
+  };
+}
+
+// 简单平均
+function simpleAverage(data) {
+  return data.reduce((sum, value) => sum + value, 0) / data.length;
+}
+
+// 检查背离
+function checkDivergence(klines, direction) {
+  // 这里简化处理,实际应用中应该有更复杂的背离检测算法
+  const closes = klines.slice(-5).map(k => k.close);
+  const volumes = klines.slice(-5).map(k => k.volume);
+  
+  // 价格与成交量背离
+  if (direction === 'long') {
+    // 价格创新低但成交量未创新低 (看多背离)
+    return closes[closes.length - 1] < Math.min(...closes.slice(0, -1)) && 
+           volumes[volumes.length - 1] > volumes[volumes.length - 2];
+  } else {
+    // 价格创新高但成交量未创新高 (看空背离)
+    return closes[closes.length - 1] > Math.max(...closes.slice(0, -1)) && 
+           volumes[volumes.length - 1] < volumes[volumes.length - 2];
+  }
+}
+
+// 金字塔加仓策略工具
+export function pyramidPositionStrategy(currentPosition, currentData, profitTarget) {
+  const { entryPrice, direction, holdingDays, initialQuantity } = currentPosition;
+  const { currentPrice } = currentData;
+  
+  // 基础收益率
+  const currentReturn = direction === 'long' 
+    ? (currentPrice - entryPrice) / entryPrice
+    : (entryPrice - currentPrice) / entryPrice;
+  
+  // 金字塔式加仓阶段
+  const stages = [
+    { returnThreshold: 0.03, addSize: 0.3, stopLossLevel: 0.01 },  // 3%收益时加仓30%,止损调整到1%
+    { returnThreshold: 0.08, addSize: 0.4, stopLossLevel: 0.04 },  // 8%收益时加仓40%,止损调整到4%
+    { returnThreshold: 0.15, addSize: 0.3, stopLossLevel: 0.10 }   // 15%收益时加仓30%,止损调整到10%
+  ];
+  
+  // 查找当前适合的加仓阶段
+  for (let i = stages.length - 1; i >= 0; i--) {
+    const stage = stages[i];
+    if (currentReturn >= stage.returnThreshold) {
+      // 计算加仓数量
+      const addQuantity = Math.floor(initialQuantity * stage.addSize);
+      
+      // 计算新的止损位
+      const newStopLoss = direction === 'long'
+        ? entryPrice * (1 + stage.stopLossLevel)
+        : entryPrice * (1 - stage.stopLossLevel);
+      
+      return {
+        shouldAddPosition: true,
+        addQuantity,
+        newStopLoss,
+        stage: i + 1,
+        reason: `达到${stage.returnThreshold * 100}%盈利,执行第${i+1}阶段金字塔加仓`
+      };
+    }
+  }
+  
+  return {
+    shouldAddPosition: false,
+    reason: '未达到加仓条件'
+  };
+}
+
+// 默认导出
+export default {
+  calculateATRStopLoss,
+  calculateTrailingStop,
+  calculateVolatilityStopLoss,
+  calculateBreakoutTakeProfit,
+  calculateTrendStopLoss,
+  calculateTimeWeightedStop,
+  calculatePatternBasedStop,
+  calculateDynamicStopStrategy,
+  calculateYinYangDoubleYinStrategy,
+  calculateMultiTimeframeYinYangStrategy,
+  pyramidPositionStrategy
+}; 

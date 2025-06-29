@@ -1,0 +1,154 @@
+import request from '@/utils/request';
+
+/**
+ * 市场数据服务
+ * 提供股票,指数和市场数据的接口
+ */
+const marketDataService = {
+  /**
+   * 获取股票列表
+   * @param {Object} params - 请求参数
+   * @param {string} [params.industry] - 行业过滤条件
+   * @param {string} [params.data_source='auto'] - 数据源: 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+   * @param {boolean} [params.refresh_cache=false] - 是否刷新缓存
+   * @returns {Promise} Promise对象
+   */
+  getStockList(params = {}) {
+    return request({
+      url: '/api/market/stocks',
+      method: 'get',
+      params
+    });
+  },
+
+  /**
+   * 获取股票K线数据
+   * @param {string} code - 股票代码
+   * @param {Object} params - 请求参数
+   * @param {string} [params.start_date] - 开始日期,格式:YYYY-MM-DD
+   * @param {string} [params.end_date] - 结束日期,格式:YYYY-MM-DD
+   * @param {string} [params.freq='daily'] - 数据频率,支持daily, weekly, monthly
+   * @param {string} [params.data_source='auto'] - 数据源: 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+   * @param {boolean} [params.refresh_cache=false] - 是否刷新缓存
+   * @param {boolean} [params.merge_sources=false] - 是否合并多个数据源的数据
+   * @returns {Promise} Promise对象
+   */
+  getKData(code, params = {}) {
+    return request({
+      url: `/api/market/kdata/${code}`,
+      method: 'get',
+      params
+    });
+  },
+
+  /**
+   * 获取实时行情数据
+   * @param {string|Array} codes - 股票代码,多个代码用逗号分隔,如 "000001,600000" 或数组 ["000001", "600000"]
+   * @param {string} [data_source='auto'] - 数据源: 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+   * @returns {Promise} Promise对象
+   */
+  getRealtimeQuotes(codes, data_source = 'auto') {
+    if (Array.isArray(codes)) {
+      codes = codes.join(',');
+    }
+    
+    return request({
+      url: '/api/market/realtime',
+      method: 'get',
+      params: { codes, data_source }
+    });
+  },
+
+  /**
+   * 获取指数数据
+   * @param {string} indexCode - 指数代码,如 000001 (上证指数)
+   * @param {Object} params - 请求参数
+   * @param {string} [params.start_date] - 开始日期,格式:YYYY-MM-DD
+   * @param {string} [params.end_date] - 结束日期,格式:YYYY-MM-DD
+   * @param {string} [params.data_source='auto'] - 数据源: 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+   * @param {boolean} [params.refresh_cache=false] - 是否刷新缓存
+   * @returns {Promise} Promise对象
+   */
+  getIndexData(indexCode, params = {}) {
+    return request({
+      url: `/api/market/index/${indexCode}`,
+      method: 'get',
+      params
+    });
+  },
+
+  /**
+   * 获取股票基本面数据
+   * @param {string} code - 股票代码
+   * @param {string} [data_source='tdx'] - 数据源: 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+   * @returns {Promise} Promise对象
+   */
+  getStockFundamental(code, data_source = 'tdx') {
+    return request({
+      url: `/api/market/fundamental/${code}`,
+      method: 'get',
+      params: { data_source }
+    });
+  },
+
+  /**
+   * 获取主要财务指标
+   * @param {string} code - 股票代码
+   * @param {string} [data_source='tdx'] - 数据源: 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+   * @returns {Promise} Promise对象
+   */
+  getFinanceIndicators(code, data_source = 'tdx') {
+    return request({
+      url: `/api/market/finance/${code}`,
+      method: 'get',
+      params: { data_source }
+    });
+  },
+
+  /**
+   * 清除缓存数据
+   * @param {Object} params - 请求参数
+   * @param {number} [params.older_than_days] - 清除早于指定天数的缓存
+   * @param {string} [params.pattern] - 文件名匹配模式,如 'index_*.csv'
+   * @param {string} [params.data_source] - 指定数据源的缓存,如 'tdx', 'ths'
+   * @returns {Promise} Promise对象
+   */
+  clearCache(params = {}) {
+    return request({
+      url: '/api/market/cache/clear',
+      method: 'post',
+      data: params
+    });
+  },
+
+  /**
+   * 获取可用的数据源信息
+   * @returns {Promise} Promise对象
+   */
+  getDataSources() {
+    return request({
+      url: '/api/market/data-sources',
+      method: 'get'
+    });
+  },
+
+  /**
+   * 比较不同数据源的数据差异
+   * @param {string} code - 股票代码
+   * @param {Object} params - 请求参数
+   * @param {string} [params.start_date] - 开始日期,格式:YYYY-MM-DD
+   * @param {string} [params.end_date] - 结束日期,格式:YYYY-MM-DD
+   * @param {string} [params.freq='daily'] - 数据频率,支持daily, weekly, monthly
+   * @param {boolean} [params.refresh_cache=false] - 是否刷新缓存
+   * @returns {Promise} Promise对象
+   */
+  compareDataSources(code, params = {}) {
+    return request({
+      url: `/api/market/compare/${code}`,
+      method: 'get',
+      params
+    });
+  }
+};
+
+export default marketDataService; 

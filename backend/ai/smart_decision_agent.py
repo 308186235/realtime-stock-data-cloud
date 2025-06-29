@@ -1,0 +1,244 @@
+"""
+智能决策Agent模块
+基于TradingAgents思路的多Agent协作决策系统
+注意:此模块只提供决策建议,不直接执行交易
+"""
+
+import logging
+from typing import Dict, List, Optional, Any
+from datetime import datetime
+import asyncio
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class MarketSignal:
+    """市场信号数据结构"""
+    signal_type: str
+    strength: float  # 0-1之间
+    confidence: float  # 0-1之间
+    reason: str
+    timestamp: datetime
+
+class BullAgent:
+    """多头分析Agent - 寻找买入机会"""
+    
+    def __init__(self):
+        self.name = "Bull_Agent"
+        
+    async def analyze(self, stock_data: Dict) -> List[MarketSignal]:
+        """分析买入机会"""
+        signals = []
+        
+        try:
+            # 技术指标分析
+            if 'technical_analysis' in stock_data:
+                tech = stock_data['technical_analysis']
+                
+                # RSI超卖信号
+                if tech.get('rsi', 50) < 30:
+                    signals.append(MarketSignal(
+                        signal_type='buy',
+                        strength=0.8,
+                        confidence=0.7,
+                        reason='RSI显示超卖状态',
+                        timestamp=datetime.now()
+                    ))
+                
+                # MACD金叉
+                if 'MACD金叉' in tech.get('buy_signals', []):
+                    signals.append(MarketSignal(
+                        signal_type='buy',
+                        strength=0.7,
+                        confidence=0.6,
+                        reason='MACD出现金叉信号',
+                        timestamp=datetime.now()
+                    ))
+            
+            # 价格趋势分析
+            if 'price_trend' in stock_data:
+                trend = stock_data['price_trend']
+                if trend == 'upward':
+                    signals.append(MarketSignal(
+                        signal_type='buy',
+                        strength=0.6,
+                        confidence=0.5,
+                        reason='价格呈上升趋势',
+                        timestamp=datetime.now()
+                    ))
+                    
+        except Exception as e:
+            logger.error(f"Bull Agent分析失败: {e}")
+            
+        return signals
+
+class BearAgent:
+    """空头分析Agent - 寻找卖出机会"""
+    
+    def __init__(self):
+        self.name = "Bear_Agent"
+        
+    async def analyze(self, stock_data: Dict) -> List[MarketSignal]:
+        """分析卖出机会"""
+        signals = []
+        
+        try:
+            # 技术指标分析
+            if 'technical_analysis' in stock_data:
+                tech = stock_data['technical_analysis']
+                
+                # RSI超买信号
+                if tech.get('rsi', 50) > 70:
+                    signals.append(MarketSignal(
+                        signal_type='sell',
+                        strength=0.8,
+                        confidence=0.7,
+                        reason='RSI显示超买状态',
+                        timestamp=datetime.now()
+                    ))
+                
+                # MACD死叉
+                if 'MACD死叉' in tech.get('sell_signals', []):
+                    signals.append(MarketSignal(
+                        signal_type='sell',
+                        strength=0.7,
+                        confidence=0.6,
+                        reason='MACD出现死叉信号',
+                        timestamp=datetime.now()
+                    ))
+            
+            # 价格趋势分析
+            if 'price_trend' in stock_data:
+                trend = stock_data['price_trend']
+                if trend == 'downward':
+                    signals.append(MarketSignal(
+                        signal_type='sell',
+                        strength=0.6,
+                        confidence=0.5,
+                        reason='价格呈下降趋势',
+                        timestamp=datetime.now()
+                    ))
+                    
+        except Exception as e:
+            logger.error(f"Bear Agent分析失败: {e}")
+            
+        return signals
+
+class RiskAgent:
+    """风险管理Agent - 评估风险和仓位管理"""
+    
+    def __init__(self):
+        self.name = "Risk_Agent"
+        
+    async def analyze(self, stock_data: Dict, portfolio_data: Dict = None) -> Dict:
+        """风险分析和仓位建议"""
+        risk_assessment = {
+            'risk_level': 'medium',  # low, medium, high
+            'position_size': 0.1,    # 建议仓位比例
+            'stop_loss': None,       # 止损价格
+            'take_profit': None,     # 止盈价格
+            'warnings': []
+        }
+        
+        try:
+            current_price = stock_data.get('current_price', 0)
+            
+            # 波动率风险评估
+            if 'volatility' in stock_data:
+                vol = stock_data['volatility']
+                if vol > 0.05:  # 5%以上波动率
+                    risk_assessment['risk_level'] = 'high'
+                    risk_assessment['position_size'] = 0.05
+                    risk_assessment['warnings'].append('股票波动率较高')
+                elif vol < 0.02:  # 2%以下波动率
+                    risk_assessment['risk_level'] = 'low'
+                    risk_assessment['position_size'] = 0.15
+            
+            # 设置止损止盈
+            if current_price > 0:
+                risk_assessment['stop_loss'] = current_price * 0.95  # 5%止损
+                risk_assessment['take_profit'] = current_price * 1.10  # 10%止盈
+            
+            # 仓位风险检查
+            if portfolio_data:
+                total_position = portfolio_data.get('total_position', 0)
+                if total_position > 0.8:  # 总仓位超过80%
+                    risk_assessment['warnings'].append('总仓位过高,建议降低新增仓位')
+                    risk_assessment['position_size'] *= 0.5
+                    
+        except Exception as e:
+            logger.error(f"Risk Agent分析失败: {e}")
+            
+        return risk_assessment
+
+class SmartDecisionEngine:
+    """智能决策引擎 - 协调多个Agent"""
+    
+    def __init__(self):
+        self.bull_agent = BullAgent()
+        self.bear_agent = BearAgent()
+        self.risk_agent = RiskAgent()
+        
+    async def make_decision(self, stock_code: str, stock_data: Dict, portfolio_data: Dict = None) -> Dict:
+        """综合决策"""
+        try:
+            # 并行执行各Agent分析
+            bull_signals, bear_signals, risk_assessment = await asyncio.gather(
+                self.bull_agent.analyze(stock_data),
+                self.bear_agent.analyze(stock_data),
+                self.risk_agent.analyze(stock_data, portfolio_data)
+            )
+            
+            # 综合决策
+            decision = {
+                'stock_code': stock_code,
+                'timestamp': datetime.now().isoformat(),
+                'bull_signals': [{'type': s.signal_type, 'strength': s.strength, 'reason': s.reason} for s in bull_signals],
+                'bear_signals': [{'type': s.signal_type, 'strength': s.strength, 'reason': s.reason} for s in bear_signals],
+                'risk_assessment': risk_assessment,
+                'final_recommendation': self._make_final_decision(bull_signals, bear_signals, risk_assessment)
+            }
+            
+            return decision
+            
+        except Exception as e:
+            logger.error(f"智能决策失败 {stock_code}: {e}")
+            return {'error': str(e)}
+    
+    def _make_final_decision(self, bull_signals: List[MarketSignal], bear_signals: List[MarketSignal], risk_assessment: Dict) -> Dict:
+        """最终决策逻辑"""
+        bull_score = sum(s.strength * s.confidence for s in bull_signals)
+        bear_score = sum(s.strength * s.confidence for s in bear_signals)
+        
+        # 风险调整
+        risk_multiplier = {'low': 1.2, 'medium': 1.0, 'high': 0.8}[risk_assessment['risk_level']]
+        
+        adjusted_bull_score = bull_score * risk_multiplier
+        adjusted_bear_score = bear_score * risk_multiplier
+        
+        if adjusted_bull_score > adjusted_bear_score and adjusted_bull_score > 0.5:
+            action = 'buy'
+            confidence = min(adjusted_bull_score, 1.0)
+        elif adjusted_bear_score > adjusted_bull_score and adjusted_bear_score > 0.5:
+            action = 'sell'
+            confidence = min(adjusted_bear_score, 1.0)
+        else:
+            action = 'hold'
+            confidence = 0.5
+        
+        return {
+            'action': action,
+            'confidence': confidence,
+            'position_size': risk_assessment['position_size'],
+            'stop_loss': risk_assessment['stop_loss'],
+            'take_profit': risk_assessment['take_profit'],
+            'warnings': risk_assessment['warnings']
+        }
+
+# 全局实例
+smart_decision_engine = SmartDecisionEngine()
+
+async def get_smart_decision(stock_code: str, stock_data: Dict, portfolio_data: Dict = None) -> Dict:
+    """获取智能决策 - 供其他模块调用"""
+    return await smart_decision_engine.make_decision(stock_code, stock_data, portfolio_data)

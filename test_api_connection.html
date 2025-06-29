@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-item {
+            margin: 15px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 API连接测试工具</h1>
+        
+        <div class="test-item">
+            <h3>测试配置</h3>
+            <label>API基础地址: </label>
+            <input type="text" id="apiUrl" value="https://api.aigupiao.me" style="width: 300px; padding: 5px;">
+            <button onclick="testAllAPIs()">🧪 测试所有API</button>
+            <button onclick="clearLog()">🗑️ 清空日志</button>
+        </div>
+
+        <div id="results"></div>
+        
+        <div class="test-item">
+            <h3>📋 测试日志</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let logElement = document.getElementById('log');
+        let resultsElement = document.getElementById('results');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}\n`;
+            logElement.textContent += logMessage;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            logElement.textContent = '';
+            resultsElement.innerHTML = '';
+        }
+
+        async function testAPI(url, name) {
+            const startTime = Date.now();
+            try {
+                log(`🔄 测试 ${name}: ${url}`);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    mode: 'cors'
+                });
+                
+                const endTime = Date.now();
+                const responseTime = endTime - startTime;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ ${name} 成功 (${responseTime}ms): ${JSON.stringify(data).substring(0, 100)}...`);
+                    return { success: true, responseTime, data, status: response.status };
+                } else {
+                    log(`❌ ${name} 失败: HTTP ${response.status} ${response.statusText}`);
+                    return { success: false, responseTime, status: response.status, error: response.statusText };
+                }
+            } catch (error) {
+                const endTime = Date.now();
+                const responseTime = endTime - startTime;
+                log(`💥 ${name} 异常 (${responseTime}ms): ${error.message}`);
+                return { success: false, responseTime, error: error.message };
+            }
+        }
+
+        function createResultItem(name, result) {
+            const div = document.createElement('div');
+            div.className = `test-item ${result.success ? 'success' : 'error'}`;
+            
+            const statusIcon = result.success ? '✅' : '❌';
+            const statusText = result.success ? '成功' : '失败';
+            
+            div.innerHTML = `
+                <h4>${statusIcon} ${name} - ${statusText}</h4>
+                <p><strong>响应时间:</strong> ${result.responseTime}ms</p>
+                <p><strong>状态码:</strong> ${result.status || 'N/A'}</p>
+                ${result.error ? `<p><strong>错误:</strong> ${result.error}</p>` : ''}
+                ${result.data ? `<p><strong>数据:</strong> ${JSON.stringify(result.data, null, 2).substring(0, 200)}...</p>` : ''}
+            `;
+            
+            return div;
+        }
+
+        async function testAllAPIs() {
+            const baseUrl = document.getElementById('apiUrl').value.trim();
+            if (!baseUrl) {
+                alert('请输入API基础地址');
+                return;
+            }
+
+            clearLog();
+            log('🚀 开始API连接测试...');
+            
+            const apis = [
+                { url: `${baseUrl}/health`, name: '健康检查' },
+                { url: `${baseUrl}/api/agent-trading/status`, name: 'Agent状态' },
+                { url: `${baseUrl}/api/agent-trading/fund`, name: '资金信息' },
+                { url: `${baseUrl}/api/agent-trading/positions`, name: '持仓信息' },
+                { url: `${baseUrl}/api/agent-trading/orders`, name: '订单信息' }
+            ];
+
+            let successCount = 0;
+            let totalResponseTime = 0;
+
+            for (const api of apis) {
+                const result = await testAPI(api.url, api.name);
+                const resultItem = createResultItem(api.name, result);
+                resultsElement.appendChild(resultItem);
+                
+                if (result.success) {
+                    successCount++;
+                }
+                totalResponseTime += result.responseTime;
+                
+                // 添加小延迟避免请求过快
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            const avgResponseTime = Math.round(totalResponseTime / apis.length);
+            
+            log(`\n📊 测试完成:`);
+            log(`✅ 成功: ${successCount}/${apis.length}`);
+            log(`⏱️ 平均响应时间: ${avgResponseTime}ms`);
+            
+            if (successCount === apis.length) {
+                log(`🎉 所有API测试通过！系统运行正常。`);
+            } else {
+                log(`⚠️ 有 ${apis.length - successCount} 个API测试失败，请检查配置。`);
+            }
+        }
+
+        // 页面加载完成后自动测试
+        window.onload = function() {
+            log('📱 API连接测试工具已加载');
+            log('💡 点击"测试所有API"按钮开始测试');
+        };
+    </script>
+</body>
+</html>

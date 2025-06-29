@@ -1,0 +1,947 @@
+<template>
+	<view class="container">
+		<view class="header">
+			<text class="title">AI 洞察分析</text>
+			<text class="subtitle">基于大数据和机器学习的市场分析</text>
+		</view>
+		
+		<!-- 市场趋势分析 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">市场趋势分析</text>
+				<text class="refresh-btn" @click="refreshMarketAnalysis">刷新</text>
+			</view>
+			
+			<view class="analysis-card">
+				<view class="analysis-header">
+					<text class="analysis-title">市场整体趋势</text>
+					<text class="analysis-date">{{ marketAnalysis.date }}</text>
+				</view>
+				
+				<view class="trend-indicator">
+					<view class="trend-icon" :class="marketAnalysis.trend">
+						<text class="icon">{{ marketAnalysis.trend === 'up' ? '↑' : marketAnalysis.trend === 'down' ? '↓' : '→' }}</text>
+					</view>
+					<text class="trend-text">{{ getTrendText() }}</text>
+				</view>
+				
+				<view class="analysis-content">
+					<text class="content-text">{{ marketAnalysis.content }}</text>
+				</view>
+				
+				<view class="key-factors">
+					<text class="factors-title">关键影响因素</text>
+					<view class="factor-item" v-for="(factor, index) in marketAnalysis.factors" :key="index">
+						<text class="factor-icon">•</text>
+						<text class="factor-text">{{ factor }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 板块轮动预测 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">板块轮动预测</text>
+			</view>
+			
+			<scroll-view scroll-x class="sectors-scroll">
+				<view class="sectors-list">
+					<view class="sector-item" v-for="(item, index) in sectorRotation" :key="index">
+						<view class="sector-header">
+							<text class="sector-name">{{ item.name }}</text>
+							<text :class="['sector-signal', item.signal]">{{ getSignalText(item.signal) }}</text>
+						</view>
+						<view class="sector-probability">
+							<text class="probability-label">上涨概率</text>
+							<view class="probability-bar">
+								<view class="probability-fill" :style="{width: item.probability + '%', backgroundColor: getProbabilityColor(item.probability)}"></view>
+							</view>
+							<text class="probability-value">{{ item.probability }}%</text>
+						</view>
+						<text class="sector-reason">{{ item.reason }}</text>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+		
+		<!-- 投资组合优化 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">投资组合优化建议</text>
+				<text class="refresh-btn" @click="refreshPortfolioAdvice">刷新</text>
+			</view>
+			
+			<view class="portfolio-analysis">
+				<view class="portfolio-metrics">
+					<view class="metric-item">
+						<text class="metric-label">当前风险评分</text>
+						<text class="metric-value" :class="getRiskClass(portfolioAdvice.currentRisk)">{{ portfolioAdvice.currentRisk }}</text>
+					</view>
+					<view class="metric-item">
+						<text class="metric-label">建议风险评分</text>
+						<text class="metric-value" :class="getRiskClass(portfolioAdvice.recommendedRisk)">{{ portfolioAdvice.recommendedRisk }}</text>
+					</view>
+					<view class="metric-item">
+						<text class="metric-label">预期收益变化</text>
+						<text class="metric-value" :class="portfolioAdvice.expectedReturnChange >= 0 ? 'positive' : 'negative'">
+							{{ portfolioAdvice.expectedReturnChange >= 0 ? '+' : '' }}{{ portfolioAdvice.expectedReturnChange }}%
+						</text>
+					</view>
+				</view>
+				
+				<view class="portfolio-chart">
+					<canvas canvas-id="portfolioChart" class="chart-canvas" :canvas-width="300" :canvas-height="200"></canvas>
+				</view>
+				
+				<view class="adjustment-advice">
+					<text class="advice-title">调整建议</text>
+					<view class="advice-item" v-for="(advice, index) in portfolioAdvice.adjustments" :key="index">
+						<text class="advice-type" :class="advice.type">{{ advice.type === 'increase' ? '增持' : advice.type === 'decrease' ? '减持' : '持有' }}</text>
+						<text class="advice-content">{{ advice.content }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 智能预警 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">智能预警</text>
+			</view>
+			
+			<view class="alerts-list">
+				<view v-if="alerts.length === 0" class="empty-tip">
+					<text class="empty-text">暂无预警信息</text>
+				</view>
+				
+				<view v-else class="alert-item" v-for="(alert, index) in alerts" :key="index">
+					<view class="alert-header">
+						<view class="alert-type" :class="alert.level">
+							<text class="type-text">{{ getAlertLevelText(alert.level) }}</text>
+						</view>
+						<text class="alert-time">{{ alert.time }}</text>
+					</view>
+					<text class="alert-title">{{ alert.title }}</text>
+					<text class="alert-content">{{ alert.content }}</text>
+					<view class="alert-actions">
+						<text class="action-btn" @click="markAsRead(index)">标记已读</text>
+						<text class="action-btn" @click="showAlertDetail(alert)">查看详情</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script>
+export default {
+	data() {
+		return {
+			// 市场趋势分析
+			marketAnalysis: {
+				date: '2023-06-05',
+				trend: 'up',
+				content: '根据近期数据分析，市场整体呈现震荡上行趋势，主要受益于政策利好和外资流入增加。预计短期内市场将继续保持强势，但需警惕获利回吐带来的调整风险。',
+				factors: [
+					'央行持续释放流动性，市场资金面宽松',
+					'外资连续三周净流入，北向资金增持A股',
+					'经济数据向好，企业盈利预期改善',
+					'科技创新政策加码，相关板块表现活跃'
+				]
+			},
+			
+			// 板块轮动预测
+			sectorRotation: [
+				{
+					name: '半导体',
+					signal: 'strong_buy',
+					probability: 85,
+					reason: '国产替代加速，政策持续加码'
+				},
+				{
+					name: '新能源',
+					signal: 'buy',
+					probability: 72,
+					reason: '双碳目标推进，行业景气度高'
+				},
+				{
+					name: '医药生物',
+					signal: 'hold',
+					probability: 55,
+					reason: '估值处于合理区间，关注创新药企业'
+				},
+				{
+					name: '消费电子',
+					signal: 'buy',
+					probability: 68,
+					reason: '新品周期启动，需求回暖'
+				},
+				{
+					name: '金融',
+					signal: 'sell',
+					probability: 35,
+					reason: '利润增速放缓，估值优势减弱'
+				}
+			],
+			
+			// 投资组合优化
+			portfolioAdvice: {
+				currentRisk: 75,
+				recommendedRisk: 65,
+				expectedReturnChange: 1.5,
+				adjustments: [
+					{
+						type: 'decrease',
+						content: '降低高估值科技股比例，建议减持15%'
+					},
+					{
+						type: 'increase',
+						content: '增加低估值蓝筹股配置，建议增持10%'
+					},
+					{
+						type: 'increase',
+						content: '适当配置防御性板块，如公用事业和消费必需品'
+					},
+					{
+						type: 'hold',
+						content: '保持新能源板块仓位不变，关注政策变化'
+					}
+				]
+			},
+			
+			// 智能预警
+			alerts: [
+				{
+					level: 'warning',
+					time: '2023-06-05 09:30',
+					title: '市场波动风险提升',
+					content: '近期外部不确定性因素增加，市场波动可能加剧，建议适当降低仓位，关注防御性板块。'
+				},
+				{
+					level: 'info',
+					time: '2023-06-04 16:45',
+					title: '行业政策变动',
+					content: '新能源汽车补贴政策调整，可能影响相关产业链企业盈利预期，建议关注政策落地情况。'
+				},
+				{
+					level: 'danger',
+					time: '2023-06-03 10:15',
+					title: '个股异常波动',
+					content: '您持仓的某股票(SZ002415)近三日累计下跌超过15%，已触发止损预警，建议及时止损或减仓。'
+				}
+			]
+		}
+	},
+	methods: {
+		// 获取趋势文本
+		getTrendText() {
+			const trends = {
+				'up': '上行趋势',
+				'down': '下行趋势',
+				'sideways': '震荡趋势'
+			}
+			return trends[this.marketAnalysis.trend] || '未知趋势'
+		},
+		
+		// 获取信号文本
+		getSignalText(signal) {
+			const signals = {
+				'strong_buy': '强烈买入',
+				'buy': '买入',
+				'hold': '持有',
+				'sell': '卖出',
+				'strong_sell': '强烈卖出'
+			}
+			return signals[signal] || '未知信号'
+		},
+		
+		// 获取概率颜色
+		getProbabilityColor(probability) {
+			if (probability >= 70) return '#f5222d'
+			if (probability >= 50) return '#faad14'
+			return '#52c41a'
+		},
+		
+		// 获取风险等级样式
+		getRiskClass(risk) {
+			if (risk >= 70) return 'high-risk'
+			if (risk >= 40) return 'medium-risk'
+			return 'low-risk'
+		},
+		
+		// 获取预警等级文本
+		getAlertLevelText(level) {
+			const levels = {
+				'info': '提示',
+				'warning': '警告',
+				'danger': '危险'
+			}
+			return levels[level] || '未知'
+		},
+		
+		// 刷新市场分析
+		refreshMarketAnalysis() {
+			// 模拟数据更新
+			const trends = ['up', 'down', 'sideways']
+			this.marketAnalysis.trend = trends[Math.floor(Math.random() * trends.length)]
+			
+			// 更新日期为当前日期
+			const now = new Date()
+			this.marketAnalysis.date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+			
+			// 根据趋势更新内容
+			if (this.marketAnalysis.trend === 'up') {
+				this.marketAnalysis.content = '市场呈现强势上行趋势，成交量明显放大，多项技术指标显示多头占优。建议适度提高仓位，关注热点板块轮动机会。'
+				this.marketAnalysis.factors = [
+					'流动性持续宽松，市场资金面充裕',
+					'外资持续流入，北向资金净买入',
+					'政策面利好不断，提振市场信心',
+					'企业盈利预期改善，估值压力减轻'
+				]
+			} else if (this.marketAnalysis.trend === 'down') {
+				this.marketAnalysis.content = '市场呈现下行趋势，成交量萎缩，技术指标转弱。建议降低仓位，增加防御性资产配置，等待市场企稳信号。'
+				this.marketAnalysis.factors = [
+					'货币政策边际收紧，流动性预期转弱',
+					'外资流出加速，北向资金连续净卖出',
+					'经济数据不及预期，增长动能减弱',
+					'通胀压力上升，企业成本增加'
+				]
+			} else {
+				this.marketAnalysis.content = '市场处于震荡整理阶段，方向不明确，建议观望为主，等待明确突破信号。可适度关注低估值蓝筹股和高景气度行业。'
+				this.marketAnalysis.factors = [
+					'政策面缺乏明确指引，市场预期分歧',
+					'资金流向分化，场内资金轮动明显',
+					'板块表现不均衡，结构性机会为主',
+					'外部环境复杂多变，不确定性因素增加'
+				]
+			}
+			
+			uni.showToast({
+				title: '分析已更新',
+				icon: 'success'
+			})
+		},
+		
+		// 刷新投资组合建议
+		refreshPortfolioAdvice() {
+			// 模拟数据更新
+			this.portfolioAdvice.currentRisk = Math.floor(Math.random() * 40) + 50
+			this.portfolioAdvice.recommendedRisk = Math.floor(Math.random() * 30) + 50
+			this.portfolioAdvice.expectedReturnChange = (Math.random() * 4 - 1).toFixed(1)
+			
+			// 更新投资组合图表
+			this.drawPortfolioChart()
+			
+			uni.showToast({
+				title: '建议已更新',
+				icon: 'success'
+			})
+		},
+		
+		// 标记预警为已读
+		markAsRead(index) {
+			this.alerts.splice(index, 1)
+			
+			uni.showToast({
+				title: '已标记为已读',
+				icon: 'success'
+			})
+		},
+		
+		// 显示预警详情
+		showAlertDetail(alert) {
+			uni.showModal({
+				title: alert.title,
+				content: alert.content + '\n\n时间: ' + alert.time,
+				showCancel: false
+			})
+		},
+		
+		// 绘制投资组合图表
+		drawPortfolioChart() {
+			const ctx = uni.createCanvasContext('portfolioChart', this)
+			
+			// 设置willReadFrequently属性
+			ctx.willReadFrequently = true
+			
+			const width = 300
+			const height = 200
+			
+			// 清空画布
+			ctx.clearRect(0, 0, width, height)
+			
+			// 绘制背景
+			ctx.setFillStyle('#f8f8f8')
+			ctx.fillRect(0, 0, width, height)
+			
+			// 绘制当前配置和建议配置的对比图
+			const categories = ['科技', '金融', '消费', '医药', '能源']
+			const currentValues = [35, 25, 15, 15, 10]
+			const recommendedValues = [25, 30, 20, 15, 10]
+			
+			const barWidth = 30
+			const spacing = 20
+			const startX = 50
+			const maxValue = 40
+			
+			// 绘制坐标轴
+			ctx.beginPath()
+			ctx.setStrokeStyle('#ddd')
+			ctx.setLineWidth(1)
+			ctx.moveTo(startX, 20)
+			ctx.lineTo(startX, height - 30)
+			ctx.lineTo(width - 20, height - 30)
+			ctx.stroke()
+			
+			// 绘制柱状图
+			for (let i = 0; i < categories.length; i++) {
+				const x = startX + (i * (2 * barWidth + spacing))
+				
+				// 当前配置柱状图
+				const currentHeight = (currentValues[i] / maxValue) * (height - 50)
+				ctx.setFillStyle('#1989fa')
+				ctx.fillRect(x, height - 30 - currentHeight, barWidth, currentHeight)
+				
+				// 建议配置柱状图
+				const recommendedHeight = (recommendedValues[i] / maxValue) * (height - 50)
+				ctx.setFillStyle('#52c41a')
+				ctx.fillRect(x + barWidth, height - 30 - recommendedHeight, barWidth, recommendedHeight)
+				
+				// 绘制类别标签
+				ctx.setFillStyle('#333')
+				ctx.setFontSize(10)
+				ctx.fillText(categories[i], x, height - 15)
+			}
+			
+			// 绘制图例
+			ctx.setFillStyle('#1989fa')
+			ctx.fillRect(width - 100, 20, 15, 10)
+			ctx.setFillStyle('#333')
+			ctx.setFontSize(10)
+			ctx.fillText('当前配置', width - 80, 28)
+			
+			ctx.setFillStyle('#52c41a')
+			ctx.fillRect(width - 100, 40, 15, 10)
+			ctx.setFillStyle('#333')
+			ctx.fillText('建议配置', width - 80, 48)
+			
+			// 提交绘制
+			ctx.draw()
+		}
+	},
+	onLoad() {
+		// 初始化数据
+		setTimeout(() => {
+			this.drawPortfolioChart();
+		}, 300);
+	}
+}
+</script>
+
+<style>
+.container {
+	padding: 30rpx;
+	background-color: #f5f5f5;
+}
+
+.header {
+	margin-bottom: 40rpx;
+	padding: 20rpx;
+	background: linear-gradient(135deg, #1989fa, #0056b3);
+	border-radius: 16rpx;
+	color: #fff;
+	box-shadow: 0 4rpx 12rpx rgba(25, 137, 250, 0.3);
+}
+
+.title {
+	font-size: 40rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+	display: block;
+}
+
+.subtitle {
+	font-size: 24rpx;
+	opacity: 0.9;
+	display: block;
+}
+
+.section {
+	margin-bottom: 30rpx;
+	background-color: #fff;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.section-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20rpx;
+	border-bottom: 1px solid #f0f0f0;
+	padding-bottom: 16rpx;
+}
+
+.section-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.refresh-btn {
+	font-size: 24rpx;
+	color: #1989fa;
+	background-color: rgba(25, 137, 250, 0.1);
+	padding: 6rpx 16rpx;
+	border-radius: 30rpx;
+}
+
+/* 市场趋势分析样式 */
+.analysis-card {
+	padding: 24rpx;
+	background-color: #f9f9f9;
+	border-radius: 12rpx;
+	box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.03);
+}
+
+.analysis-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 20rpx;
+	border-bottom: 1px solid #f0f0f0;
+	padding-bottom: 12rpx;
+}
+
+.analysis-title {
+	font-size: 30rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.analysis-date {
+	font-size: 24rpx;
+	color: #999;
+	background-color: rgba(0,0,0,0.05);
+	padding: 4rpx 12rpx;
+	border-radius: 20rpx;
+}
+
+.trend-indicator {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 20rpx;
+	background-color: #fff;
+	padding: 16rpx;
+	border-radius: 8rpx;
+}
+
+.trend-icon {
+	width: 70rpx;
+	height: 70rpx;
+	border-radius: 35rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+	box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.1);
+}
+
+.trend-icon.up {
+	background: linear-gradient(135deg, #ff4d4f, #cf1322);
+}
+
+.trend-icon.down {
+	background: linear-gradient(135deg, #52c41a, #389e0d);
+}
+
+.trend-icon.sideways {
+	background: linear-gradient(135deg, #faad14, #d48806);
+}
+
+.icon {
+	font-size: 40rpx;
+	color: white;
+	font-weight: bold;
+}
+
+.trend-text {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.analysis-content {
+	margin-bottom: 24rpx;
+	background-color: #fff;
+	padding: 16rpx;
+	border-radius: 8rpx;
+}
+
+.content-text {
+	font-size: 28rpx;
+	line-height: 1.6;
+	color: #333;
+}
+
+.key-factors {
+	background-color: #f0f0f0;
+	padding: 20rpx;
+	border-radius: 8rpx;
+}
+
+.factors-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+	color: #333;
+	border-left: 4rpx solid #1989fa;
+	padding-left: 12rpx;
+}
+
+.factor-item {
+	display: flex;
+	flex-direction: row;
+	margin-bottom: 12rpx;
+	background-color: #fff;
+	padding: 12rpx;
+	border-radius: 6rpx;
+}
+
+.factor-icon {
+	margin-right: 10rpx;
+	color: #1989fa;
+	font-weight: bold;
+}
+
+.factor-text {
+	font-size: 26rpx;
+	color: #333;
+	flex: 1;
+}
+
+/* 板块轮动预测样式 */
+.sectors-scroll {
+	width: 100%;
+	white-space: nowrap;
+}
+
+.sectors-list {
+	display: flex;
+	flex-direction: row;
+	padding: 10rpx 0;
+}
+
+.sector-item {
+	display: inline-flex;
+	flex-direction: column;
+	width: 300rpx;
+	padding: 24rpx;
+	margin-right: 20rpx;
+	background-color: #f9f9f9;
+	border-radius: 12rpx;
+	box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.03);
+}
+
+.sector-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 16rpx;
+	border-bottom: 1px solid #f0f0f0;
+	padding-bottom: 12rpx;
+}
+
+.sector-name {
+	font-size: 30rpx;
+	font-weight: bold;
+	color: #333;
+}
+
+.sector-signal {
+	font-size: 24rpx;
+	padding: 6rpx 12rpx;
+	border-radius: 6rpx;
+}
+
+.sector-signal.strong_buy {
+	background: linear-gradient(135deg, #ff4d4f, #cf1322);
+	color: white;
+}
+
+.sector-signal.buy {
+	background: linear-gradient(135deg, #ff7a45, #d4380d);
+	color: white;
+}
+
+.sector-signal.hold {
+	background: linear-gradient(135deg, #faad14, #d48806);
+	color: white;
+}
+
+.sector-signal.sell {
+	background: linear-gradient(135deg, #52c41a, #389e0d);
+	color: white;
+}
+
+.sector-signal.strong_sell {
+	background: linear-gradient(135deg, #13c2c2, #08979c);
+	color: white;
+}
+
+.sector-probability {
+	margin-bottom: 16rpx;
+}
+
+.probability-label {
+	font-size: 26rpx;
+	color: #666;
+	margin-bottom: 10rpx;
+	display: block;
+}
+
+.probability-bar {
+	height: 12rpx;
+	background-color: #f0f0f0;
+	border-radius: 6rpx;
+	overflow: hidden;
+	margin-bottom: 10rpx;
+}
+
+.probability-fill {
+	height: 100%;
+	border-radius: 6rpx;
+}
+
+.probability-value {
+	font-size: 26rpx;
+	color: #333;
+	font-weight: bold;
+}
+
+.sector-reason {
+	font-size: 26rpx;
+	color: #666;
+	line-height: 1.5;
+	background-color: #fff;
+	padding: 12rpx;
+	border-radius: 6rpx;
+}
+
+/* 投资组合优化样式 */
+.portfolio-metrics {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 24rpx;
+	background-color: #f9f9f9;
+	padding: 16rpx;
+	border-radius: 12rpx;
+}
+
+.metric-item {
+	flex: 1;
+	align-items: center;
+	padding: 10rpx;
+	text-align: center;
+}
+
+.metric-label {
+	font-size: 26rpx;
+	color: #666;
+	margin-bottom: 10rpx;
+	display: block;
+}
+
+.metric-value {
+	font-size: 36rpx;
+	font-weight: bold;
+}
+
+.high-risk {
+	color: #f5222d;
+}
+
+.medium-risk {
+	color: #faad14;
+}
+
+.low-risk {
+	color: #52c41a;
+}
+
+.positive {
+	color: #f5222d;
+}
+
+.negative {
+	color: #52c41a;
+}
+
+.portfolio-chart {
+	height: 200px;
+	margin: 24rpx 0;
+	background-color: #f9f9f9;
+	border-radius: 12rpx;
+	padding: 10rpx;
+}
+
+.chart-canvas {
+	width: 100%;
+	height: 100%;
+}
+
+.adjustment-advice {
+	background-color: #f9f9f9;
+	padding: 20rpx;
+	border-radius: 12rpx;
+}
+
+.advice-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+	color: #333;
+	border-left: 4rpx solid #1989fa;
+	padding-left: 12rpx;
+}
+
+.advice-item {
+	display: flex;
+	flex-direction: row;
+	margin-bottom: 12rpx;
+	background-color: #fff;
+	padding: 12rpx;
+	border-radius: 6rpx;
+}
+
+.advice-type {
+	padding: 6rpx 12rpx;
+	font-size: 24rpx;
+	border-radius: 6rpx;
+	margin-right: 12rpx;
+}
+
+.advice-type.increase {
+	background: linear-gradient(135deg, #ff4d4f, #cf1322);
+	color: white;
+}
+
+.advice-type.decrease {
+	background: linear-gradient(135deg, #52c41a, #389e0d);
+	color: white;
+}
+
+.advice-type.hold {
+	background: linear-gradient(135deg, #faad14, #d48806);
+	color: white;
+}
+
+.advice-content {
+	font-size: 26rpx;
+	color: #333;
+	flex: 1;
+	line-height: 1.5;
+}
+
+/* 智能预警样式 */
+.alerts-list {
+	padding: 10rpx 0;
+}
+
+.alert-item {
+	padding: 24rpx;
+	background-color: #f9f9f9;
+	border-radius: 12rpx;
+	margin-bottom: 24rpx;
+	box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.03);
+}
+
+.alert-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 16rpx;
+	border-bottom: 1px solid #f0f0f0;
+	padding-bottom: 12rpx;
+}
+
+.alert-type {
+	padding: 6rpx 16rpx;
+	border-radius: 6rpx;
+}
+
+.alert-type.info {
+	background: linear-gradient(135deg, #1989fa, #0056b3);
+	color: white;
+}
+
+.alert-type.warning {
+	background: linear-gradient(135deg, #faad14, #d48806);
+	color: white;
+}
+
+.alert-type.danger {
+	background: linear-gradient(135deg, #ff4d4f, #cf1322);
+	color: white;
+}
+
+.type-text {
+	font-size: 24rpx;
+}
+
+.alert-time {
+	font-size: 24rpx;
+	color: #999;
+	background-color: rgba(0,0,0,0.05);
+	padding: 4rpx 12rpx;
+	border-radius: 20rpx;
+}
+
+.alert-title {
+	font-size: 30rpx;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+	color: #333;
+}
+
+.alert-content {
+	font-size: 28rpx;
+	color: #333;
+	margin-bottom: 16rpx;
+	line-height: 1.5;
+	background-color: #fff;
+	padding: 16rpx;
+	border-radius: 8rpx;
+}
+
+.alert-actions {
+	display: flex;
+	flex-direction: row;
+	justify-content: flex-end;
+}
+
+.action-btn {
+	padding: 8rpx 20rpx;
+	font-size: 26rpx;
+	color: #fff;
+	background-color: #1989fa;
+	margin-left: 20rpx;
+	border-radius: 30rpx;
+}
+
+.empty-tip {
+	padding: 60rpx 0;
+	text-align: center;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999;
+}
+</style> 

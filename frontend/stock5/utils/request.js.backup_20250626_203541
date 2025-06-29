@@ -1,0 +1,882 @@
+/**
+ * Network Request Utility
+ * Wraps uni.request, adds interceptors, and handles requests/responses uniformly
+ * Enhanced with retry logic and improved error handling
+ */
+
+import env from '../env';
+
+// Get current environment configuration
+const currentEnv = env.current;
+
+// Server base URL
+const BASE_URL = currentEnv.apiBaseUrl;
+
+// Request timeout (milliseconds)
+const TIMEOUT = env.requestTimeout || 30000;
+
+// Determine if mock data should be used
+const USE_MOCK_DATA = currentEnv.useMockData === true;
+
+// Debug logging enabled
+const DEBUG = currentEnv.logLevel === 'debug';
+
+// Request retry configuration
+const MAX_RETRIES = env.maxRetries || 3;
+const RETRY_DELAY = env.retryDelay || 1000;
+
+// Track pending requests for potential cancellation
+const pendingRequests = new Map();
+
+// Error categories for better handling
+const ERROR_CATEGORIES = {
+  NETWORK: 'network',
+  TIMEOUT: 'timeout',
+  UNAUTHORIZED: 'unauthorized',
+  FORBIDDEN: 'forbidden',
+  NOT_FOUND: 'not_found',
+  SERVER: 'server',
+  CLIENT: 'client',
+  CANCEL: 'cancel',
+  UNKNOWN: 'unknown'
+};
+
+// Import mock data handlers if in development mode
+let mockHandlers = null;
+if (USE_MOCK_DATA) {
+  try {
+    // Dynamic import of mock data - in real implementation, 
+    // this would be a proper module import
+    import('../mock/index.js').then(module => {
+      mockHandlers = module.default;
+    }).catch(err => {
+      console.error('Failed to load mock data handlers:', err);
+    });
+  } catch (err) {
+    console.error('Mock data import error:', err);
+  }
+}
+
+/**
+ * Generates a unique request ID for tracking
+ * @param {Object} options - Request options
+ * @returns {String} Unique request identifier
+ */
+const getRequestId = (options) => {
+  return `${options.method || 'GET'}_${options.url}_${JSON.stringify(options.data || {})}`;
+};
+
+/**
+ * Categorize error by type
+ * @param {Object} err - Error object
+ * @param {Number} statusCode - HTTP status code
+ * @returns {String} Error category
+ */
+const categorizeError = (err, statusCode) => {
+  if (!err && !statusCode) return ERROR_CATEGORIES.UNKNOWN;
+  
+  // Error from fetch failure
+  if (err && err.errMsg) {
+    if (err.errMsg.includes('timeout')) return ERROR_CATEGORIES.TIMEOUT;
+    if (err.errMsg.includes('abort')) return ERROR_CATEGORIES.CANCEL;
+    if (err.errMsg.includes('network')) return ERROR_CATEGORIES.NETWORK;
+    return ERROR_CATEGORIES.UNKNOWN;
+  }
+  
+  // Error from status code
+  if (statusCode) {
+    if (statusCode === 401) return ERROR_CATEGORIES.UNAUTHORIZED;
+    if (statusCode === 403) return ERROR_CATEGORIES.FORBIDDEN;
+    if (statusCode === 404) return ERROR_CATEGORIES.NOT_FOUND;
+    if (statusCode >= 400 && statusCode < 500) return ERROR_CATEGORIES.CLIENT;
+    if (statusCode >= 500) return ERROR_CATEGORIES.SERVER;
+  }
+  
+  return ERROR_CATEGORIES.UNKNOWN;
+};
+
+/**
+ * Handle error based on category
+ * @param {String} category - Error category
+ * @param {Object} response - Response object
+ * @returns {Object} Standardized error object
+ */
+const handleErrorByCategory = (category, response = {}) => {
+  const statusCode = response.statusCode;
+  const data = response.data || {};
+  const errMsg = data.message || 'Request failed';
+  
+  let error = {
+    category,
+    statusCode,
+    message: errMsg,
+    data,
+    original: response
+  };
+  
+  // Handle specific error types
+  switch (category) {
+    case ERROR_CATEGORIES.UNAUTHORIZED:
+      // Clear outdated token
+      uni.removeStorageSync('token');
+      
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        uni.navigateTo({
+          url: '/pages/login/index'
+        });
+      }, 1500);
+      
+      uni.showToast({
+        title: 'Please login first',
+        icon: 'none'
+      });
+      error.message = 'Authentication required';
+      break;
+      
+    case ERROR_CATEGORIES.FORBIDDEN:
+      uni.showToast({
+        title: 'Insufficient permissions',
+        icon: 'none'
+      });
+      error.message = 'Insufficient permissions';
+      break;
+      
+    case ERROR_CATEGORIES.NOT_FOUND:
+      uni.showToast({
+        title: 'Resource not found',
+        icon: 'none'
+      });
+      error.message = 'Resource not found';
+      break;
+      
+    case ERROR_CATEGORIES.SERVER:
+      uni.showToast({
+        title: 'Server error, please try again later',
+        icon: 'none'
+      });
+      error.message = 'Server error';
+      break;
+      
+    case ERROR_CATEGORIES.TIMEOUT:
+      uni.showToast({
+        title: 'Request timed out, please check your network',
+        icon: 'none'
+      });
+      error.message = 'Request timed out';
+      break;
+      
+    case ERROR_CATEGORIES.NETWORK:
+      uni.showToast({
+        title: 'Network unavailable, please check your connection',
+        icon: 'none'
+      });
+      error.message = 'Network unavailable';
+      break;
+      
+    case ERROR_CATEGORIES.CANCEL:
+      error.message = 'Request was cancelled';
+      break;
+      
+    default:
+      uni.showToast({
+        title: errMsg || 'Request failed',
+        icon: 'none'
+      });
+  }
+  
+  return error;
+};
+
+/**
+ * Determine if request should be retried
+ * @param {String} errorCategory - Category of error
+ * @param {Object} options - Request options
+ * @returns {Boolean} Whether to retry
+ */
+const shouldRetry = (errorCategory, options) => {
+  const { retryable = true, currentRetry = 0 } = options;
+  
+  // Don't retry if explicitly disabled or max retries reached
+  if (!retryable || currentRetry >= MAX_RETRIES) {
+    return false;
+  }
+  
+  // Only retry network errors, timeouts, and server errors
+  return [
+    ERROR_CATEGORIES.NETWORK,
+    ERROR_CATEGORIES.TIMEOUT,
+    ERROR_CATEGORIES.SERVER
+  ].includes(errorCategory);
+};
+
+/**
+ * Execute request with retry logic
+ * @param {Object} options - Request options
+ * @param {Number} retryCount - Current retry count
+ * @returns {Promise} Promise that resolves with response
+ */
+const executeRequest = (options, retryCount = 0) => {
+  // Add retry count to options
+  const requestOptions = {
+    ...options,
+    currentRetry: retryCount
+  };
+  
+  return new Promise((resolve, reject) => {
+    // If mock data is enabled and handlers are available
+    if (USE_MOCK_DATA && mockHandlers) {
+      const { url, method = 'GET', data } = options;
+      
+      // Extract endpoint from URL
+      const endpoint = url.replace(BASE_URL, '');
+      
+      // Look for matching mock handler
+      const handler = mockHandlers[endpoint] && mockHandlers[endpoint][method];
+      
+      if (handler && typeof handler === 'function') {
+        if (DEBUG) {
+          console.log(`🔸 MOCK ${method} ${endpoint}`, data || {});
+        }
+        
+        // Simulate network delay
+        setTimeout(() => {
+          try {
+            const mockResponse = handler(data);
+            if (DEBUG) {
+              console.log(`🔹 MOCK RESPONSE ${method} ${endpoint}`, mockResponse);
+            }
+            resolve(mockResponse);
+          } catch (err) {
+            console.error('Mock handler error:', err);
+            reject(new Error('Mock data processing error'));
+          }
+        }, 300);
+        return;
+      }
+    }
+    
+    // Get authentication token
+    const token = uni.getStorageSync('token') || '';
+    
+    // Prepare request options
+    const uniRequestOptions = {
+      url: options.url.startsWith('http') ? options.url : BASE_URL + options.url,
+      data: options.data || {},
+      method: options.method || 'GET',
+      header: {
+        'content-type': options.contentType || 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+        ...options.header
+      },
+      timeout: options.timeout || TIMEOUT
+    };
+    
+    // Generate request ID for tracking
+    const requestId = getRequestId(options);
+    
+    // Cancel any existing identical requests
+    if (pendingRequests.has(requestId)) {
+      const previousRequest = pendingRequests.get(requestId);
+      if (previousRequest && previousRequest.abort) {
+        previousRequest.abort();
+      }
+      pendingRequests.delete(requestId);
+    }
+    
+    // Log request in debug mode
+    if (DEBUG) {
+      console.log(`🚀 ${uniRequestOptions.method} ${uniRequestOptions.url}`, options.data || {});
+      if (retryCount > 0) {
+        console.log(`🔄 Retry attempt ${retryCount} of ${MAX_RETRIES}`);
+      }
+    }
+    
+    // Make the request
+    const requestTask = uni.request({
+      ...uniRequestOptions,
+      success: (res) => {
+        // Remove request from pending map
+        pendingRequests.delete(requestId);
+        
+        // Log response in debug mode
+        if (DEBUG) {
+          console.log(`📨 ${uniRequestOptions.method} ${uniRequestOptions.url}`, res.data);
+        }
+        
+        // Handle response based on status code
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          // Success
+          resolve(res.data);
+        } else {
+          // Categorize error
+          const errorCategory = categorizeError(null, res.statusCode);
+          
+          // Process error
+          const error = handleErrorByCategory(errorCategory, res);
+          
+          // Check if should retry
+          if (shouldRetry(errorCategory, requestOptions)) {
+            const nextRetryCount = retryCount + 1;
+            const delay = RETRY_DELAY * Math.pow(2, retryCount); // Exponential backoff
+            
+            if (DEBUG) {
+              console.log(`⏱️ Retrying in ${delay}ms...`);
+            }
+            
+            setTimeout(() => {
+              executeRequest(options, nextRetryCount)
+                .then(resolve)
+                .catch(reject);
+            }, delay);
+          } else {
+            reject(error);
+          }
+        }
+      },
+      fail: (err) => {
+        // Remove request from pending map
+        pendingRequests.delete(requestId);
+        
+        // Log error
+        console.error('Request failed:', err);
+        
+        // Categorize error
+        const errorCategory = categorizeError(err);
+        
+        // Process error
+        const error = handleErrorByCategory(errorCategory, { errMsg: err.errMsg });
+        
+        // Check if should retry
+        if (shouldRetry(errorCategory, requestOptions)) {
+          const nextRetryCount = retryCount + 1;
+          const delay = RETRY_DELAY * Math.pow(2, retryCount); // Exponential backoff
+          
+          if (DEBUG) {
+            console.log(`⏱️ Retrying in ${delay}ms...`);
+          }
+          
+          setTimeout(() => {
+            executeRequest(options, nextRetryCount)
+              .then(resolve)
+              .catch(reject);
+          }, delay);
+        } else {
+          reject(error);
+        }
+      },
+      complete: () => {
+        // Additional cleanup if needed
+      }
+    });
+    
+    // Store request task for potential cancellation
+    pendingRequests.set(requestId, requestTask);
+  });
+};
+
+/**
+ * Unified request method
+ * @param {Object} options - Request configuration
+ * @returns {Promise} Promise that resolves with response data
+ */
+const request = (options = {}) => {
+  return executeRequest(options);
+};
+
+// Export request shortcuts
+export const get = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'GET', ...options });
+};
+
+export const post = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'POST', ...options });
+};
+
+export const put = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'PUT', ...options });
+};
+
+export const del = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'DELETE', ...options });
+};
+
+/**
+ * Create a request with custom configuration
+ * @param {Object} defaultOptions - Default options for every request
+ * @returns {Object} Customized request methods
+ */
+export const createRequest = (defaultOptions = {}) => {
+  const customRequest = (options) => request({ ...defaultOptions, ...options });
+  
+  return {
+    request: customRequest,
+    get: (url, data, options) => customRequest({ url, data, method: 'GET', ...options }),
+    post: (url, data, options) => customRequest({ url, data, method: 'POST', ...options }),
+    put: (url, data, options) => customRequest({ url, data, method: 'PUT', ...options }),
+    delete: (url, data, options) => customRequest({ url, data, method: 'DELETE', ...options })
+  };
+};
+
+// Cancel all pending requests
+export const cancelAllRequests = () => {
+  pendingRequests.forEach((requestTask, requestId) => {
+    if (requestTask && requestTask.abort) {
+      requestTask.abort();
+    }
+  });
+  pendingRequests.clear();
+};
+
+// Export request and error utilities
+export default {
+  request,
+  get,
+  post,
+  put,
+  delete: del,
+  createRequest,
+  cancelAllRequests,
+  ERROR_CATEGORIES
+}; 
+ 
+ * Network Request Utility
+ * Wraps uni.request, adds interceptors, and handles requests/responses uniformly
+ * Enhanced with retry logic and improved error handling
+ */
+
+import env from '../env';
+
+// Get current environment configuration
+const currentEnv = env.current;
+
+// Server base URL
+const BASE_URL = currentEnv.apiBaseUrl;
+
+// Request timeout (milliseconds)
+const TIMEOUT = env.requestTimeout || 30000;
+
+// Determine if mock data should be used
+const USE_MOCK_DATA = currentEnv.useMockData === true;
+
+// Debug logging enabled
+const DEBUG = currentEnv.logLevel === 'debug';
+
+// Request retry configuration
+const MAX_RETRIES = env.maxRetries || 3;
+const RETRY_DELAY = env.retryDelay || 1000;
+
+// Track pending requests for potential cancellation
+const pendingRequests = new Map();
+
+// Error categories for better handling
+const ERROR_CATEGORIES = {
+  NETWORK: 'network',
+  TIMEOUT: 'timeout',
+  UNAUTHORIZED: 'unauthorized',
+  FORBIDDEN: 'forbidden',
+  NOT_FOUND: 'not_found',
+  SERVER: 'server',
+  CLIENT: 'client',
+  CANCEL: 'cancel',
+  UNKNOWN: 'unknown'
+};
+
+// Import mock data handlers if in development mode
+let mockHandlers = null;
+if (USE_MOCK_DATA) {
+  try {
+    // Dynamic import of mock data - in real implementation, 
+    // this would be a proper module import
+    import('../mock/index.js').then(module => {
+      mockHandlers = module.default;
+    }).catch(err => {
+      console.error('Failed to load mock data handlers:', err);
+    });
+  } catch (err) {
+    console.error('Mock data import error:', err);
+  }
+}
+
+/**
+ * Generates a unique request ID for tracking
+ * @param {Object} options - Request options
+ * @returns {String} Unique request identifier
+ */
+const getRequestId = (options) => {
+  return `${options.method || 'GET'}_${options.url}_${JSON.stringify(options.data || {})}`;
+};
+
+/**
+ * Categorize error by type
+ * @param {Object} err - Error object
+ * @param {Number} statusCode - HTTP status code
+ * @returns {String} Error category
+ */
+const categorizeError = (err, statusCode) => {
+  if (!err && !statusCode) return ERROR_CATEGORIES.UNKNOWN;
+  
+  // Error from fetch failure
+  if (err && err.errMsg) {
+    if (err.errMsg.includes('timeout')) return ERROR_CATEGORIES.TIMEOUT;
+    if (err.errMsg.includes('abort')) return ERROR_CATEGORIES.CANCEL;
+    if (err.errMsg.includes('network')) return ERROR_CATEGORIES.NETWORK;
+    return ERROR_CATEGORIES.UNKNOWN;
+  }
+  
+  // Error from status code
+  if (statusCode) {
+    if (statusCode === 401) return ERROR_CATEGORIES.UNAUTHORIZED;
+    if (statusCode === 403) return ERROR_CATEGORIES.FORBIDDEN;
+    if (statusCode === 404) return ERROR_CATEGORIES.NOT_FOUND;
+    if (statusCode >= 400 && statusCode < 500) return ERROR_CATEGORIES.CLIENT;
+    if (statusCode >= 500) return ERROR_CATEGORIES.SERVER;
+  }
+  
+  return ERROR_CATEGORIES.UNKNOWN;
+};
+
+/**
+ * Handle error based on category
+ * @param {String} category - Error category
+ * @param {Object} response - Response object
+ * @returns {Object} Standardized error object
+ */
+const handleErrorByCategory = (category, response = {}) => {
+  const statusCode = response.statusCode;
+  const data = response.data || {};
+  const errMsg = data.message || 'Request failed';
+  
+  let error = {
+    category,
+    statusCode,
+    message: errMsg,
+    data,
+    original: response
+  };
+  
+  // Handle specific error types
+  switch (category) {
+    case ERROR_CATEGORIES.UNAUTHORIZED:
+      // Clear outdated token
+      uni.removeStorageSync('token');
+      
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        uni.navigateTo({
+          url: '/pages/login/index'
+        });
+      }, 1500);
+      
+      uni.showToast({
+        title: 'Please login first',
+        icon: 'none'
+      });
+      error.message = 'Authentication required';
+      break;
+      
+    case ERROR_CATEGORIES.FORBIDDEN:
+      uni.showToast({
+        title: 'Insufficient permissions',
+        icon: 'none'
+      });
+      error.message = 'Insufficient permissions';
+      break;
+      
+    case ERROR_CATEGORIES.NOT_FOUND:
+      uni.showToast({
+        title: 'Resource not found',
+        icon: 'none'
+      });
+      error.message = 'Resource not found';
+      break;
+      
+    case ERROR_CATEGORIES.SERVER:
+      uni.showToast({
+        title: 'Server error, please try again later',
+        icon: 'none'
+      });
+      error.message = 'Server error';
+      break;
+      
+    case ERROR_CATEGORIES.TIMEOUT:
+      uni.showToast({
+        title: 'Request timed out, please check your network',
+        icon: 'none'
+      });
+      error.message = 'Request timed out';
+      break;
+      
+    case ERROR_CATEGORIES.NETWORK:
+      uni.showToast({
+        title: 'Network unavailable, please check your connection',
+        icon: 'none'
+      });
+      error.message = 'Network unavailable';
+      break;
+      
+    case ERROR_CATEGORIES.CANCEL:
+      error.message = 'Request was cancelled';
+      break;
+      
+    default:
+      uni.showToast({
+        title: errMsg || 'Request failed',
+        icon: 'none'
+      });
+  }
+  
+  return error;
+};
+
+/**
+ * Determine if request should be retried
+ * @param {String} errorCategory - Category of error
+ * @param {Object} options - Request options
+ * @returns {Boolean} Whether to retry
+ */
+const shouldRetry = (errorCategory, options) => {
+  const { retryable = true, currentRetry = 0 } = options;
+  
+  // Don't retry if explicitly disabled or max retries reached
+  if (!retryable || currentRetry >= MAX_RETRIES) {
+    return false;
+  }
+  
+  // Only retry network errors, timeouts, and server errors
+  return [
+    ERROR_CATEGORIES.NETWORK,
+    ERROR_CATEGORIES.TIMEOUT,
+    ERROR_CATEGORIES.SERVER
+  ].includes(errorCategory);
+};
+
+/**
+ * Execute request with retry logic
+ * @param {Object} options - Request options
+ * @param {Number} retryCount - Current retry count
+ * @returns {Promise} Promise that resolves with response
+ */
+const executeRequest = (options, retryCount = 0) => {
+  // Add retry count to options
+  const requestOptions = {
+    ...options,
+    currentRetry: retryCount
+  };
+  
+  return new Promise((resolve, reject) => {
+    // If mock data is enabled and handlers are available
+    if (USE_MOCK_DATA && mockHandlers) {
+      const { url, method = 'GET', data } = options;
+      
+      // Extract endpoint from URL
+      const endpoint = url.replace(BASE_URL, '');
+      
+      // Look for matching mock handler
+      const handler = mockHandlers[endpoint] && mockHandlers[endpoint][method];
+      
+      if (handler && typeof handler === 'function') {
+        if (DEBUG) {
+          console.log(`🔸 MOCK ${method} ${endpoint}`, data || {});
+        }
+        
+        // Simulate network delay
+        setTimeout(() => {
+          try {
+            const mockResponse = handler(data);
+            if (DEBUG) {
+              console.log(`🔹 MOCK RESPONSE ${method} ${endpoint}`, mockResponse);
+            }
+            resolve(mockResponse);
+          } catch (err) {
+            console.error('Mock handler error:', err);
+            reject(new Error('Mock data processing error'));
+          }
+        }, 300);
+        return;
+      }
+    }
+    
+    // Get authentication token
+    const token = uni.getStorageSync('token') || '';
+    
+    // Prepare request options
+    const uniRequestOptions = {
+      url: options.url.startsWith('http') ? options.url : BASE_URL + options.url,
+      data: options.data || {},
+      method: options.method || 'GET',
+      header: {
+        'content-type': options.contentType || 'application/json',
+        'Authorization': token ? `Bearer ${token}` : '',
+        ...options.header
+      },
+      timeout: options.timeout || TIMEOUT
+    };
+    
+    // Generate request ID for tracking
+    const requestId = getRequestId(options);
+    
+    // Cancel any existing identical requests
+    if (pendingRequests.has(requestId)) {
+      const previousRequest = pendingRequests.get(requestId);
+      if (previousRequest && previousRequest.abort) {
+        previousRequest.abort();
+      }
+      pendingRequests.delete(requestId);
+    }
+    
+    // Log request in debug mode
+    if (DEBUG) {
+      console.log(`🚀 ${uniRequestOptions.method} ${uniRequestOptions.url}`, options.data || {});
+      if (retryCount > 0) {
+        console.log(`🔄 Retry attempt ${retryCount} of ${MAX_RETRIES}`);
+      }
+    }
+    
+    // Make the request
+    const requestTask = uni.request({
+      ...uniRequestOptions,
+      success: (res) => {
+        // Remove request from pending map
+        pendingRequests.delete(requestId);
+        
+        // Log response in debug mode
+        if (DEBUG) {
+          console.log(`📨 ${uniRequestOptions.method} ${uniRequestOptions.url}`, res.data);
+        }
+        
+        // Handle response based on status code
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          // Success
+          resolve(res.data);
+        } else {
+          // Categorize error
+          const errorCategory = categorizeError(null, res.statusCode);
+          
+          // Process error
+          const error = handleErrorByCategory(errorCategory, res);
+          
+          // Check if should retry
+          if (shouldRetry(errorCategory, requestOptions)) {
+            const nextRetryCount = retryCount + 1;
+            const delay = RETRY_DELAY * Math.pow(2, retryCount); // Exponential backoff
+            
+            if (DEBUG) {
+              console.log(`⏱️ Retrying in ${delay}ms...`);
+            }
+            
+            setTimeout(() => {
+              executeRequest(options, nextRetryCount)
+                .then(resolve)
+                .catch(reject);
+            }, delay);
+          } else {
+            reject(error);
+          }
+        }
+      },
+      fail: (err) => {
+        // Remove request from pending map
+        pendingRequests.delete(requestId);
+        
+        // Log error
+        console.error('Request failed:', err);
+        
+        // Categorize error
+        const errorCategory = categorizeError(err);
+        
+        // Process error
+        const error = handleErrorByCategory(errorCategory, { errMsg: err.errMsg });
+        
+        // Check if should retry
+        if (shouldRetry(errorCategory, requestOptions)) {
+          const nextRetryCount = retryCount + 1;
+          const delay = RETRY_DELAY * Math.pow(2, retryCount); // Exponential backoff
+          
+          if (DEBUG) {
+            console.log(`⏱️ Retrying in ${delay}ms...`);
+          }
+          
+          setTimeout(() => {
+            executeRequest(options, nextRetryCount)
+              .then(resolve)
+              .catch(reject);
+          }, delay);
+        } else {
+          reject(error);
+        }
+      },
+      complete: () => {
+        // Additional cleanup if needed
+      }
+    });
+    
+    // Store request task for potential cancellation
+    pendingRequests.set(requestId, requestTask);
+  });
+};
+
+/**
+ * Unified request method
+ * @param {Object} options - Request configuration
+ * @returns {Promise} Promise that resolves with response data
+ */
+const request = (options = {}) => {
+  return executeRequest(options);
+};
+
+// Export request shortcuts
+export const get = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'GET', ...options });
+};
+
+export const post = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'POST', ...options });
+};
+
+export const put = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'PUT', ...options });
+};
+
+export const del = (url, data = {}, options = {}) => {
+  return request({ url, data, method: 'DELETE', ...options });
+};
+
+/**
+ * Create a request with custom configuration
+ * @param {Object} defaultOptions - Default options for every request
+ * @returns {Object} Customized request methods
+ */
+export const createRequest = (defaultOptions = {}) => {
+  const customRequest = (options) => request({ ...defaultOptions, ...options });
+  
+  return {
+    request: customRequest,
+    get: (url, data, options) => customRequest({ url, data, method: 'GET', ...options }),
+    post: (url, data, options) => customRequest({ url, data, method: 'POST', ...options }),
+    put: (url, data, options) => customRequest({ url, data, method: 'PUT', ...options }),
+    delete: (url, data, options) => customRequest({ url, data, method: 'DELETE', ...options })
+  };
+};
+
+// Cancel all pending requests
+export const cancelAllRequests = () => {
+  pendingRequests.forEach((requestTask, requestId) => {
+    if (requestTask && requestTask.abort) {
+      requestTask.abort();
+    }
+  });
+  pendingRequests.clear();
+};
+
+// Export request and error utilities
+export default {
+  request,
+  get,
+  post,
+  put,
+  delete: del,
+  createRequest,
+  cancelAllRequests,
+  ERROR_CATEGORIES
+}; 

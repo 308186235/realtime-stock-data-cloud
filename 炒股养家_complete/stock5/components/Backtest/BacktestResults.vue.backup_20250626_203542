@@ -1,0 +1,429 @@
+<template>
+  <div class="results-container">
+    <div class="results-header">
+      <h2>回测结果</h2>
+      <div class="actions">
+        <div class="save-form" v-if="showSaveForm">
+          <input 
+            type="text" 
+            v-model="saveNameInput" 
+            placeholder="输入回测名称"
+            @keyup.enter="saveResults"
+          >
+          <button @click="saveResults" :disabled="!saveNameInput">保存</button>
+          <button @click="showSaveForm = false" class="cancel-btn">取消</button>
+        </div>
+        <button v-else @click="showSaveForm = true" class="save-btn">保存回测</button>
+      </div>
+    </div>
+    
+    <div class="metrics-cards">
+      <div class="metric-card">
+        <div class="metric-value" :class="getValueClass(results.metrics.total_return)">
+          {{ formatPercent(results.metrics.total_return) }}
+        </div>
+        <div class="metric-label">总收益率</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-value" :class="getValueClass(results.metrics.annual_return)">
+          {{ formatPercent(results.metrics.annual_return) }}
+        </div>
+        <div class="metric-label">年化收益率</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-value" :class="getSharpeClass(results.metrics.sharpe_ratio)">
+          {{ formatNumber(results.metrics.sharpe_ratio) }}
+        </div>
+        <div class="metric-label">夏普比率</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-value negative">
+          {{ formatPercent(results.metrics.max_drawdown) }}
+        </div>
+        <div class="metric-label">最大回撤</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-value" :class="getWinRateClass(results.metrics.win_rate)">
+          {{ formatPercent(results.metrics.win_rate) }}
+        </div>
+        <div class="metric-label">胜率</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-value" :class="getProfitFactorClass(results.metrics.profit_factor)">
+          {{ formatNumber(results.metrics.profit_factor) }}
+        </div>
+        <div class="metric-label">盈亏比</div>
+      </div>
+      
+      <div class="metric-card">
+        <div class="metric-value">
+          {{ results.metrics.trade_count }}
+        </div>
+        <div class="metric-label">交易次数</div>
+      </div>
+    </div>
+    
+    <div class="chart-container">
+      <h3>回测图表</h3>
+      <div class="charts-tabs">
+        <button 
+          v-for="(tab, index) in chartTabs" 
+          :key="index"
+          :class="{ active: activeChartTab === tab.id }"
+          @click="activeChartTab = tab.id"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+      
+      <div class="chart-display">
+        <div v-if="activeChartTab === 'equity_curve'" class="chart">
+          <img 
+            v-if="results.charts && results.charts.equity_curve" 
+            :src="`data:image/png;base64,${results.charts.equity_curve}`" 
+            alt="权益曲线" 
+          />
+          <div v-else class="no-chart">无权益曲线数据</div>
+        </div>
+        
+        <div v-if="activeChartTab === 'drawdown_curve'" class="chart">
+          <img 
+            v-if="results.charts && results.charts.drawdown_curve" 
+            :src="`data:image/png;base64,${results.charts.drawdown_curve}`" 
+            alt="回撤曲线" 
+          />
+          <div v-else class="no-chart">无回撤曲线数据</div>
+        </div>
+        
+        <div v-if="activeChartTab === 'monthly_returns'" class="chart">
+          <img 
+            v-if="results.charts && results.charts.monthly_returns" 
+            :src="`data:image/png;base64,${results.charts.monthly_returns}`" 
+            alt="月度收益" 
+          />
+          <div v-else class="no-chart">无月度收益数据</div>
+        </div>
+        
+        <div v-if="activeChartTab === 'trade_distribution'" class="chart">
+          <img 
+            v-if="results.charts && results.charts.trade_distribution" 
+            :src="`data:image/png;base64,${results.charts.trade_distribution}`" 
+            alt="交易分布" 
+          />
+          <div v-else class="no-chart">无交易分布数据</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="trades-section">
+      <h3>交易记录</h3>
+      <div class="trades-table-container">
+        <table class="trades-table">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>股票</th>
+              <th>类型</th>
+              <th>价格</th>
+              <th>数量</th>
+              <th>成本/收入</th>
+              <th>盈亏</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(trade, index) in trades" :key="index" :class="{'profit': trade.profit > 0, 'loss': trade.profit < 0}">
+              <td>{{ formatDate(trade.date) }}</td>
+              <td>{{ trade.symbol }}</td>
+              <td>{{ trade.action === 'BUY' ? '买入' : '卖出' }}</td>
+              <td>{{ formatCurrency(trade.price) }}</td>
+              <td>{{ trade.shares }}</td>
+              <td>
+                <template v-if="trade.action === 'BUY'">
+                  {{ formatCurrency(trade.cost) }}
+                </template>
+                <template v-else>
+                  {{ formatCurrency(trade.revenue) }}
+                </template>
+              </td>
+              <td :class="{'positive': trade.profit > 0, 'negative': trade.profit < 0}">
+                {{ formatCurrency(trade.profit) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+export default {
+  props: {
+    results: {
+      type: Object,
+      required: true
+    }
+  },
+  data() {
+    return {
+      activeChartTab: 'equity_curve',
+      chartTabs: [
+        { id: 'equity_curve', label: '权益曲线' },
+        { id: 'drawdown_curve', label: '回撤曲线' },
+        { id: 'monthly_returns', label: '月度收益' },
+        { id: 'trade_distribution', label: '交易分布' }
+      ],
+      showSaveForm: false,
+      saveNameInput: ''
+    };
+  },
+  computed: {
+    trades() {
+      return this.results.trades || [];
+    }
+  },
+  methods: {
+    formatPercent(value) {
+      return (value * 100).toFixed(2) + '%';
+    },
+    
+    formatNumber(value) {
+      return value.toFixed(2);
+    },
+    
+    formatCurrency(value) {
+      return value ? '¥' + value.toFixed(2) : '-';
+    },
+    
+    getValueClass(value) {
+      return value > 0 ? 'positive' : value < 0 ? 'negative' : '';
+    },
+    
+    getSharpeClass(value) {
+      if (value > 1) return 'positive';
+      if (value > 0) return '';
+      return 'negative';
+    },
+    
+    getWinRateClass(value) {
+      if (value > 0.6) return 'positive';
+      if (value > 0.4) return '';
+      return 'negative';
+    },
+    
+    getProfitFactorClass(value) {
+      if (value > 1.5) return 'positive';
+      if (value >= 1) return '';
+      return 'negative';
+    },
+    
+    formatDate(dateStr) {
+      if (!dateStr) return '-';
+      if (typeof dateStr === 'object') {
+        dateStr = dateStr.toISOString().split('T')[0];
+      }
+      return dateStr;
+    },
+    
+    saveResults() {
+      if (!this.saveNameInput) return;
+      
+      this.$emit('save', this.saveNameInput);
+      this.showSaveForm = false;
+      this.saveNameInput = '';
+    }
+  }
+};
+</script>
+
+<style scoped>
+.results-container {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.results-header h2 {
+  margin: 0;
+  color: #333;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+}
+
+.save-form {
+  display: flex;
+  gap: 10px;
+}
+
+.save-form input {
+  padding: 5px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.save-btn {
+  background: #2196F3;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cancel-btn {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 7px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.metrics-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.metric-card {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.metric-label {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.positive {
+  color: #4caf50;
+}
+
+.negative {
+  color: #f44336;
+}
+
+.chart-container {
+  margin-bottom: 30px;
+}
+
+.charts-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.charts-tabs button {
+  background: none;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.charts-tabs button.active {
+  background: #2196F3;
+  color: white;
+}
+
+.chart-display {
+  min-height: 300px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.chart {
+  width: 100%;
+}
+
+.chart img {
+  width: 100%;
+  border-radius: 4px;
+  max-height: 500px;
+  object-fit: contain;
+}
+
+.no-chart {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 300px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  color: #666;
+}
+
+.trades-section h3 {
+  margin-bottom: 15px;
+}
+
+.trades-table-container {
+  overflow-x: auto;
+}
+
+.trades-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+.trades-table th,
+.trades-table td {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.trades-table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #333;
+}
+
+.trades-table tr.profit {
+  background-color: rgba(76, 175, 80, 0.05);
+}
+
+.trades-table tr.loss {
+  background-color: rgba(244, 67, 54, 0.05);
+}
+
+.trades-table .positive {
+  color: #4caf50;
+}
+
+.trades-table .negative {
+  color: #f44336;
+}
+</style> 

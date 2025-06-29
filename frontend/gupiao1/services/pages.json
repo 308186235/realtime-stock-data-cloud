@@ -1,0 +1,96 @@
+{
+    "pages": [
+        {
+            "path": "pages/index/index",
+            "style": {
+                "navigationBarTitleText": "股票交易系统"
+            }
+        },
+        {
+            "path": "pages/auto-trader/index",
+            "style": {
+                "navigationBarTitleText": "自动交易平台"
+            }
+        },
+        {
+            "path": "pages/portfolio/index",
+            "style": {
+                "navigationBarTitleText": "持仓概览"
+            }
+        },
+        {
+            "path": "pages/settings/amount",
+            "style": {
+                "navigationBarTitleText": "设置可操作金额"
+            }
+        },
+        {
+            "path": "pages/trade-settings/index",
+            "style": {
+                "navigationBarTitleText": "交易设置"
+            }
+        },
+        {
+            "path": "pages/market-tracking/index",
+            "style": {
+                "navigationBarTitleText": "市场追踪"
+            }
+        },
+        {
+            "path": "pages/trade-history/index",
+            "style": {
+                "navigationBarTitleText": "交易历史"
+            }
+        },
+        {
+            "path": "pages/agent-analysis/index",
+            "style": {
+                "navigationBarTitleText": "AI智能分析控制台"
+            }
+        },
+        {
+            "path": "pages/agent-analysis/learning/index",
+            "style": {
+                "navigationBarTitleText": "Agent学习分析"
+            }
+        },
+        {
+            "path": "pages/agent-analysis/diagnosis/index",
+            "style": {
+                "navigationBarTitleText": "AI 洞察分析"
+            }
+        },
+        {
+            "path": "pages/strategy-analysis/comparison/index",
+            "style": {
+                "navigationBarTitleText": "策略效果对比"
+            }
+        },
+        {
+            "path": "pages/strategy-analysis/limit-up-double-negative",
+            "style": {
+                "navigationBarTitleText": "涨停双阴买入法",
+                "navigationStyle": "custom"
+            }
+        },
+        {
+            "path": "pages/stock-picking/results",
+            "style": {
+                "navigationBarTitleText": "智能选股推荐"
+            }
+        },
+        {
+            "path": "pages/stock-picking/detail",
+            "style": {
+                "navigationBarTitleText": "股票详细分析"
+            }
+        }
+    ],
+    "globalStyle": {
+        "navigationBarTextStyle": "black",
+        "navigationBarTitleText": "股票交易系统",
+        "navigationBarBackgroundColor": "#F8F8F8",
+        "backgroundColor": "#F8F8F8"
+    },
+    "uniIdRouter": {}
+} 

@@ -1,0 +1,15 @@
+# 新增日志分析服务
+from elasticsearch import Elasticsearch
+
+class LogAnalyzer:
+    def __init__(self):
+        self.es = Elasticsearch(['http://localhost:9200'])
+        
+    def track_error(self, error):
+        doc = {
+            'timestamp': datetime.now(),
+            'level': 'ERROR',
+            'message': str(error),
+            'stack_trace': traceback.format_exc()
+        }
+        self.es.index(index='trading-errors', document=doc)

@@ -1,0 +1,611 @@
+<template>
+  <view class="position-list">
+    <view class="position-header">
+      <view class="section-title">持仓列表</view>
+      <view class="header-actions">
+        <button size="mini" type="primary" @click="refresh" :loading="loading">刷新</button>
+      </view>
+    </view>
+    
+    <view class="summary-card" v-if="loaded">
+      <view class="summary-row">
+        <text class="summary-label">总市值:</text>
+        <text class="summary-value">{{ formatMoney(totalMarketValue) }}</text>
+      </view>
+      <view class="summary-row">
+        <text class="summary-label">总盈亏:</text>
+        <text class="summary-value" :class="totalProfitLossClass">
+          {{ formatMoney(totalProfitLoss) }}
+        </text>
+      </view>
+    </view>
+    
+    <view class="loading-box" v-if="loading">
+      <uni-load-more status="loading" :contentText="loadingText"></uni-load-more>
+    </view>
+    
+    <view class="error-box" v-else-if="error">
+      <text class="error-text">{{ error }}</text>
+      <button size="mini" type="primary" @click="refresh">重试</button>
+    </view>
+    
+    <view class="empty-box" v-else-if="positions.length === 0">
+      <image class="empty-image" src="/static/images/empty.png" mode="widthFix"></image>
+      <text class="empty-text">暂无持仓</text>
+    </view>
+    
+    <view class="position-table" v-else>
+      <view class="position-item" v-for="(position, index) in positions" :key="index">
+        <view class="position-header">
+          <view class="stock-name">{{ position.name }} <text class="stock-code">{{ position.symbol }}</text></view>
+          <view class="position-actions">
+            <button size="mini" type="primary" @click="showBuy(position)" class="action-btn">买入</button>
+            <button size="mini" type="warn" @click="showSell(position)" class="action-btn">卖出</button>
+          </view>
+        </view>
+        
+        <view class="position-body">
+          <view class="data-row">
+            <view class="data-item">
+              <text class="data-label">持仓量</text>
+              <text class="data-value">{{ position.volume }}</text>
+            </view>
+            <view class="data-item">
+              <text class="data-label">可用</text>
+              <text class="data-value">{{ position.available_volume }}</text>
+            </view>
+            <view class="data-item">
+              <text class="data-label">成本</text>
+              <text class="data-value">{{ formatMoney(position.cost_price) }}</text>
+            </view>
+          </view>
+          
+          <view class="data-row">
+            <view class="data-item">
+              <text class="data-label">现价</text>
+              <text class="data-value">{{ formatMoney(position.current_price) }}</text>
+            </view>
+            <view class="data-item">
+              <text class="data-label">市值</text>
+              <text class="data-value">{{ formatMoney(position.market_value) }}</text>
+            </view>
+            <view class="data-item">
+              <text class="data-label">盈亏</text>
+              <text class="data-value" :class="getProfitLossClass(position.profit_loss)">
+                {{ formatMoney(position.profit_loss) }}
+              </text>
+            </view>
+          </view>
+          
+          <view class="profit-bar">
+            <view 
+              class="profit-progress" 
+              :style="{ width: getProfitPercentWidth(position.profit_loss_ratio), background: getProfitColor(position.profit_loss_ratio) }"
+            ></view>
+            <text class="profit-text" :class="getProfitLossClass(position.profit_loss_ratio)">
+              {{ formatPercent(position.profit_loss_ratio) }}
+            </text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 买入弹窗 -->
+    <uni-popup ref="buyPopup" type="center">
+      <view class="popup-content">
+        <view class="popup-title">买入 {{ selectedStock.name }}</view>
+        <view class="popup-body">
+          <uni-forms :model="orderForm">
+            <uni-forms-item label="代码">
+              <uni-easyinput v-model="orderForm.symbol" disabled />
+            </uni-forms-item>
+            
+            <uni-forms-item label="价格">
+              <uni-easyinput v-model="orderForm.price" type="number" />
+            </uni-forms-item>
+            
+            <uni-forms-item label="数量">
+              <uni-easyinput v-model="orderForm.volume" type="number" />
+            </uni-forms-item>
+          </uni-forms>
+        </view>
+        <view class="popup-footer">
+          <button size="mini" type="default" @click="closeBuyPopup">取消</button>
+          <button size="mini" type="primary" @click="submitBuyOrder" :loading="submitting">确定</button>
+        </view>
+      </view>
+    </uni-popup>
+    
+    <!-- 卖出弹窗 -->
+    <uni-popup ref="sellPopup" type="center">
+      <view class="popup-content">
+        <view class="popup-title">卖出 {{ selectedStock.name }}</view>
+        <view class="popup-body">
+          <uni-forms :model="orderForm">
+            <uni-forms-item label="代码">
+              <uni-easyinput v-model="orderForm.symbol" disabled />
+            </uni-forms-item>
+            
+            <uni-forms-item label="价格">
+              <uni-easyinput v-model="orderForm.price" type="number" />
+            </uni-forms-item>
+            
+            <uni-forms-item label="数量">
+              <uni-easyinput v-model="orderForm.volume" type="number" />
+            </uni-forms-item>
+          </uni-forms>
+        </view>
+        <view class="popup-footer">
+          <button size="mini" type="default" @click="closeSellPopup">取消</button>
+          <button size="mini" type="warn" @click="submitSellOrder" :loading="submitting">确定</button>
+        </view>
+      </view>
+    </uni-popup>
+  </view>
+</template>
+
+<script>
+import tradingService from '@/services/tradingService.js';
+import uniLoadMore from '@dcloudio/uni-ui/lib/uni-load-more/uni-load-more.vue';
+import uniPopup from '@dcloudio/uni-ui/lib/uni-popup/uni-popup.vue';
+import uniForms from '@dcloudio/uni-ui/lib/uni-forms/uni-forms.vue';
+import uniFormsItem from '@dcloudio/uni-ui/lib/uni-forms-item/uni-forms-item.vue';
+import uniEasyinput from '@dcloudio/uni-ui/lib/uni-easyinput/uni-easyinput.vue';
+
+export default {
+  name: 'PositionList',
+  components: {
+    uniLoadMore,
+    uniPopup,
+    uniForms,
+    uniFormsItem,
+    uniEasyinput
+  },
+  props: {
+    isConnected: {
+      type: Boolean,
+      default: false
+    }
+  },
+  data() {
+    return {
+      positions: [],
+      loading: false,
+      loaded: false,
+      error: null,
+      refreshTimer: null,
+      loadingText: {
+        contentdown: '点击加载更多',
+        contentrefresh: '加载中...',
+        contentnomore: '没有更多数据了'
+      },
+      selectedStock: {
+        symbol: '',
+        name: '',
+        current_price: 0,
+        available_volume: 0
+      },
+      orderForm: {
+        symbol: '',
+        price: '',
+        volume: '',
+        direction: 'BUY'
+      },
+      submitting: false
+    };
+  },
+  computed: {
+    totalMarketValue() {
+      return this.positions.reduce((sum, position) => sum + position.market_value, 0);
+    },
+    totalProfitLoss() {
+      return this.positions.reduce((sum, position) => sum + position.profit_loss, 0);
+    },
+    totalProfitLossRatio() {
+      if (this.totalMarketValue === 0) return 0;
+      return this.totalProfitLoss / (this.totalMarketValue - this.totalProfitLoss);
+    },
+    totalProfitLossClass() {
+      return this.getProfitLossClass(this.totalProfitLoss);
+    }
+  },
+  watch: {
+    isConnected(newVal) {
+      if (newVal) {
+        this.refresh();
+        this.startAutoRefresh();
+      } else {
+        this.stopAutoRefresh();
+        this.positions = [];
+        this.loaded = false;
+      }
+    }
+  },
+  mounted() {
+    if (this.isConnected) {
+      this.refresh();
+      this.startAutoRefresh();
+    }
+  },
+  beforeDestroy() {
+    this.stopAutoRefresh();
+  },
+  methods: {
+    async refresh() {
+      if (!this.isConnected || this.loading) return;
+      
+      this.loading = true;
+      this.error = null;
+      
+      try {
+        const result = await tradingService.getPositions();
+        
+        if (result && result.success) {
+          this.positions = result.data || [];
+          this.loaded = true;
+        } else {
+          this.error = result.message || '获取持仓失败';
+        }
+      } catch (error) {
+        console.error('获取持仓异常:', error);
+        this.error = error.message || '获取持仓异常';
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    startAutoRefresh() {
+      this.stopAutoRefresh();
+      this.refreshTimer = setInterval(() => {
+        this.refresh();
+      }, 30000); // 每30秒自动刷新一次
+    },
+    
+    stopAutoRefresh() {
+      if (this.refreshTimer) {
+        clearInterval(this.refreshTimer);
+        this.refreshTimer = null;
+      }
+    },
+    
+    formatMoney(value) {
+      if (value === null || value === undefined) return '0.00';
+      return Number(value).toFixed(2);
+    },
+    
+    formatPercent(value) {
+      if (value === null || value === undefined) return '0.00%';
+      return (Number(value) * 100).toFixed(2) + '%';
+    },
+    
+    getProfitLossClass(value) {
+      if (value > 0) return 'profit';
+      if (value < 0) return 'loss';
+      return '';
+    },
+    
+    getProfitPercentWidth(ratio) {
+      // 计算盈亏比例条的宽度,限制在10%-90%之间
+      const percent = Math.abs(ratio) * 100;
+      const width = Math.min(Math.max(percent, 10), 90);
+      return width + '%';
+    },
+    
+    getProfitColor(ratio) {
+      // 盈利为红色,亏损为绿色(中国市场颜色规则)
+      return ratio >= 0 ? '#f56c6c' : '#67c23a';
+    },
+    
+    showBuy(position) {
+      this.selectedStock = {...position};
+      this.orderForm = {
+        symbol: position.symbol,
+        price: position.current_price,
+        volume: 100,
+        direction: 'BUY'
+      };
+      this.$refs.buyPopup.open();
+    },
+    
+    showSell(position) {
+      this.selectedStock = {...position};
+      this.orderForm = {
+        symbol: position.symbol,
+        price: position.current_price,
+        volume: Math.min(100, position.available_volume),
+        direction: 'SELL'
+      };
+      this.$refs.sellPopup.open();
+    },
+    
+    closeBuyPopup() {
+      this.$refs.buyPopup.close();
+    },
+    
+    closeSellPopup() {
+      this.$refs.sellPopup.close();
+    },
+    
+    async submitBuyOrder() {
+      await this.submitOrder('BUY');
+      this.closeBuyPopup();
+    },
+    
+    async submitSellOrder() {
+      await this.submitOrder('SELL');
+      this.closeSellPopup();
+    },
+    
+    async submitOrder(direction) {
+      if (this.submitting) return;
+      
+      this.submitting = true;
+      
+      try {
+        // 验证表单
+        if (!this.orderForm.price || !this.orderForm.volume) {
+          uni.showToast({
+            title: '请填写完整信息',
+            icon: 'none'
+          });
+          return;
+        }
+        
+        const orderParams = {
+          symbol: this.orderForm.symbol,
+          price: parseFloat(this.orderForm.price),
+          volume: parseInt(this.orderForm.volume),
+          direction: direction
+        };
+        
+        const result = await tradingService.placeOrder(orderParams);
+        
+        if (result && result.success) {
+          uni.showToast({
+            title: '委托提交成功',
+            icon: 'success'
+          });
+          
+          // 通知父组件订单状态变化
+          this.$emit('order-submitted', result.data);
+          
+          // 刷新持仓
+          setTimeout(() => {
+            this.refresh();
+          }, 1000);
+        } else {
+          uni.showToast({
+            title: result.message || '委托提交失败',
+            icon: 'none'
+          });
+        }
+      } catch (error) {
+        console.error('提交委托异常:', error);
+        uni.showToast({
+          title: error.message || '提交委托异常',
+          icon: 'none'
+        });
+      } finally {
+        this.submitting = false;
+      }
+    }
+  }
+};
+</script>
+
+<style lang="scss">
+.position-list {
+  margin-top: 20rpx;
+  
+  .position-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20rpx;
+    
+    .section-title {
+      font-size: 32rpx;
+      font-weight: bold;
+    }
+  }
+  
+  .summary-card {
+    background: #fff;
+    border-radius: 12rpx;
+    padding: 20rpx;
+    margin-bottom: 20rpx;
+    box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1);
+    
+    .summary-row {
+      display: flex;
+      margin-bottom: 10rpx;
+      
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+    
+    .summary-label {
+      width: 150rpx;
+      color: #606266;
+    }
+    
+    .summary-value {
+      flex: 1;
+      font-weight: bold;
+      
+      &.profit {
+        color: #f56c6c;
+      }
+      
+      &.loss {
+        color: #67c23a;
+      }
+    }
+  }
+  
+  .loading-box,
+  .empty-box,
+  .error-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60rpx 0;
+    background: #fff;
+    border-radius: 12rpx;
+    box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1);
+  }
+  
+  .empty-image {
+    width: 200rpx;
+    margin-bottom: 20rpx;
+  }
+  
+  .empty-text,
+  .error-text {
+    color: #909399;
+    font-size: 28rpx;
+    margin-bottom: 20rpx;
+  }
+  
+  .position-table {
+    .position-item {
+      background: #fff;
+      border-radius: 12rpx;
+      margin-bottom: 20rpx;
+      overflow: hidden;
+      box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1);
+      
+      .position-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20rpx;
+        border-bottom: 1px solid #ebeef5;
+        
+        .stock-name {
+          font-size: 30rpx;
+          font-weight: bold;
+        }
+        
+        .stock-code {
+          font-size: 24rpx;
+          color: #909399;
+          font-weight: normal;
+          margin-left: 10rpx;
+        }
+        
+        .position-actions {
+          display: flex;
+          
+          .action-btn {
+            margin-left: 10rpx;
+          }
+        }
+      }
+      
+      .position-body {
+        padding: 20rpx;
+        
+        .data-row {
+          display: flex;
+          margin-bottom: 15rpx;
+        }
+        
+        .data-item {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          
+          .data-label {
+            font-size: 24rpx;
+            color: #909399;
+            margin-bottom: 5rpx;
+          }
+          
+          .data-value {
+            font-size: 28rpx;
+            font-weight: bold;
+            
+            &.profit {
+              color: #f56c6c;
+            }
+            
+            &.loss {
+              color: #67c23a;
+            }
+          }
+        }
+        
+        .profit-bar {
+          position: relative;
+          height: 20rpx;
+          background: #f5f7fa;
+          border-radius: 10rpx;
+          margin-top: 10rpx;
+          overflow: hidden;
+          
+          .profit-progress {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            border-radius: 10rpx;
+          }
+          
+          .profit-text {
+            position: absolute;
+            right: 10rpx;
+            top: 0;
+            font-size: 22rpx;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 0 6rpx;
+            border-radius: 4rpx;
+            
+            &.profit {
+              color: #f56c6c;
+            }
+            
+            &.loss {
+              color: #67c23a;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  .popup-content {
+    width: 600rpx;
+    background: #fff;
+    border-radius: 12rpx;
+    overflow: hidden;
+    
+    .popup-title {
+      font-size: 32rpx;
+      font-weight: bold;
+      padding: 20rpx;
+      text-align: center;
+      border-bottom: 1px solid #ebeef5;
+    }
+    
+    .popup-body {
+      padding: 20rpx;
+    }
+    
+    .popup-footer {
+      padding: 20rpx;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #ebeef5;
+      
+      button {
+        flex: 1;
+        margin: 0 10rpx;
+      }
+    }
+  }
+}
+</style> 

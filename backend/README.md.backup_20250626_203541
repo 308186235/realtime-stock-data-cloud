@@ -1,0 +1,56 @@
+# 股票交易系统后端
+
+## 配置说明
+
+### 环境要求
+- Python 3.9+
+- 数据库（支持SQLite、MySQL等）
+- 同花顺客户端（如果使用东吴证券交易）
+
+### 安装步骤
+
+1. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+2. 复制环境变量模板并按需修改
+```bash
+cp dongwu_broker_env.example .env
+```
+
+3. 修改`.env`文件中的配置
+
+### API路由说明
+
+- `/api/ai` - AI相关API
+- `/api/strategy` - 交易策略API
+- `/api/portfolio` - 投资组合API
+- `/api/stock` - 股票数据API
+- `/api/backtest` - 回测API
+- `/api/market-tracker` - 市场追踪API
+- `/api/auto-trader` - 自动交易API
+- `/api/ths` - 同花顺相关API
+
+### 启动服务
+
+```bash
+python main.py
+```
+
+服务将在 http://localhost:8000 上运行
+
+### 开发模式使用
+
+开发模式下，各API将返回模拟数据，无需连接实际数据源或交易账户。
+模拟数据用于前端开发，数据格式与生产环境一致。
+
+### 生产环境配置
+
+在生产环境中使用时，需要：
+
+1. 配置正确的数据库连接字符串
+2. 配置有效的数据API密钥（如通达信、同花顺等）
+3. 配置正确的交易账户信息
+4. 将日志级别调整为WARNING或ERROR
+5. 确保环境变量中的路径设置正确 

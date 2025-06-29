@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-feedback-enhanced": {
+      "command": "uvx",
+      "args": ["mcp-feedback-enhanced@latest"]
+    }
+  }
+}

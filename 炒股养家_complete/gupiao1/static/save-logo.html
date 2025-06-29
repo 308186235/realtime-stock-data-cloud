@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>保存应用图标</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .instructions {
+            margin-bottom: 20px;
+        }
+        .logo-preview {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .logo-preview img {
+            max-width: 200px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .steps {
+            list-style-type: decimal;
+            padding-left: 20px;
+        }
+        .note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>应用图标设置指南</h1>
+        
+        <div class="instructions">
+            <p>请按照以下步骤将您的彩色圆形Logo设置为应用图标：</p>
+            
+            <ol class="steps">
+                <li>右键点击下方的示例图片</li>
+                <li>选择"图片另存为..."</li>
+                <li>保存位置选择：<code>static/app-logo.png</code></li>
+                <li>确保文件名为：<code>app-logo.png</code></li>
+                <li>点击保存，覆盖现有文件</li>
+            </ol>
+        </div>
+        
+        <div class="logo-preview">
+            <p><strong>您的应用Logo预览：</strong></p>
+            <!-- 这里显示用户上传的logo预览，实际使用中需要将下面的图片链接替换为您的彩色圆形logo图片 -->
+            <img src="logo.png" alt="应用Logo预览" title="右键点击并保存为app-logo.png">
+        </div>
+        
+        <div class="note">
+            <p><strong>注意：</strong> 图标建议使用高分辨率PNG格式图片(1024x1024像素)，支持透明背景。系统会自动为不同平台和尺寸进行缩放。</p>
+        </div>
+    </div>
+</body>
+</html> 

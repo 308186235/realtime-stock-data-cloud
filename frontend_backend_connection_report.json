@@ -1,0 +1,83 @@
+{
+  "timestamp": "2025-06-26T21:02:40.375294",
+  "backend_url": "http://localhost:8002",
+  "api_tests": [
+    {
+      "endpoint": "首页",
+      "url": "http://localhost:8002/",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 6.02,
+      "content_type": "text/html; charset=utf-8"
+    },
+    {
+      "endpoint": "健康检查",
+      "url": "http://localhost:8002/api/health",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 2.04,
+      "content_type": "application/json"
+    },
+    {
+      "endpoint": "测试端点",
+      "url": "http://localhost:8002/test",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 15.75,
+      "content_type": "application/json"
+    },
+    {
+      "endpoint": "请求统计",
+      "url": "http://localhost:8002/api/stats",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 2.35,
+      "content_type": "application/json"
+    },
+    {
+      "endpoint": "Ping测试",
+      "url": "http://localhost:8002/api/test/ping",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 1.88,
+      "content_type": "application/json"
+    },
+    {
+      "endpoint": "Echo测试",
+      "url": "http://localhost:8002/api/test/echo?message=前端测试",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 25.87,
+      "content_type": "application/json"
+    },
+    {
+      "endpoint": "股票报价",
+      "url": "http://localhost:8002/api/stock/quote?code=000001",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 22.52,
+      "content_type": "application/json"
+    },
+    {
+      "endpoint": "T+0交易摘要",
+      "url": "http://localhost:8002/api/t-trading/summary",
+      "status": "success",
+      "status_code": 200,
+      "response_time": 11.83,
+      "content_type": "application/json"
+    }
+  ],
+  "cors_test": {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Credentials": null
+  },
+  "post_test": true,
+  "summary": {
+    "api_success_rate": "8/8",
+    "cors_ok": true,
+    "post_ok": true,
+    "overall_status": "success"
+  }
+}

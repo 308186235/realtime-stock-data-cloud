@@ -1,0 +1,1267 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib.patches as patches
+from datetime import datetime, timedelta
+
+class RisingObstacleDetector:
+    """
+    上升前阻形（Rising Obstacle Pattern）检测器
+    
+    上升前阻形是股价在上升过程中遇到前期阻力区域（如前高、密集成交区、重要均线或趋势线等），
+    导致上涨动能暂时受阻的形态。根据不同类型的阻力位和价格反应特征，可以判断其突破可能性和操作策略。
+    
+    核心特征：
+    1. 阻力位类型识别：前期高点/低点、技术指标阻力（如均线、趋势线）、市场情绪阻力等
+    2. 成交量特征：接近阻力位时放量表示分歧加剧，缩量则表明抛压较轻
+    3. K线特征：阻力位附近出现长上影线、十字星、阴包阳等为警示信号；小阳线温和突破为强势信号
+    4. 位置判断：股价与关键均线的位置关系、筹码分布状态、BOLL带位置等
+    
+    策略逻辑：
+    1. 持有股票遇阻：根据阻力强弱和信号类型，确定是持有、减仓还是设置止损点
+    2. 计划买入遇阻：等待有效突破或回调到支撑位再介入
+    3. 突破后操作：确认有效突破后加仓，设置动态止盈点
+    """
+    
+    def __init__(self):
+        self.name = "上升前阻形检测器"
+        self.description = "检测股价在上升过程中遇阻情况，并根据阻力类型和强度提供策略建议"
+        
+        # 默认参数
+        self.params = {
+            # 阻力位识别参数
+            'resistance_zone_pct': 0.02,      # 阻力区域范围(前高的±2%)
+            'ma_resistance_levels': [60, 120, 250],  # 关键均线阻力
+            'volume_surge_threshold': 1.5,    # 量能放大阈值(1.5倍)
+            'volume_shrink_threshold': 0.7,   # 量能萎缩阈值(0.7倍)
+            
+            # K线形态参数
+            'upper_shadow_ratio': 1.5,        # 上影线/实体比例阈值
+            'doji_body_threshold': 0.3,       # 十字星实体占比阈值
+            'engulfing_threshold': 0.9,       # 吞没形态覆盖比例
+            
+            # 指标参数
+            'rsi_overbought': 70,             # RSI超买阈值
+            'boll_upper_touch': 0.98,         # BOLL上轨接触阈值(达到上轨的98%)
+            
+            # 突破确认参数
+            'breakout_volume_ratio': 1.3,     # 突破成交量放大比例
+            'breakout_close_ratio': 0.01,     # 突破收盘价高于阻力位比例(1%)
+            'breakout_confirmation_days': 2,   # 突破确认天数
+            
+            # 仓位管理参数
+            'high_position_threshold': 0.8,    # 高位仓位阈值
+            'initial_reduce_pct': 0.3,        # 初始减仓比例(30%)
+            'stop_loss_pct': 0.05,            # 止损比例(5%)
+            'risk_reward_ratio': 1.5,         # 风险收益比(1.5:1)
+            
+            # 回测周期
+            'look_back_period': 120,          # 回溯周期(识别历史阻力位)
+            'resistance_detection_period': 20,  # 阻力形态检测周期
+            
+            # 新增参数
+            'downtrend_lookback': 10,          # 下跌趋势回溯周期
+            'downtrend_threshold': -0.2,       # 下跌趋势阈值
+            'support_tolerance': 0.05,         # 支撑位容忍度
+            'bullish_engulf_required': True,   # 需要阳包阴信号
+            'ma_periods': [5, 10, 20, 60]      # 均线周期
+        }
+    
+    def detect_obstacles(self, data):
+        """
+        检测上升过程中的阻力位
+        
+        Args:
+            data (pd.DataFrame): OHLCV数据
+            
+        Returns:
+            tuple: (阻力位列表, 信号列表)
+        """
+        # 创建数据副本
+        df = data.copy()
+        
+        # 初始化结果
+        resistance_levels = []
+        signals = pd.Series(0, index=df.index)
+        obstacle_types = {}
+        
+        # 确保数据完整性
+        if len(df) < self.params['look_back_period']:
+            return resistance_levels, signals, obstacle_types
+        
+        # 计算必要指标
+        self._calculate_indicators(df)
+        
+        # 检测历史阻力位
+        historical_resistance = self._identify_resistance_levels(df)
+        
+        # 检测目前正在接近或触及的阻力位
+        current_obstacles = self._detect_current_obstacles(df, historical_resistance)
+        
+        # 为每个检测到的阻力位生成信号
+        for idx, obstacle in current_obstacles.items():
+            obstacle_price = obstacle['price']
+            obstacle_type = obstacle['type']
+            strength = obstacle['strength']
+            k_pattern = obstacle['k_pattern']
+            
+            # 记录阻力位
+            resistance_levels.append({
+                'date': df.index[idx],
+                'price': obstacle_price,
+                'type': obstacle_type,
+                'strength': strength,
+                'k_pattern': k_pattern
+            })
+            
+            # 生成信号
+            if obstacle['signal'] != 0:
+                signals.loc[df.index[idx]] = obstacle['signal']
+                obstacle_types[df.index[idx]] = {
+                    'type': obstacle_type,
+                    'strength': strength,
+                    'k_pattern': k_pattern,
+                    'action': obstacle['action']
+                }
+        
+        return resistance_levels, signals, obstacle_types 
+
+    def _identify_resistance_levels(self, df):
+        """
+        识别历史阻力位
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            
+        Returns:
+            list: 阻力位价格列表
+        """
+        resistance_levels = []
+        
+        # 获取最近的数据（排除非交易日）
+        recent_df = df.iloc[-self.params['look_back_period']:]
+        
+        # 1. 识别历史高点阻力位
+        # 使用滚动窗口寻找局部高点
+        window_size = 10
+        for i in range(window_size, len(recent_df) - window_size):
+            window = recent_df.iloc[i-window_size:i+window_size+1]
+            current_high = recent_df.iloc[i]['high']
+            
+            # 如果当前点的高点是窗口内的最高点，将其视为局部高点
+            if current_high == window['high'].max():
+                # 检查是否已经有相近的阻力位（避免重复）
+                is_duplicate = False
+                for level in resistance_levels:
+                    if abs(level['price'] - current_high) / current_high < 0.02:
+                        # 如果存在相近的阻力位，更新强度
+                        level['strength'] += 0.2
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    resistance_levels.append({
+                        'price': current_high,
+                        'date': recent_df.index[i],
+                        'type': 'historical_high',
+                        'strength': 1.0,
+                        'volume': recent_df.iloc[i]['volume']
+                    })
+        
+        # 2. 识别成交密集区形成的阻力位
+        # 使用价格区间统计成交量
+        if len(recent_df) > 0:
+            price_min = recent_df['low'].min()
+            price_max = recent_df['high'].max()
+            price_range = price_max - price_min
+            
+            # 将价格范围分成10个区间
+            bin_count = 10
+            if price_range > 0:
+                bins = [price_min + i * price_range / bin_count for i in range(bin_count + 1)]
+                
+                # 统计每个价格区间的成交量
+                volume_by_price = {}
+                for i in range(len(recent_df)):
+                    row = recent_df.iloc[i]
+                    # 简单处理：以当日均价分配成交量
+                    avg_price = (row['high'] + row['low'] + row['close']) / 3
+                    
+                    # 确定价格所在的区间
+                    for j in range(len(bins) - 1):
+                        if bins[j] <= avg_price < bins[j+1]:
+                            bin_key = (bins[j], bins[j+1])
+                            if bin_key not in volume_by_price:
+                                volume_by_price[bin_key] = 0
+                            volume_by_price[bin_key] += row['volume']
+                            break
+                
+                # 识别成交量较大的价格区间作为支撑/阻力位
+                if volume_by_price:
+                    avg_volume = sum(volume_by_price.values()) / len(volume_by_price)
+                    for (bin_low, bin_high), volume in volume_by_price.items():
+                        if volume > avg_volume * 1.5:  # 成交量至少为平均的1.5倍
+                            mid_price = (bin_low + bin_high) / 2
+                            
+                            # 检查是否已有相近阻力位
+                            is_duplicate = False
+                            for level in resistance_levels:
+                                if abs(level['price'] - mid_price) / mid_price < 0.02:
+                                    level['strength'] += 0.3  # 成交密集区增强阻力强度
+                                    is_duplicate = True
+                                    break
+                            
+                            if not is_duplicate:
+                                resistance_levels.append({
+                                    'price': mid_price,
+                                    'date': None,  # 成交密集区没有具体日期
+                                    'type': 'volume_cluster',
+                                    'strength': 0.8,
+                                    'volume': volume
+                                })
+        
+        # 3. 识别关键均线阻力位
+        current_price = df['close'].iloc[-1] if len(df) > 0 else 0
+        for period in self.params['ma_resistance_levels']:
+            ma_col = f'ma{period}'
+            if ma_col in df.columns and not df[ma_col].iloc[-1] != df[ma_col].iloc[-1]:  # 检查非NaN
+                ma_value = df[ma_col].iloc[-1]
+                
+                # 如果当前价格接近或略低于均线，可能形成阻力
+                if 0.98 * ma_value <= current_price <= 1.02 * ma_value:
+                    # 检查是否与其他阻力位重叠
+                    is_duplicate = False
+                    for level in resistance_levels:
+                        if abs(level['price'] - ma_value) / ma_value < 0.02:
+                            level['strength'] += 0.2  # 均线加强阻力
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        resistance_levels.append({
+                            'price': ma_value,
+                            'date': df.index[-1],
+                            'type': f'ma{period}',
+                            'strength': 0.7 + (period / 500),  # 长期均线阻力强度更大
+                            'volume': None
+                        })
+        
+        # 4. 识别心理整数价位阻力
+        if len(df) > 0:
+            current_price = df['close'].iloc[-1]
+            
+            # 确定价格的数量级
+            magnitude = 10 ** (len(str(int(current_price))) - 1)
+            
+            # 检查接近的整数价位
+            for multiplier in range(1, 11):
+                round_price = multiplier * magnitude
+                
+                # 如果当前价格接近整数价位的±5%范围内
+                if 0.95 * round_price <= current_price <= 1.05 * round_price:
+                    # 检查是否已有相近阻力位
+                    is_duplicate = False
+                    for level in resistance_levels:
+                        if abs(level['price'] - round_price) / round_price < 0.02:
+                            level['strength'] += 0.1  # 心理价位小幅增强阻力
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        # 整数关口的阻力强度取决于数量级（如100比10的阻力更强）
+                        level_strength = 0.5 + (multiplier / 20)  # 基础强度0.5-1.0
+                        
+                        resistance_levels.append({
+                            'price': round_price,
+                            'date': None,
+                            'type': 'psychological_level',
+                            'strength': level_strength,
+                            'volume': None
+                        })
+        
+        # 按强度排序
+        resistance_levels.sort(key=lambda x: x['strength'], reverse=True)
+        
+        return resistance_levels
+    
+    def _detect_current_obstacles(self, df, historical_resistance):
+        """
+        检测当前价格正在接近或触及的阻力位
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            historical_resistance (list): 历史阻力位列表
+            
+        Returns:
+            dict: 当前阻力情况，键为数据索引，值为阻力特征
+        """
+        current_obstacles = {}
+        
+        # 获取最近的数据
+        detection_period = min(self.params['resistance_detection_period'], len(df))
+        recent_df = df.iloc[-detection_period:]
+        
+        for i in range(len(recent_df)):
+            row = recent_df.iloc[i]
+            current_price = row['close']
+            current_high = row['high']
+            
+            # 检查是否接近或触及历史阻力位
+            for resistance in historical_resistance:
+                resistance_price = resistance['price']
+                
+                # 如果接近或触及阻力位
+                if (resistance_price * (1 - self.params['resistance_zone_pct']) <= 
+                    current_high <= 
+                    resistance_price * (1 + self.params['resistance_zone_pct'])):
+                    
+                    # 识别K线形态
+                    k_pattern = self._identify_candle_pattern(recent_df, i)
+                    
+                    # 检查成交量特征
+                    volume_pattern = self._check_volume_pattern(recent_df, i)
+                    
+                    # 判断价格位置
+                    position_type = self._determine_position(recent_df, i)
+                    
+                    # 基于所有特征确定阻力形态的强度和信号
+                    strength, signal, action = self._evaluate_obstacle(
+                        resistance, 
+                        k_pattern, 
+                        volume_pattern, 
+                        position_type,
+                        recent_df.iloc[i]
+                    )
+                    
+                    # 记录阻力情况
+                    current_obstacles[len(df) - detection_period + i] = {
+                        'price': resistance_price,
+                        'type': resistance['type'],
+                        'strength': strength,
+                        'k_pattern': k_pattern,
+                        'volume_pattern': volume_pattern,
+                        'position': position_type,
+                        'signal': signal,
+                        'action': action
+                    }
+                    
+                    # 一旦找到一个显著的阻力，就跳出本次循环
+                    break
+        
+        return current_obstacles 
+
+    def _identify_candle_pattern(self, df, idx):
+        """
+        识别特定位置的K线形态
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            idx (int): 当前索引
+            
+        Returns:
+            str: K线形态类型
+        """
+        # 需要至少2天数据来识别形态
+        if idx < 1 or idx >= len(df):
+            return 'unknown'
+            
+        current = df.iloc[idx]
+        previous = df.iloc[idx-1]
+        
+        # 检查十字星
+        if current['is_doji']:
+            return 'doji'
+        
+        # 检查长上影线
+        if (current['is_bullish'] and
+            current['upper_shadow_ratio'] > self.params['upper_shadow_ratio']):
+            return 'long_upper_shadow'
+        
+        # 检查吞没形态（阴包阳）
+        if (previous['is_bullish'] and 
+            not current['is_bullish'] and
+            current['open'] >= previous['close'] and
+            current['close'] <= previous['open']):
+            return 'bearish_engulfing'
+        
+        # 检查看涨吞没形态（阳包阴）
+        if (not previous['is_bullish'] and
+            current['is_bullish'] and
+            current['open'] <= previous['close'] and
+            current['close'] >= previous['open']):
+            return 'bullish_engulfing'
+        
+        # 检查高位震荡
+        if (abs(current['close'] - previous['close']) / previous['close'] < 0.01 and
+            current['volume'] > previous['volume'] * 1.3):
+            return 'high_volume_consolidation'
+        
+        # 检查温和突破
+        if (current['is_bullish'] and
+            current['close'] > previous['high'] and
+            current['body_ratio'] > 0.6 and
+            current['upper_shadow_ratio'] < 0.3):
+            return 'clean_breakout'
+        
+        # 默认返回普通K线类型
+        return 'bullish' if current['is_bullish'] else 'bearish'
+    
+    def _check_volume_pattern(self, df, idx):
+        """
+        检查成交量特征
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            idx (int): 当前索引
+            
+        Returns:
+            str: 成交量特征
+        """
+        if idx < 5 or idx >= len(df):
+            return 'normal'
+            
+        current = df.iloc[idx]
+        
+        # 检查是否放量
+        if current['volume_ratio'] >= self.params['volume_surge_threshold']:
+            return 'surge'
+        
+        # 检查是否缩量
+        if current['volume_ratio'] <= self.params['volume_shrink_threshold']:
+            return 'shrink'
+        
+        # 检查连续放量
+        if (idx >= 2 and
+            df.iloc[idx]['volume'] > df.iloc[idx-1]['volume'] and
+            df.iloc[idx-1]['volume'] > df.iloc[idx-2]['volume']):
+            return 'continuous_increase'
+        
+        return 'normal'
+    
+    def _determine_position(self, df, idx):
+        """
+        判断当前价格位置
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            idx (int): 当前索引
+            
+        Returns:
+            str: 位置类型
+        """
+        if idx >= len(df):
+            return 'unknown'
+            
+        current = df.iloc[idx]
+        
+        # 判断BOLL带位置
+        if 'boll_position' in current:
+            if current['boll_position'] > 0.8:
+                return 'overbought'
+            elif current['boll_position'] < 0.2:
+                return 'oversold'
+        
+        # 判断均线位置
+        ma_status = []
+        for period in [5, 10, 20, 60]:
+            ma_col = f'ma{period}'
+            if ma_col in df.columns and idx > period:
+                if current['close'] > current[ma_col]:
+                    ma_status.append(1)  # 价格在均线上方
+                else:
+                    ma_status.append(-1)  # 价格在均线下方
+        
+        # 判断均线多头排列
+        if len(ma_status) >= 3 and all(x == 1 for x in ma_status):
+            return 'strong_uptrend'
+        elif len(ma_status) >= 3 and all(x == -1 for x in ma_status):
+            return 'strong_downtrend'
+        
+        # 判断RSI位置
+        if 'rsi' in current:
+            if current['rsi'] > 70:
+                return 'rsi_overbought'
+            elif current['rsi'] < 30:
+                return 'rsi_oversold'
+        
+        # 基于区间位置
+        if idx >= 20:
+            window = df.iloc[max(0, idx-20):idx+1]
+            high = window['high'].max()
+            low = window['low'].min()
+            range_size = high - low
+            
+            if range_size > 0:
+                relative_position = (current['close'] - low) / range_size
+                
+                if relative_position > self.params['high_position_threshold']:
+                    return 'high_position'
+                elif relative_position < 0.2:
+                    return 'low_position'
+        
+        return 'neutral'
+    
+    def _evaluate_obstacle(self, resistance, k_pattern, volume_pattern, position, current_row):
+        """
+        评估阻力位的强度和交易信号
+        
+        Args:
+            resistance (dict): 阻力位信息
+            k_pattern (str): K线形态
+            volume_pattern (str): 成交量特征
+            position (str): 价格位置
+            current_row (pd.Series): 当前行数据
+            
+        Returns:
+            tuple: (强度, 信号, 行动建议)
+        """
+        # 基础阻力强度
+        strength = resistance['strength']
+        
+        # 基于K线形态调整强度
+        if k_pattern in ['doji', 'long_upper_shadow', 'bearish_engulfing']:
+            strength += 0.2  # 看跌形态增强阻力
+        elif k_pattern in ['bullish_engulfing', 'clean_breakout']:
+            strength -= 0.2  # 看涨形态减弱阻力
+        
+        # 基于成交量特征调整强度
+        if volume_pattern == 'surge':
+            strength += 0.15  # 放量表明分歧加剧
+        elif volume_pattern == 'shrink':
+            strength -= 0.1  # 缩量表明抛压较轻
+        elif volume_pattern == 'continuous_increase':
+            strength += 0.1  # 连续放量增加阻力
+        
+        # 基于位置调整强度
+        if position in ['overbought', 'rsi_overbought', 'high_position']:
+            strength += 0.15  # 高位增强阻力
+        elif position in ['strong_uptrend']:
+            strength -= 0.15  # 强势上涨减弱阻力
+        
+        # 限制强度范围
+        strength = max(0.1, min(strength, 1.0))
+        
+        # 生成信号和行动建议
+        signal = 0
+        action = "观望"
+        
+        # 场景1：明显的受阻信号
+        if (k_pattern in ['long_upper_shadow', 'bearish_engulfing', 'doji'] and 
+            volume_pattern in ['surge', 'continuous_increase'] and
+            strength > 0.7):
+            signal = -1  # 卖出/减仓信号
+            action = f"减仓{int(self.params['initial_reduce_pct']*100)}%，设置止损在{resistance['price']*(1-self.params['stop_loss_pct']):.2f}"
+            
+        # 场景2：突破阻力
+        elif (k_pattern in ['clean_breakout', 'bullish_engulfing'] and 
+              current_row['close'] > resistance['price'] * (1 + self.params['breakout_close_ratio']) and
+              volume_pattern in ['surge', 'continuous_increase']):
+            signal = 1  # 买入信号
+            action = "确认突破，可加仓，止损设在阻力位下方"
+            
+        # 场景3：在阻力位附近整理
+        elif (k_pattern in ['high_volume_consolidation'] and
+              strength > 0.5):
+            signal = -0.5  # 轻微减仓信号
+            action = "高位整理，谨慎持有，可适当减仓"
+            
+        # 场景4：弱势阻力，可能继续上涨
+        elif strength < 0.4 and position in ['strong_uptrend']:
+            signal = 0.5  # 轻微买入信号
+            action = "弱阻力，趋势强劲，可持有或小幅加仓"
+        
+        return strength, signal, action
+    
+    def visualize_obstacles(self, data, resistance_levels, signals, obstacle_types, title="上升前阻形分析"):
+        """
+        可视化阻力位和信号
+        
+        Args:
+            data (pd.DataFrame): 价格数据
+            resistance_levels (list): 阻力位列表
+            signals (pd.Series): 信号列表
+            obstacle_types (dict): 阻力类型信息
+            title (str): 图表标题
+        """
+        # 确保有数据
+        if len(data) == 0 or len(resistance_levels) == 0:
+            print("没有足够的数据进行可视化")
+            return
+        
+        # 创建图表
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
+        
+        # 绘制K线图
+        for i in range(len(data)):
+            date = data.index[i]
+            op, hi, lo, cl = data.iloc[i][['open', 'high', 'low', 'close']]
+            
+            # K线颜色
+            color = 'red' if cl >= op else 'green'
+            
+            # K线实体
+            ax1.plot([date, date], [op, cl], color=color, linewidth=3)
+            
+            # 上下影线
+            ax1.plot([date, date], [lo, min(op, cl)], color=color, linewidth=1)
+            ax1.plot([date, date], [max(op, cl), hi], color=color, linewidth=1)
+        
+        # 绘制阻力位
+        for level in resistance_levels:
+            resistance_date = level['date']
+            resistance_price = level['price']
+            resistance_type = level['type']
+            resistance_strength = level['strength']
+            
+            # 绘制水平阻力线
+            if resistance_date:
+                start_idx = data.index.get_loc(resistance_date) if resistance_date in data.index else 0
+            else:
+                start_idx = 0
+                
+            start_date = data.index[max(0, start_idx - 5)]
+            end_date = data.index[-1]
+            
+            # 根据阻力强度确定线的样式
+            linestyle = '-' if resistance_strength > 0.7 else '--' if resistance_strength > 0.4 else ':'
+            linewidth = 2 if resistance_strength > 0.7 else 1.5 if resistance_strength > 0.4 else 1
+            
+            # 根据阻力类型选择颜色
+            if 'historical_high' in resistance_type:
+                color = 'red'
+                label = f"历史高点阻力 ({resistance_price:.2f})"
+            elif 'ma' in resistance_type:
+                color = 'blue'
+                label = f"{resistance_type}均线阻力 ({resistance_price:.2f})"
+            elif 'volume_cluster' in resistance_type:
+                color = 'purple'
+                label = f"成交密集区阻力 ({resistance_price:.2f})"
+            elif 'psychological_level' in resistance_type:
+                color = 'orange'
+                label = f"心理关口阻力 ({resistance_price:.2f})"
+            else:
+                color = 'gray'
+                label = f"其他阻力 ({resistance_price:.2f})"
+            
+            ax1.plot([start_date, end_date], [resistance_price, resistance_price], 
+                     color=color, linestyle=linestyle, linewidth=linewidth, label=label)
+        
+        # 绘制信号
+        buy_signals = signals[signals > 0]
+        sell_signals = signals[signals < 0]
+        
+        if not buy_signals.empty:
+            buy_dates = buy_signals.index
+            buy_prices = [data.loc[date, 'low'] * 0.99 for date in buy_dates]
+            ax1.scatter(buy_dates, buy_prices, marker='^', color='lime', s=120, label='买入信号')
+            
+            # 添加注释
+            for date in buy_dates:
+                if date in obstacle_types:
+                    action = obstacle_types[date]['action']
+                    ax1.annotate(action, (date, data.loc[date, 'low'] * 0.97),
+                                fontsize=8, color='lime', ha='center')
+        
+        if not sell_signals.empty:
+            sell_dates = sell_signals.index
+            sell_prices = [data.loc[date, 'high'] * 1.01 for date in sell_dates]
+            ax1.scatter(sell_dates, sell_prices, marker='v', color='red', s=120, label='卖出信号')
+            
+            # 添加注释
+            for date in sell_dates:
+                if date in obstacle_types:
+                    action = obstacle_types[date]['action']
+                    ax1.annotate(action, (date, data.loc[date, 'high'] * 1.03),
+                                fontsize=8, color='red', ha='center')
+        
+        # 绘制均线
+        if 'ma20' in data.columns:
+            ax1.plot(data.index, data['ma20'], color='blue', linestyle='-', linewidth=1, label='20日均线')
+        if 'ma60' in data.columns:
+            ax1.plot(data.index, data['ma60'], color='purple', linestyle='-', linewidth=1, label='60日均线')
+        
+        # 绘制成交量
+        ax2.bar(data.index, data['volume'], color='skyblue', alpha=0.7)
+        ax2.set_ylabel('成交量')
+        
+        # 设置标题和标签
+        ax1.set_title(title)
+        ax1.set_ylabel('价格')
+        ax1.grid(True, alpha=0.3)
+        ax2.grid(True, alpha=0.3)
+        
+        # 格式化日期
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        
+        # 添加图例
+        handles, labels = ax1.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax1.legend(by_label.values(), by_label.keys(), loc='best')
+        
+        # 旋转日期标签
+        fig.autofmt_xdate()
+        
+        plt.tight_layout()
+        plt.savefig('rising_obstacle_analysis.png')
+        print("分析图表已保存为 'rising_obstacle_analysis.png'")
+        
+        # 输出总结
+        print("\n上升前阻形分析总结:")
+        print("=" * 50)
+        print(f"共检测到 {len(resistance_levels)} 个阻力位")
+        print(f"买入信号: {len(buy_signals)} 个")
+        print(f"卖出信号: {len(sell_signals)} 个")
+        print("=" * 50)
+        
+        # 输出具体阻力位信息
+        if len(resistance_levels) > 0:
+            print("\n主要阻力位详情:")
+            for i, level in enumerate(resistance_levels[:5]):  # 只显示前5个最重要的
+                strength_desc = "强" if level['strength'] > 0.7 else "中" if level['strength'] > 0.4 else "弱"
+                print(f"{i+1}. 价格: {level['price']:.2f}, 类型: {level['type']}, 强度: {strength_desc}")
+        
+        return fig
+
+    def _check_downtrend(self, df, index):
+        """
+        检查是否处于下跌趋势
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            index (int): 当前K线索引
+            
+        Returns:
+            bool: 是否处于下跌趋势
+        """
+        if index < self.params['downtrend_lookback']:
+            return False
+        
+        # 检查近期价格走势
+        start_price = df['close'].iloc[index - self.params['downtrend_lookback']]
+        current_price = df['close'].iloc[index]
+        price_change = (current_price - start_price) / start_price
+        
+        # 检查均线空头排列
+        ma_downtrend = True
+        for i in range(len(self.params['ma_periods'])-1):
+            short_ma = f"ma{self.params['ma_periods'][i]}"
+            long_ma = f"ma{self.params['ma_periods'][i+1]}"
+            
+            if short_ma in df.columns and long_ma in df.columns:
+                if df[short_ma].iloc[index] > df[long_ma].iloc[index]:
+                    ma_downtrend = False
+                    break
+        
+        # 检查近期价格是否创新低
+        recent_low = df['low'].iloc[index-self.params['downtrend_lookback']:index].min()
+        creating_new_low = df['low'].iloc[index] <= recent_low * 1.02  # 允许2%的容差
+        
+        # 满足以下条件之一即可判断为下跌趋势
+        return (price_change < self.params['downtrend_threshold'] or 
+                (ma_downtrend and creating_new_low))
+    
+    def _check_near_support(self, df, index, support_levels):
+        """
+        检查是否接近支撑位
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            index (int): 当前K线索引
+            support_levels (dict): 支撑位信息
+            
+        Returns:
+            tuple: (是否接近支撑位, 支撑位信息)
+        """
+        current_price = df['close'].iloc[index]
+        current_low = df['low'].iloc[index]
+        tolerance = self.params['support_tolerance'] * current_price
+        
+        # 存储最近的支撑位信息
+        nearest_support = None
+        min_distance = float('inf')
+        support_type = None
+        
+        # 1. 检查历史支撑位
+        for support in support_levels['historical']:
+            distance = abs(current_low - support['price'])
+            if distance < tolerance and distance < min_distance:
+                min_distance = distance
+                nearest_support = support['price']
+                support_type = 'historical'
+        
+        # 2. 检查均线支撑位
+        for support in support_levels['ma_support']:
+            distance = abs(current_low - support['price'])
+            if distance < tolerance and distance < min_distance:
+                min_distance = distance
+                nearest_support = support['price']
+                support_type = f"ma{support['period']}"
+        
+        # 3. 检查趋势线支撑
+        for support in support_levels['trend_support']:
+            distance = abs(current_low - support['price'])
+            if distance < tolerance and distance < min_distance:
+                min_distance = distance
+                nearest_support = support['price']
+                support_type = 'trendline'
+        
+        # 4. 检查心理整数关口
+        for support in support_levels['psychological']:
+            distance = abs(current_low - support['price'])
+            if distance < tolerance and distance < min_distance:
+                min_distance = distance
+                nearest_support = support['price']
+                support_type = f"psychological_{support['level']}"
+        
+        # 判断是否足够接近支撑位
+        if nearest_support is not None and min_distance < tolerance:
+            support_info = {
+                'price': nearest_support,
+                'type': support_type,
+                'distance': min_distance / current_price,  # 相对距离
+                'distance_pct': min_distance / current_price * 100  # 百分比距离
+            }
+            return True, support_info
+        
+        return False, None
+    
+    def _check_reversal_signals(self, df, index):
+        """
+        检查是否出现反转信号
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            index (int): 当前K线索引
+            
+        Returns:
+            tuple: (是否有反转信号, 信号信息)
+        """
+        # 获取当前和前一个K线数据
+        current = df.iloc[index]
+        prev = df.iloc[index-1]
+        
+        # 初始化信号列表和权重
+        signals = []
+        total_weight = 0
+        
+        # 1. 检查缩量信号
+        if current['volume_ratio'] < self.params['volume_shrink_threshold']:
+            signals.append({
+                'type': 'volume_shrink',
+                'description': '成交量萎缩',
+                'weight': 0.2
+            })
+            total_weight += 0.2
+        
+        # 2. 检查锤子线
+        if current['is_hammer']:
+            signals.append({
+                'type': 'hammer',
+                'description': '锤子线形态',
+                'weight': 0.25
+            })
+            total_weight += 0.25
+        
+        # 3. 检查十字星
+        if current['is_doji']:
+            signals.append({
+                'type': 'doji',
+                'description': '十字星形态',
+                'weight': 0.15
+            })
+            total_weight += 0.15
+        
+        # 4. 检查阳包阴形态
+        if current['bullish_engulfing']:
+            signals.append({
+                'type': 'bullish_engulfing',
+                'description': '阳包阴反转',
+                'weight': 0.3
+            })
+            total_weight += 0.3
+        
+        # 5. 检查RSI超卖
+        if current['rsi_oversold']:
+            signals.append({
+                'type': 'rsi_oversold',
+                'description': 'RSI超卖',
+                'weight': 0.15
+            })
+            total_weight += 0.15
+        
+        # 6. 检查MACD底背离
+        if current['macd_divergence']:
+            signals.append({
+                'type': 'macd_divergence',
+                'description': 'MACD底背离',
+                'weight': 0.25
+            })
+            total_weight += 0.25
+        
+        # 7. 检查均线金叉
+        for i in range(len(self.params['ma_periods'])-1):
+            short_ma = f"ma{self.params['ma_periods'][i]}"
+            long_ma = f"ma{self.params['ma_periods'][i+1]}"
+            cross_col = f"{short_ma}_cross_{long_ma}"
+            
+            if cross_col in df.columns and current[cross_col]:
+                signals.append({
+                    'type': 'ma_cross',
+                    'description': f"{short_ma}金叉{long_ma}",
+                    'weight': 0.2
+                })
+                total_weight += 0.2
+                break  # 只考虑一个均线金叉
+        
+        # 如果没有信号或必要条件缺失，则返回False
+        if not signals:
+            return False, None
+        
+        # 如果要求必须有阳包阴，但没有出现，则返回False
+        if self.params['bullish_engulf_required'] and not current['bullish_engulfing']:
+            return False, None
+        
+        # 返回信号信息
+        signal_info = {
+            'signals': signals,
+            'total_weight': total_weight,
+            'signal_count': len(signals)
+        }
+        
+        return True, signal_info
+    
+    def _evaluate_pattern_strength(self, df, index, support_info, signal_info):
+        """
+        评估下降受阻形态的强度
+        
+        Args:
+            df (pd.DataFrame): 价格数据
+            index (int): 当前K线索引
+            support_info (dict): 支撑位信息
+            signal_info (dict): 信号信息
+            
+        Returns:
+            tuple: (强度得分, 形态特征)
+        """
+        # 获取当前数据
+        current = df.iloc[index]
+        
+        # 初始化特征字典和得分
+        features = {}
+        score = 0.0
+        max_score = 0.0
+        
+        # 1. 支撑位评分 (30分)
+        max_score += 30
+        support_score = 0
+        
+        # 根据支撑位类型评分
+        if support_info['type'].startswith('historical'):
+            support_score += 25  # 历史支撑位最可靠
+            features['support'] = 'historical_strong'
+        elif support_info['type'].startswith('ma'):
+            ma_period = int(support_info['type'][2:])
+            if ma_period >= 60:
+                support_score += 20  # 长期均线支撑
+                features['support'] = 'long_term_ma'
+            elif ma_period >= 20:
+                support_score += 15  # 中期均线支撑
+                features['support'] = 'medium_term_ma'
+            else:
+                support_score += 10  # 短期均线支撑
+                features['support'] = 'short_term_ma'
+        elif support_info['type'] == 'trendline':
+            support_score += 20  # 趋势线支撑
+            features['support'] = 'trendline'
+        elif support_info['type'].startswith('psychological'):
+            support_score += 15  # 心理整数关口
+            features['support'] = 'psychological'
+        
+        # 根据支撑位距离加减分
+        distance_pct = support_info['distance_pct']
+        if distance_pct < 0.5:
+            support_score += 5  # 非常接近支撑位
+        elif distance_pct > 2.0:
+            support_score -= 5  # 距离支撑位较远
+        
+        # 确保得分在合理范围内
+        support_score = max(0, min(30, support_score))
+        score += support_score
+        
+        # 2. 信号强度评分 (40分)
+        max_score += 40
+        signal_score = min(40, signal_info['total_weight'] * 100)
+        score += signal_score
+        
+        # 记录信号类型
+        signal_types = [s['type'] for s in signal_info['signals']]
+        features['signals'] = signal_types
+        
+        # 3. 趋势评分 (15分)
+        max_score += 15
+        trend_score = 0
+        
+        # 下跌幅度越大，反弹可能性越高
+        price_change = (df['close'].iloc[index] - df['close'].iloc[index - self.params['downtrend_lookback']]) / df['close'].iloc[index - self.params['downtrend_lookback']]
+        if price_change < -0.2:
+            trend_score += 15  # 大幅下跌
+            features['trend'] = 'steep_decline'
+        elif price_change < -0.1:
+            trend_score += 10  # 中等下跌
+            features['trend'] = 'medium_decline'
+        else:
+            trend_score += 5   # 小幅下跌
+            features['trend'] = 'mild_decline'
+        
+        score += trend_score
+        
+        # 4. 其他确认因素 (15分)
+        max_score += 15
+        confirm_score = 0
+        
+        # RSI超卖
+        if 'rsi' in df.columns and current['rsi'] < 30:
+            confirm_score += 5
+            features['rsi'] = 'oversold'
+        elif 'rsi' in df.columns and current['rsi'] < 40:
+            confirm_score += 3
+            features['rsi'] = 'low'
+        
+        # MACD底背离
+        if current['macd_divergence']:
+            confirm_score += 10
+            features['macd'] = 'bullish_divergence'
+        
+        # 确保得分在合理范围内
+        confirm_score = max(0, min(15, confirm_score))
+        score += confirm_score
+        
+        # 计算总分百分比
+        strength = score / max_score if max_score > 0 else 0
+        
+        # 记录关键特征
+        features['overall_strength'] = strength
+        features['support_score'] = support_score
+        features['signal_score'] = signal_score
+        features['trend_score'] = trend_score
+        features['confirm_score'] = confirm_score
+        
+        return strength, features
+    
+    def _generate_action_suggestion(self, strength, features):
+        """
+        根据形态强度和特征生成行动建议
+        
+        Args:
+            strength (float): 形态强度得分
+            features (dict): 形态特征
+            
+        Returns:
+            str: 行动建议
+        """
+        if strength >= 0.8:
+            return f"强烈建仓信号：可考虑分批买入，首次仓位3成，止损设置在支撑位下方{self.params['stop_loss_pct']*100:.0f}%"
+        elif strength >= 0.6:
+            return f"明确底部信号：可轻仓试探性买入2成，设置严格止损"
+        elif strength >= 0.4:
+            return "可能的企稳信号：小仓位试错，等待进一步确认"
+        else:
+            return "弱信号：保持观望，等待更多支撑或确认信号"
+    
+    def visualize_pattern(self, data, signals, pattern_details, title="下降受阻形态分析"):
+        """
+        可视化下降受阻形态
+        
+        Args:
+            data (pd.DataFrame): 价格数据
+            signals (pd.Series): 信号列表
+            pattern_details (dict): 形态详情
+            title (str): 图表标题
+        """
+        # 确保有检测到形态
+        if signals.sum() == 0:
+            print("未检测到下降受阻形态")
+            return
+        
+        # 创建图表
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), gridspec_kw={'height_ratios': [3, 1]})
+        
+        # 绘制K线图
+        for i in range(len(data)):
+            date = data.index[i]
+            op, hi, lo, cl = data.iloc[i][['open', 'high', 'low', 'close']]
+            
+            # K线颜色
+            color = 'red' if cl >= op else 'green'
+            
+            # K线实体
+            ax1.plot([date, date], [op, cl], color=color, linewidth=3)
+            
+            # 上下影线
+            ax1.plot([date, date], [lo, min(op, cl)], color=color, linewidth=1)
+            ax1.plot([date, date], [max(op, cl), hi], color=color, linewidth=1)
+        
+        # 绘制均线
+        for period in self.params['ma_periods']:
+            ma_col = f'ma{period}'
+            if ma_col in data.columns:
+                ax1.plot(data.index, data[ma_col], 
+                         label=f"{period}日均线", 
+                         alpha=0.7, 
+                         linewidth=1)
+        
+        # 标记下降受阻形态
+        pattern_dates = [date for date in pattern_details.keys()]
+        
+        for date in pattern_dates:
+            if date in data.index:
+                idx = data.index.get_loc(date)
+                
+                # 绘制标记
+                ax1.plot(date, data.loc[date, 'low'], 'ro', markersize=10)
+                
+                # 添加文本说明
+                strength = pattern_details[date]['strength']
+                strength_text = "强" if strength >= 0.8 else "中" if strength >= 0.5 else "弱"
+                
+                # 获取支撑位信息
+                if 'support_info' in pattern_details[date]:
+                    support_info = pattern_details[date]['support_info']
+                    support_text = f"支撑位: {support_info['price']:.2f} ({support_info['type']})"
+                    
+                    # 绘制支撑位
+                    ax1.axhline(y=support_info['price'], color='blue', linestyle='--', alpha=0.6)
+                    
+                    ax1.annotate(support_text,
+                                xy=(date, support_info['price']),
+                                xytext=(-50, -30),
+                                textcoords='offset points',
+                                color='blue',
+                                fontsize=9)
+                
+                ax1.annotate(f"下降受阻({strength_text})",
+                             xy=(date, data.loc[date, 'low']),
+                             xytext=(10, -30),
+                             textcoords='offset points',
+                             arrowprops=dict(arrowstyle='->', color='red'),
+                             color='red',
+                             fontweight='bold')
+                
+                # 添加行动建议
+                if 'action' in pattern_details[date]:
+                    action = pattern_details[date]['action']
+                    ax1.annotate(action,
+                                xy=(date, data.loc[date, 'low']),
+                                xytext=(10, -60),
+                                textcoords='offset points',
+                                color='blue',
+                                fontsize=8,
+                                bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.3))
+        
+        # 绘制成交量
+        ax2.bar(data.index, data['volume'], color='skyblue', alpha=0.7)
+        ax2.set_ylabel('成交量')
+        
+        # 设置标题和标签
+        ax1.set_title(title)
+        ax1.set_ylabel('价格')
+        ax1.grid(True, alpha=0.3)
+        ax2.grid(True, alpha=0.3)
+        
+        # 添加图例
+        ax1.legend(loc='best')
+        
+        # 格式化日期
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        
+        # 旋转日期标签
+        fig.autofmt_xdate()
+        
+        plt.tight_layout()
+        plt.savefig('rising_obstacle_analysis.png')
+        print("分析图表已保存为 'rising_obstacle_analysis.png'")
+        
+        # 输出形态详情
+        print("\n下降受阻形态分析:")
+        for date, details in pattern_details.items():
+            print(f"\n日期: {date}")
+            print(f"信号强度: {details['strength']:.2f}")
+            
+            if 'support_info' in details:
+                print(f"支撑位: {details['support_info']['price']:.2f} ({details['support_info']['type']})")
+            
+            if 'features' in details:
+                print("形态特征:")
+                for key, value in details['features'].items():
+                    if key not in ['overall_strength', 'support_score', 'signal_score', 'trend_score', 'confirm_score']:
+                        print(f"  - {key}: {value}")
+            
+            print(f"行动建议: {details['action']}")
+        
+        return fig
+
+# 测试函数
+def test_rising_obstacle_detector():
+    """测试上升前阻形检测器"""
+    import numpy as np
+    
+    # 生成模拟数据
+    dates = pd.date_range(start='2023-01-01', periods=120, freq='D')
+    
+    # 初始价格和波动
+    np.random.seed(42)
+    close = 100 + np.random.randn(120).cumsum()
+    
+    # 创建上涨趋势
+    for i in range(40, 80):
+        close[i] = close[i-1] * (1 + np.random.uniform(0.001, 0.015))
+    
+    # 创建遇阻回落
+    obstacle_point = 80
+    close[obstacle_point] = close[obstacle_point-1] * 1.02
+    for i in range(obstacle_point+1, obstacle_point+5):
+        close[i] = close[i-1] * (1 - np.random.uniform(0.002, 0.01))
+    
+    # 创建成功突破
+    breakthrough_point = 90
+    for i in range(breakthrough_point, breakthrough_point+10):
+        close[i] = close[i-1] * (1 + np.random.uniform(0.005, 0.02))
+    
+    # 生成OHLCV数据
+    high = close * (1 + np.random.uniform(0, 0.02, size=len(close)))
+    low = close * (1 - np.random.uniform(0, 0.02, size=len(close)))
+    open_prices = close * (1 + np.random.uniform(-0.01, 0.01, size=len(close)))
+    
+    # 在阻力位和突破点修改高低点
+    high[obstacle_point] = close[obstacle_point] * 1.03  # 长上影线
+    
+    # 成交量
+    volume = np.random.uniform(1000, 2000, size=len(close))
+    volume[obstacle_point-5:obstacle_point+5] *= 1.5  # 阻力位附近放量
+    volume[breakthrough_point:breakthrough_point+5] *= 2.0  # 突破点放量
+    
+    # 创建DataFrame
+    df = pd.DataFrame({
+        'open': open_prices,
+        'high': high,
+        'low': low,
+        'close': close,
+        'volume': volume
+    }, index=dates)
+    
+    # 创建检测器
+    detector = RisingObstacleDetector()
+    
+    # 检测阻力位
+    resistance_levels, signals, obstacle_types = detector.detect_obstacles(df)
+    
+    # 可视化结果
+    detector.visualize_obstacles(df, resistance_levels, signals, obstacle_types, "上升前阻形测试数据分析")
+    
+    return df, resistance_levels, signals, obstacle_types
+
+if __name__ == "__main__":
+    test_rising_obstacle_detector() 

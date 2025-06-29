@@ -1,0 +1,186 @@
+"""
+股票实时数据接收器 - 接收推送的股票数据,为Agent提供实时行情信息
+"""
+
+import socket
+import struct
+import json
+import threading
+import time
+from datetime import datetime
+
+class StockDataReceiver:
+    def __init__(self, host='', port=0, token=''):
+        self.host = host
+        self.port = port
+        self.token = token
+        self.running = False
+        self.socket = None
+        self.data_callback = None
+        self.latest_data = {}
+        
+    def receive_message(self, sock):
+        """接收完整消息"""
+        raw_msglen = self.recvall(sock, 4)
+        if not raw_msglen:
+            return None
+        msglen = struct.unpack('<I', raw_msglen)[0]
+        return self.recvall(sock, msglen)
+
+    def recvall(self, sock, n):
+        """接收指定长度的数据"""
+        data = bytearray()
+        while len(data) < n:
+            packet = sock.recv(n - len(data))
+            if not packet:
+                return None
+            data.extend(packet)
+        return data
+    
+    def parse_stock_data(self, raw_data):
+        """解析股票数据"""
+        try:
+            decoded_message = raw_data.decode('utf-8')
+            
+            if decoded_message.startswith('{'):
+                return self.parse_bj_data(decoded_message)
+            else:
+                return self.parse_sh_sz_data(decoded_message)
+                
+        except Exception as e:
+            print(f" 解析股票数据失败: {e}")
+            return None
+    
+    def parse_sh_sz_data(self, data_str):
+        """解析沪深A股数据"""
+        try:
+            fields = data_str.split('$')
+            if len(fields) < 33:
+                return None
+                
+            stock_data = {
+                'stock_code': fields[0],
+                'stock_name': fields[1],
+                'last_price': float(fields[6]) if fields[6] else 0,
+                'open': float(fields[3]) if fields[3] else 0,
+                'high': float(fields[4]) if fields[4] else 0,
+                'low': float(fields[5]) if fields[5] else 0,
+                'volume': int(fields[7]) if fields[7] else 0,
+                'amount': float(fields[8]) if fields[8] else 0,
+                'last_close': float(fields[30]) if fields[30] else 0,
+                'change_pct': 0,
+                'market': 'SH/SZ',
+                'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            # 计算涨跌幅
+            if stock_data['last_close'] > 0:
+                stock_data['change_pct'] = (stock_data['last_price'] - stock_data['last_close']) / stock_data['last_close'] * 100
+            
+            return stock_data
+            
+        except Exception as e:
+            print(f" 解析沪深数据失败: {e}")
+            return None
+    
+    def parse_bj_data(self, json_str):
+        """解析北交所数据"""
+        try:
+            data = json.loads(json_str)
+            
+            stock_data = {
+                'stock_code': data.get('stock_code', ''),
+                'stock_name': '',
+                'last_price': data.get('lastPrice', 0),
+                'open': data.get('open', 0),
+                'high': data.get('high', 0),
+                'low': data.get('low', 0),
+                'volume': data.get('volume', 0),
+                'amount': data.get('amount', 0),
+                'last_close': data.get('lastClose', 0),
+                'change_pct': 0,
+                'market': 'BJ',
+                'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            # 计算涨跌幅
+            if stock_data['last_close'] > 0:
+                stock_data['change_pct'] = (stock_data['last_price'] - stock_data['last_close']) / stock_data['last_close'] * 100
+            
+            return stock_data
+            
+        except Exception as e:
+            print(f" 解析北交所数据失败: {e}")
+            return None
+    
+    def on_data_received(self, stock_data):
+        """数据接收回调"""
+        if stock_data:
+            code = stock_data['stock_code']
+            self.latest_data[code] = stock_data
+            
+            print(f" {code} {stock_data.get('stock_name', '')} "
+                  f"价格: {stock_data['last_price']:.2f} "
+                  f"涨跌: {stock_data['change_pct']:+.2f}%")
+            
+            if self.data_callback:
+                self.data_callback(stock_data)
+    
+    def start_receiving(self):
+        """开始接收数据"""
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.connect((self.host, self.port))
+            print(f" 连接到股票数据服务器 {self.host}:{self.port}")
+            
+            self.socket.sendall(self.token.encode('utf-8'))
+            print(f" 发送token: {self.token}")
+            
+            self.running = True
+            
+            while self.running:
+                message = self.receive_message(self.socket)
+                if message is None:
+                    print(" 服务器连接断开")
+                    break
+                    
+                stock_data = self.parse_stock_data(message)
+                self.on_data_received(stock_data)
+                
+        except Exception as e:
+            print(f" 连接失败: {e}")
+            return False
+        finally:
+            if self.socket:
+                self.socket.close()
+            self.running = False
+            
+        return True
+    
+    def get_latest_data(self, stock_code=None):
+        """获取最新数据"""
+        if stock_code:
+            return self.latest_data.get(stock_code)
+        return self.latest_data
+
+# 全局实例
+receiver = StockDataReceiver()
+
+def start_stock_service(host, port, token):
+    """启动股票数据服务"""
+    receiver.host = host
+    receiver.port = port
+    receiver.token = token
+    
+    thread = threading.Thread(target=receiver.start_receiving)
+    thread.daemon = True
+    thread.start()
+    return thread
+
+def get_stock_data(stock_code=None):
+    """获取股票数据"""
+    return receiver.get_latest_data(stock_code)
+
+if __name__ == "__main__":
+    print(" 股票数据接收器已准备就绪")
+    print("请配置服务器信息后使用")

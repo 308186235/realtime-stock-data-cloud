@@ -1,0 +1,258 @@
+"""
+API测试脚本
+用于测试前后端通信API的功能
+"""
+
+import requests
+import json
+import websocket
+import threading
+import time
+import asyncio
+import sys
+import os
+
+# 添加项目根目录到系统路径
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# API基本URL
+BASE_URL = "http://localhost:8000"
+WS_URL = "ws://localhost:8000/api/test/ws"
+
+# 彩色输出
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def print_success(message):
+    print(f"{Colors.GREEN}✓ {message}{Colors.ENDC}")
+
+def print_error(message):
+    print(f"{Colors.RED}✗ {message}{Colors.ENDC}")
+
+def print_info(message):
+    print(f"{Colors.BLUE}ℹ {message}{Colors.ENDC}")
+
+def print_warning(message):
+    print(f"{Colors.YELLOW}⚠ {message}{Colors.ENDC}")
+
+def print_json(data):
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+def test_ping():
+    """测试ping端点"""
+    print_info("测试 /api/test/ping 端点...")
+    try:
+        response = requests.get(f"{BASE_URL}/api/test/ping")
+        if response.status_code == 200:
+            print_success(f"ping成功: {response.json()}")
+        else:
+            print_error(f"HTTP状态码: {response.status_code}")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def test_echo():
+    """测试echo端点"""
+    print_info("测试 /api/test/echo 端点...")
+    message = "你好，后端！"
+    try:
+        response = requests.get(f"{BASE_URL}/api/test/echo", params={"message": message})
+        if response.status_code == 200:
+            print_success(f"echo成功: {response.json()}")
+        else:
+            print_error(f"HTTP状态码: {response.status_code}")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def test_echo_post():
+    """测试echo POST端点"""
+    print_info("测试 /api/test/echo POST端点...")
+    data = {
+        "name": "测试用户",
+        "message": "这是一个POST测试",
+        "timestamp": time.time()
+    }
+    try:
+        response = requests.post(f"{BASE_URL}/api/test/echo", json=data)
+        if response.status_code == 200:
+            print_success(f"echo POST成功: {response.json()}")
+        else:
+            print_error(f"HTTP状态码: {response.status_code}")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def test_delay():
+    """测试延迟端点"""
+    print_info("测试 /api/test/delay 端点...")
+    seconds = 2
+    start_time = time.time()
+    try:
+        response = requests.get(f"{BASE_URL}/api/test/delay", params={"seconds": seconds})
+        end_time = time.time()
+        elapsed = end_time - start_time
+        
+        if response.status_code == 200:
+            print_success(f"延迟响应成功: 预期{seconds}秒, 实际{elapsed:.2f}秒")
+            print(f"响应: {response.json()}")
+        else:
+            print_error(f"HTTP状态码: {response.status_code}")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def test_error():
+    """测试错误端点"""
+    print_info("测试 /api/test/error 端点...")
+    try:
+        response = requests.get(f"{BASE_URL}/api/test/error", params={"status_code": 400, "message": "测试错误消息"})
+        if response.status_code == 400:
+            print_success(f"错误响应成功: {response.json()}")
+        else:
+            print_error(f"HTTP状态码: {response.status_code}, 预期: 400")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def test_stock():
+    """测试股票数据端点"""
+    print_info("测试 /api/test/stock 端点...")
+    try:
+        response = requests.get(f"{BASE_URL}/api/test/stock", params={"code": "sh600000"})
+        if response.status_code == 200:
+            print_success(f"获取股票数据成功:")
+            print_json(response.json())
+        else:
+            print_error(f"HTTP状态码: {response.status_code}")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def test_evaluate():
+    """测试股票评估端点"""
+    print_info("测试 /api/test/evaluate 端点...")
+    data = {
+        "code": "sh600000",
+        "name": "浦发银行",
+        "current_price": 10.5,
+        "open_price": 10.2,
+        "intraday_high": 10.8,
+        "intraday_low": 10.1,
+        "risk_tolerance": "medium"
+    }
+    try:
+        response = requests.post(f"{BASE_URL}/api/test/evaluate", json=data)
+        if response.status_code == 200:
+            print_success(f"评估股票成功:")
+            print_json(response.json())
+        else:
+            print_error(f"HTTP状态码: {response.status_code}")
+    except Exception as e:
+        print_error(f"请求失败: {str(e)}")
+
+def on_message(ws, message):
+    """WebSocket消息回调"""
+    try:
+        data = json.loads(message)
+        print_info(f"收到WebSocket消息: {data.get('type', 'unknown')}")
+        print_json(data)
+    except Exception as e:
+        print_error(f"解析WebSocket消息失败: {str(e)}")
+
+def on_error(ws, error):
+    """WebSocket错误回调"""
+    print_error(f"WebSocket错误: {error}")
+
+def on_close(ws, close_status_code, close_msg):
+    """WebSocket关闭回调"""
+    print_warning(f"WebSocket连接关闭: {close_status_code} - {close_msg}")
+
+def on_open(ws):
+    """WebSocket打开回调"""
+    print_success("WebSocket连接成功")
+    
+    # 发送ping消息
+    ws.send(json.dumps({"type": "ping"}))
+    print_info("发送ping消息")
+    
+    # 订阅股票报价
+    ws.send(json.dumps({
+        "type": "subscribe",
+        "channel": "quote",
+        "params": {
+            "code": "sh600000"
+        }
+    }))
+    print_info("订阅股票报价: sh600000")
+    
+    # 5秒后取消订阅
+    def unsubscribe_after_delay():
+        time.sleep(5)
+        ws.send(json.dumps({
+            "type": "unsubscribe",
+            "channel": "quote"
+        }))
+        print_info("取消订阅股票报价")
+        
+        # 再过2秒后关闭连接
+        time.sleep(2)
+        ws.close()
+        print_info("关闭WebSocket连接")
+    
+    threading.Thread(target=unsubscribe_after_delay).start()
+
+def test_websocket():
+    """测试WebSocket连接"""
+    print_info("测试WebSocket连接...")
+    
+    ws = websocket.WebSocketApp(
+        WS_URL,
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+    
+    # 运行WebSocket连接，设置超时时间
+    ws.run_forever()
+
+def run_api_tests():
+    """运行所有API测试"""
+    print_info(f"{Colors.BOLD}开始API测试...{Colors.ENDC}")
+    print_info(f"API基本URL: {BASE_URL}")
+    print()
+    
+    # HTTP API测试
+    test_ping()
+    print()
+    
+    test_echo()
+    print()
+    
+    test_echo_post()
+    print()
+    
+    test_delay()
+    print()
+    
+    test_error()
+    print()
+    
+    test_stock()
+    print()
+    
+    test_evaluate()
+    print()
+    
+    # WebSocket测试
+    print_info(f"{Colors.BOLD}开始WebSocket测试...{Colors.ENDC}")
+    print_info(f"WebSocket URL: {WS_URL}")
+    print()
+    
+    test_websocket()
+
+if __name__ == "__main__":
+    run_api_tests() 
+ 

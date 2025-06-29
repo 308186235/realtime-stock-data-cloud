@@ -1,0 +1,586 @@
+<template>
+    <view class="container">
+        <view class="header">
+            <text class="page-title">智能选股推荐详情</text>
+            <text class="subtitle">基于多因子模型和AI技术</text>
+        </view>
+        
+        <view class="filter-section">
+            <view class="filter-row">
+                <text class="filter-label">选股策略:</text>
+                <picker @change="changeStrategy" :value="strategyIndex" :range="strategies">
+                    <view class="picker">
+                        <text>{{strategies[strategyIndex]}}</text>
+                        <text class="arrow-down">▼</text>
+                    </view>
+                </picker>
+            </view>
+            
+            <view class="filter-row">
+                <text class="filter-label">交易模式:</text>
+                <view class="mode-options">
+                    <view 
+                        class="mode-option" 
+                        :class="{active: tradeTimeMode === 'EOD'}" 
+                        @click="setTradeTimeMode('EOD')"
+                    >
+                        尾盘选股
+                    </view>
+                    <view 
+                        class="mode-option" 
+                        :class="{active: tradeTimeMode === 'INTRADAY'}" 
+                        @click="setTradeTimeMode('INTRADAY')"
+                    >
+                        盘中选股
+                    </view>
+                </view>
+            </view>
+            
+            <view class="filter-row">
+                <text class="filter-label">筛选条件:</text>
+                <view class="filter-btns">
+                    <view 
+                        class="filter-btn" 
+                        :class="{active: selectedFilter === 'ALL'}" 
+                        @click="setFilter('ALL')"
+                    >
+                        全部
+                    </view>
+                    <view 
+                        class="filter-btn" 
+                        :class="{active: selectedFilter === 'STRONG_BUY'}" 
+                        @click="setFilter('STRONG_BUY')"
+                    >
+                        强烈推荐
+                    </view>
+                    <view 
+                        class="filter-btn" 
+                        :class="{active: selectedFilter === 'BUY'}" 
+                        @click="setFilter('BUY')"
+                    >
+                        建议买入
+                    </view>
+                </view>
+            </view>
+        </view>
+        
+        <view class="stock-list">
+            <view v-for="(stock, index) in filteredStocks" :key="stock.code" class="stock-card">
+                <view class="stock-info">
+                    <view class="stock-name-code">
+                        <text class="stock-name">{{stock.name}}</text>
+                        <text class="stock-code">{{stock.code}}</text>
+                    </view>
+                    <view class="stock-price">
+                        <text class="current-price">¥{{stock.price}}</text>
+                        <text :class="['price-change', stock.change >= 0 ? 'increase' : 'decrease']">
+                            {{stock.change >= 0 ? '+' : ''}}{{stock.change}}%
+                        </text>
+                    </view>
+                </view>
+                
+                <view class="recommendation">
+                    <view class="score-bar">
+                        <view class="score-label">推荐指数</view>
+                        <view class="score-value">
+                            <view 
+                                class="score-filled" 
+                                :style="{width: stock.score + '%'}"
+                                :class="getScoreColorClass(stock.score)"
+                            ></view>
+                        </view>
+                        <text class="score-number">{{stock.score}}</text>
+                    </view>
+                    
+                    <view class="action">
+                        <text :class="['action-tag', getActionClass(stock.action)]">{{getActionText(stock.action)}}</text>
+                    </view>
+                </view>
+                
+                <view class="stock-factors">
+                    <view class="factor-item" v-for="(factor, idx) in stock.factors" :key="idx">
+                        <text class="factor-name">{{factor.name}}:</text>
+                        <text class="factor-value" :class="factor.isPositive ? 'positive' : 'negative'">
+                            {{factor.value}}
+                        </text>
+                    </view>
+                </view>
+                
+                <view class="stock-actions">
+                    <button class="action-btn details" @click="showStockDetails(stock)">详细分析</button>
+                    <button class="action-btn add-watch" @click="addToWatchlist(stock)">加入自选</button>
+                </view>
+            </view>
+            
+            <view v-if="filteredStocks.length === 0" class="no-data">
+                <text class="no-data-text">暂无符合条件的股票推荐</text>
+            </view>
+        </view>
+    </view>
+</template>
+
+<script>
+export default {
+    data() {
+        return {
+            strategies: ['六脉神剑', '九方智投', '指南针', '威廉指标策略', '多因子综合'],
+            strategyIndex: 4,
+            tradeTimeMode: 'EOD',
+            selectedFilter: 'ALL',
+            stocks: [
+                {
+                    name: '中国平安',
+                    code: '601318',
+                    price: '42.38',
+                    change: 2.15,
+                    score: 85,
+                    action: 'STRONG_BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 8.76', isPositive: true },
+                        { name: '动量', value: '强', isPositive: true },
+                        { name: '威廉指标', value: '-82.5', isPositive: true }
+                    ]
+                },
+                {
+                    name: '茅台',
+                    code: '600519',
+                    price: '1689.00',
+                    change: -0.72,
+                    score: 65,
+                    action: 'BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 35.4', isPositive: false },
+                        { name: '动量', value: '中性', isPositive: true },
+                        { name: '威廉指标', value: '-65.2', isPositive: true }
+                    ]
+                },
+                {
+                    name: '宁德时代',
+                    code: '300750',
+                    price: '218.45',
+                    change: 3.28,
+                    score: 92,
+                    action: 'STRONG_BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 28.5', isPositive: true },
+                        { name: '动量', value: '强', isPositive: true },
+                        { name: '威廉指标', value: '-89.3', isPositive: true }
+                    ]
+                },
+                {
+                    name: '海康威视',
+                    code: '002415',
+                    price: '29.67',
+                    change: 1.85,
+                    score: 75,
+                    action: 'BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 18.2', isPositive: true },
+                        { name: '动量', value: '中性', isPositive: true },
+                        { name: '威廉指标', value: '-63.7', isPositive: false }
+                    ]
+                },
+                {
+                    name: '中国建筑',
+                    code: '601668',
+                    price: '4.58',
+                    change: -0.22,
+                    score: 78,
+                    action: 'BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 4.8', isPositive: true },
+                        { name: '动量', value: '弱', isPositive: false },
+                        { name: '威廉指标', value: '-78.4', isPositive: true }
+                    ]
+                },
+                {
+                    name: '格力电器',
+                    code: '000651',
+                    price: '36.22',
+                    change: 0.86,
+                    score: 88,
+                    action: 'STRONG_BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 10.2', isPositive: true },
+                        { name: '动量', value: '强', isPositive: true },
+                        { name: '威廉指标', value: '-85.3', isPositive: true }
+                    ]
+                },
+                {
+                    name: '招商银行',
+                    code: '600036',
+                    price: '33.56',
+                    change: 1.18,
+                    score: 77,
+                    action: 'BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 7.5', isPositive: true },
+                        { name: '动量', value: '中性', isPositive: true },
+                        { name: '威廉指标', value: '-66.8', isPositive: true }
+                    ]
+                },
+                {
+                    name: '三一重工',
+                    code: '600031',
+                    price: '16.10',
+                    change: -1.23,
+                    score: 66,
+                    action: 'BUY',
+                    factors: [
+                        { name: '估值', value: 'P/E: 14.6', isPositive: true },
+                        { name: '动量', value: '弱', isPositive: false },
+                        { name: '威廉指标', value: '-58.4', isPositive: false }
+                    ]
+                }
+            ]
+        };
+    },
+    computed: {
+        filteredStocks() {
+            if (this.selectedFilter === 'ALL') {
+                return this.stocks;
+            } else if (this.selectedFilter === 'STRONG_BUY') {
+                return this.stocks.filter(stock => stock.action === 'STRONG_BUY');
+            } else if (this.selectedFilter === 'BUY') {
+                return this.stocks.filter(stock => stock.action === 'BUY');
+            }
+            return this.stocks;
+        }
+    },
+    methods: {
+        changeStrategy(e) {
+            this.strategyIndex = e.detail.value;
+            // 实际应用中这里应该重新请求数据
+            uni.showToast({
+                title: '已切换到' + this.strategies[this.strategyIndex] + '策略',
+                icon: 'none'
+            });
+        },
+        setTradeTimeMode(mode) {
+            this.tradeTimeMode = mode;
+            // 实际应用中这里应该重新请求数据
+            uni.showToast({
+                title: '已切换到' + (mode === 'EOD' ? '尾盘选股' : '盘中选股') + '模式',
+                icon: 'none'
+            });
+        },
+        setFilter(filter) {
+            this.selectedFilter = filter;
+        },
+        getScoreColorClass(score) {
+            if (score >= 80) return 'score-high';
+            if (score >= 60) return 'score-medium';
+            return 'score-low';
+        },
+        getActionClass(action) {
+            if (action === 'STRONG_BUY') return 'strong-buy';
+            if (action === 'BUY') return 'buy';
+            if (action === 'HOLD') return 'hold';
+            if (action === 'SELL') return 'sell';
+            return '';
+        },
+        getActionText(action) {
+            if (action === 'STRONG_BUY') return '强烈推荐';
+            if (action === 'BUY') return '建议买入';
+            if (action === 'HOLD') return '持有';
+            if (action === 'SELL') return '建议卖出';
+            return '';
+        },
+        showStockDetails(stock) {
+            // 保存股票信息
+            uni.setStorageSync('selectedStock', JSON.stringify(stock));
+            // 跳转到详情页
+            uni.navigateTo({
+                url: '/pages/stock-picking/detail?code=' + stock.code
+            });
+        },
+        addToWatchlist(stock) {
+            uni.showToast({
+                title: stock.name + '已加入自选',
+                icon: 'success'
+            });
+        }
+    }
+};
+</script>
+
+<style scoped>
+.container {
+    padding: 20px;
+}
+
+.header {
+    margin-bottom: 20px;
+}
+
+.page-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #333;
+}
+
+.subtitle {
+    font-size: 14px;
+    color: #666;
+    margin-top: 5px;
+    display: block;
+}
+
+.filter-section {
+    background-color: #f5f5f5;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.filter-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.filter-label {
+    width: 80px;
+    font-size: 14px;
+    color: #333;
+}
+
+.picker {
+    flex: 1;
+    height: 36px;
+    background-color: #fff;
+    border-radius: 4px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.arrow-down {
+    font-size: 12px;
+    color: #666;
+}
+
+.mode-options, .filter-btns {
+    display: flex;
+    flex: 1;
+}
+
+.mode-option, .filter-btn {
+    padding: 8px 15px;
+    background-color: #fff;
+    border-radius: 4px;
+    margin-right: 10px;
+    font-size: 14px;
+    color: #333;
+}
+
+.mode-option.active, .filter-btn.active {
+    background-color: #1989fa;
+    color: #fff;
+}
+
+.stock-list {
+    margin-top: 20px;
+}
+
+.stock-card {
+    background-color: #fff;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.stock-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.stock-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.stock-code {
+    font-size: 12px;
+    color: #666;
+    margin-left: 5px;
+}
+
+.current-price {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.price-change {
+    font-size: 14px;
+    margin-left: 5px;
+}
+
+.increase {
+    color: #f56c6c;
+}
+
+.decrease {
+    color: #4caf50;
+}
+
+.recommendation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.score-bar {
+    display: flex;
+    align-items: center;
+    flex: 1;
+}
+
+.score-label {
+    width: 70px;
+    font-size: 14px;
+    color: #333;
+}
+
+.score-value {
+    flex: 1;
+    height: 10px;
+    background-color: #e0e0e0;
+    border-radius: 5px;
+    margin: 0 10px;
+    overflow: hidden;
+}
+
+.score-filled {
+    height: 100%;
+    border-radius: 5px;
+}
+
+.score-high {
+    background-color: #67c23a;
+}
+
+.score-medium {
+    background-color: #e6a23c;
+}
+
+.score-low {
+    background-color: #f56c6c;
+}
+
+.score-number {
+    width: 30px;
+    font-size: 14px;
+    color: #333;
+}
+
+.action {
+    margin-left: 10px;
+}
+
+.action-tag {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.strong-buy {
+    background-color: #f56c6c;
+    color: #fff;
+}
+
+.buy {
+    background-color: #e6a23c;
+    color: #fff;
+}
+
+.hold {
+    background-color: #909399;
+    color: #fff;
+}
+
+.sell {
+    background-color: #4caf50;
+    color: #fff;
+}
+
+.stock-factors {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #f9f9f9;
+    border-radius: 4px;
+}
+
+.factor-item {
+    display: flex;
+    align-items: center;
+    margin-right: 15px;
+    margin-bottom: 5px;
+}
+
+.factor-name {
+    font-size: 12px;
+    color: #666;
+}
+
+.factor-value {
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.positive {
+    color: #f56c6c;
+}
+
+.negative {
+    color: #4caf50;
+}
+
+.stock-actions {
+    display: flex;
+    justify-content: space-between;
+}
+
+.action-btn {
+    flex: 1;
+    height: 36px;
+    line-height: 36px;
+    text-align: center;
+    border-radius: 4px;
+    font-size: 14px;
+    margin: 0 5px;
+}
+
+.action-btn.details {
+    background-color: #1989fa;
+    color: #fff;
+}
+
+.action-btn.add-watch {
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.no-data {
+    padding: 50px 0;
+    text-align: center;
+}
+
+.no-data-text {
+    font-size: 14px;
+    color: #999;
+}
+</style> 

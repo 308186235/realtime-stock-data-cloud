@@ -1,0 +1,672 @@
+<template>
+  <div class="agent-dashboard">
+    <div class="dashboard-header">
+      <h2>智能交易Agent控制面板</h2>
+      <div class="agent-status" :class="{ active: agentActive }">
+        <span class="status-dot"></span>
+        <span class="status-text">{{ agentActive ? '运行中' : '已停止' }}</span>
+      </div>
+    </div>
+
+    <div class="control-panel">
+      <div class="control-group">
+        <h3>Agent控制</h3>
+        <div class="button-group">
+          <button class="primary" @click="startAgent" :disabled="agentActive">启动</button>
+          <button class="danger" @click="stopAgent" :disabled="!agentActive">停止</button>
+          <button class="secondary" @click="refreshStatus">刷新状态</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>交易执行</h3>
+        <div class="toggle-container">
+          <div class="toggle-label">自动交易:</div>
+          <div class="toggle-switch">
+            <input type="checkbox" id="auto-trade-toggle" v-model="autoTradeEnabled" @change="toggleAutoTrade" />
+            <label for="auto-trade-toggle"></label>
+          </div>
+          <div class="toggle-status" :class="{ 'enabled': autoTradeEnabled }">
+            {{ autoTradeEnabled ? '已启用' : '已禁用' }}
+          </div>
+        </div>
+        <div class="trade-mode-info">
+          <div class="info-label">交易模式:</div>
+          <div class="info-value">{{ autoTradeEnabled ? '实盘交易' : '模拟交易' }}</div>
+        </div>
+        <div class="warning-message" v-if="autoTradeEnabled">
+          <i class="warning-icon">⚠️</i>
+          <span>警告: 实盘交易模式已启用,将执行真实交易操作</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="statistics-panel">
+      <div class="stats-group">
+        <h3>运行状态</h3>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">运行时间</div>
+            <div class="stat-value">{{ formatUptime }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">决策次数</div>
+            <div class="stat-value">{{ stats.decisionCount || 0 }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">执行交易</div>
+            <div class="stat-value">{{ stats.executedTradesCount || 0 }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">CPU使用率</div>
+            <div class="stat-value">{{ stats.cpuUsage || '0' }}%</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">内存使用</div>
+            <div class="stat-value">{{ stats.memoryUsage || '0' }}MB</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-group">
+        <h3>交易执行器</h3>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-label">当日交易</div>
+            <div class="stat-value">{{ executorStats.dailyTrades || 0 }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">活跃订单</div>
+            <div class="stat-value">{{ executorStats.activeOrdersCount || 0 }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">持仓数量</div>
+            <div class="stat-value">{{ executorStats.positionsCount || 0 }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">账户余额</div>
+            <div class="stat-value">{{ formatCurrency(executorStats.accountBalance) }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">投资组合价值</div>
+            <div class="stat-value">{{ formatCurrency(executorStats.portfolioValue) }}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">未实现盈亏</div>
+            <div class="stat-value" :class="getPnlClass(executorStats.totalUnrealizedPnl)">
+              {{ formatCurrency(executorStats.totalUnrealizedPnl) }}
+            </div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">已实现盈亏</div>
+            <div class="stat-value" :class="getPnlClass(executorStats.totalRealizedPnl)">
+              {{ formatCurrency(executorStats.totalRealizedPnl) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="recent-activities">
+      <h3>最近活动</h3>
+      <div class="activity-list">
+        <div v-if="activities.length === 0" class="no-activities">
+          暂无活动记录
+        </div>
+        <div v-else v-for="(activity, index) in activities" :key="index" class="activity-item">
+          <div class="activity-time">{{ formatActivityTime(activity.timestamp) }}</div>
+          <div class="activity-type" :class="activity.type">{{ activity.type }}</div>
+          <div class="activity-message">{{ activity.message }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted, computed, onUnmounted } from 'vue';
+import { useAgentService } from '../services/aiService';
+
+export default {
+  name: 'AgentDashboard',
+  setup() {
+    const agentService = useAgentService();
+    
+    const agentActive = ref(false);
+    const autoTradeEnabled = ref(false);
+    const startTime = ref(null);
+    const stats = ref({});
+    const executorStats = ref({});
+    const activities = ref([]);
+    
+    // 定时刷新状态
+    let statusInterval = null;
+    
+    const formatUptime = computed(() => {
+      if (!startTime.value) return '0分钟';
+      
+      const now = new Date();
+      const diff = Math.floor((now - new Date(startTime.value)) / 1000);
+      
+      const hours = Math.floor(diff / 3600);
+      const minutes = Math.floor((diff % 3600) / 60);
+      
+      if (hours > 0) {
+        return `${hours}小时 ${minutes}分钟`;
+      } else {
+        return `${minutes}分钟`;
+      }
+    });
+    
+    // 格式化货币
+    const formatCurrency = (value) => {
+      if (value === undefined || value === null) return '¥0.00';
+      
+      return new Intl.NumberFormat('zh-CN', {
+        style: 'currency',
+        currency: 'CNY',
+        minimumFractionDigits: 2
+      }).format(value);
+    };
+    
+    // 获取盈亏的CSS类
+    const getPnlClass = (value) => {
+      if (!value) return '';
+      return value > 0 ? 'positive' : value < 0 ? 'negative' : '';
+    };
+    
+    // 格式化活动时间
+    const formatActivityTime = (timestamp) => {
+      if (!timestamp) return '';
+      
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    };
+    
+    // 启动Agent
+    const startAgent = async () => {
+      try {
+        const result = await agentService.startAgent();
+        if (result.status === 'success') {
+          agentActive.value = true;
+          startTime.value = new Date().toISOString();
+          addActivity('系统', '成功启动Agent');
+          await refreshStatus();
+        }
+      } catch (error) {
+        console.error('启动Agent失败:', error);
+        addActivity('错误', '启动Agent失败');
+      }
+    };
+    
+    // 停止Agent
+    const stopAgent = async () => {
+      try {
+        const result = await agentService.stopAgent();
+        if (result.status === 'success') {
+          agentActive.value = false;
+          addActivity('系统', '成功停止Agent');
+          await refreshStatus();
+        }
+      } catch (error) {
+        console.error('停止Agent失败:', error);
+        addActivity('错误', '停止Agent失败');
+      }
+    };
+    
+    // 刷新状态
+    const refreshStatus = async () => {
+      try {
+        const status = await agentService.getAgentStatus();
+        agentActive.value = status.active || false;
+        
+        if (status.uptime) {
+          const uptimeInSeconds = status.uptime;
+          const uptimeDate = new Date();
+          uptimeDate.setSeconds(uptimeDate.getSeconds() - uptimeInSeconds);
+          startTime.value = uptimeDate.toISOString();
+        }
+        
+        // 更新统计信息
+        stats.value = {
+          decisionCount: status.decision_state?.decision_history?.length || 0,
+          executedTradesCount: status.execution_state?.executed_trades_count || 0,
+          cpuUsage: status.system_state?.resource_usage?.cpu || 0,
+          memoryUsage: status.system_state?.resource_usage?.memory || 0
+        };
+        
+        // 获取交易执行器状态
+        if (agentActive.value) {
+          const executorStatus = await agentService.getExecutorStatus();
+          executorStats.value = {
+            dailyTrades: executorStatus.daily_trades || 0,
+            activeOrdersCount: executorStatus.active_orders_count || 0,
+            positionsCount: executorStatus.positions_count || 0,
+            accountBalance: executorStatus.account_balance || 0,
+            portfolioValue: executorStatus.portfolio_value || 0,
+            totalUnrealizedPnl: executorStatus.total_unrealized_pnl || 0,
+            totalRealizedPnl: executorStatus.total_realized_pnl || 0
+          };
+          
+          // 获取自动交易状态
+          autoTradeEnabled.value = !executorStatus.is_paper_trading;
+        }
+      } catch (error) {
+        console.error('获取状态失败:', error);
+      }
+    };
+    
+    // 切换自动交易
+    const toggleAutoTrade = async () => {
+      try {
+        const result = await agentService.setAutoTradeMode(autoTradeEnabled.value);
+        if (result.status === 'success') {
+          addActivity('交易模式', 
+            autoTradeEnabled.value ? '已切换到实盘交易模式' : '已切换到模拟交易模式');
+        } else {
+          // 如果失败,恢复原始状态
+          autoTradeEnabled.value = !autoTradeEnabled.value;
+          addActivity('错误', '切换交易模式失败');
+        }
+      } catch (error) {
+        console.error('切换自动交易模式失败:', error);
+        // 如果出错,恢复原始状态
+        autoTradeEnabled.value = !autoTradeEnabled.value;
+        addActivity('错误', '切换交易模式失败');
+      }
+    };
+    
+    // 添加活动记录
+    const addActivity = (type, message) => {
+      activities.value.unshift({
+        type: type,
+        message: message,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 限制最多显示20条记录
+      if (activities.value.length > 20) {
+        activities.value = activities.value.slice(0, 20);
+      }
+    };
+    
+    onMounted(async () => {
+      // 初始化
+      await refreshStatus();
+      
+      // 设置定时刷新
+      statusInterval = setInterval(refreshStatus, 10000);
+    });
+    
+    onUnmounted(() => {
+      // 清除定时器
+      if (statusInterval) {
+        clearInterval(statusInterval);
+      }
+    });
+    
+    return {
+      agentActive,
+      autoTradeEnabled,
+      stats,
+      executorStats,
+      activities,
+      formatUptime,
+      formatCurrency,
+      getPnlClass,
+      formatActivityTime,
+      startAgent,
+      stopAgent,
+      refreshStatus,
+      toggleAutoTrade
+    };
+  }
+}
+</script>
+
+<style scoped>
+.agent-dashboard {
+  background-color: #1e1e2d;
+  border-radius: 8px;
+  padding: 20px;
+  color: #e4e6ef;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #2b2b40;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #ffffff;
+}
+
+.agent-status {
+  display: flex;
+  align-items: center;
+  background-color: #2b2b40;
+  padding: 6px 12px;
+  border-radius: 50px;
+}
+
+.agent-status .status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #f64e60;
+  margin-right: 8px;
+}
+
+.agent-status.active .status-dot {
+  background-color: #0bb783;
+}
+
+.control-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.control-group {
+  background-color: #2b2b40;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.control-group h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+  color: #ffffff;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+}
+
+button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background-color: #3699ff;
+  color: white;
+}
+
+button.primary:hover:not(:disabled) {
+  background-color: #187de4;
+}
+
+button.danger {
+  background-color: #f64e60;
+  color: white;
+}
+
+button.danger:hover:not(:disabled) {
+  background-color: #ee2d41;
+}
+
+button.secondary {
+  background-color: #474761;
+  color: white;
+}
+
+button.secondary:hover:not(:disabled) {
+  background-color: #3a3a52;
+}
+
+.toggle-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.toggle-label {
+  width: 100px;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-switch label {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #474761;
+  transition: 0.4s;
+  border-radius: 34px;
+}
+
+.toggle-switch label::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + label {
+  background-color: #0bb783;
+}
+
+.toggle-switch input:checked + label::before {
+  transform: translateX(26px);
+}
+
+.toggle-status {
+  margin-left: 10px;
+  color: #92929f;
+}
+
+.toggle-status.enabled {
+  color: #0bb783;
+}
+
+.trade-mode-info {
+  display: flex;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.info-label {
+  width: 100px;
+}
+
+.warning-message {
+  display: flex;
+  align-items: center;
+  background-color: rgba(246, 78, 96, 0.1);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-top: 10px;
+  color: #f64e60;
+}
+
+.warning-icon {
+  margin-right: 8px;
+}
+
+.statistics-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.stats-group {
+  background-color: #2b2b40;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.stats-group h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+  color: #ffffff;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.stat-item {
+  padding: 10px;
+  background-color: #1e1e2d;
+  border-radius: 6px;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: #92929f;
+  margin-bottom: 5px;
+}
+
+.stat-value {
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.stat-value.positive {
+  color: #0bb783;
+}
+
+.stat-value.negative {
+  color: #f64e60;
+}
+
+.recent-activities {
+  background-color: #2b2b40;
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.recent-activities h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+  color: #ffffff;
+}
+
+.activity-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.no-activities {
+  text-align: center;
+  padding: 20px;
+  color: #92929f;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid #323248;
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+}
+
+.activity-time {
+  font-size: 0.8rem;
+  color: #92929f;
+  width: 80px;
+}
+
+.activity-type {
+  font-size: 0.8rem;
+  margin: 0 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-align: center;
+  width: 60px;
+}
+
+.activity-type.系统 {
+  background-color: #3699ff;
+  color: white;
+}
+
+.activity-type.交易 {
+  background-color: #0bb783;
+  color: white;
+}
+
+.activity-type.决策 {
+  background-color: #8950fc;
+  color: white;
+}
+
+.activity-type.风险 {
+  background-color: #ffa800;
+  color: white;
+}
+
+.activity-type.错误 {
+  background-color: #f64e60;
+  color: white;
+}
+
+.activity-type.交易模式 {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.activity-message {
+  flex: 1;
+}
+
+@media (max-width: 768px) {
+  .control-panel,
+  .statistics-panel {
+    grid-template-columns: 1fr;
+  }
+}
+</style> 

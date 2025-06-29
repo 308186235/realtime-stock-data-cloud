@@ -1,0 +1,822 @@
+<template>
+	<view class="container">
+		<view class="dashboard-header">
+			<view class="header-content">
+				<text class="dashboard-title">市场追踪</text>
+				<text class="dashboard-subtitle">实时监控市场动态与热点</text>
+			</view>
+			<view class="header-action">
+				<button class="global-refresh-btn" @tap="refreshAllData">
+					<text class="btn-icon">↻</text> 全部刷新
+				</button>
+			</view>
+		</view>
+		
+		<!-- 大盘指数 -->
+		<view class="section market-indices-section">
+			<view class="section-header">
+				<view class="section-title-container">
+					<text class="section-title">大盘指数</text>
+					<text class="section-badge market-indices">实时行情</text>
+				</view>
+				<text class="refresh-btn" @tap="refreshIndices">刷新</text>
+			</view>
+			
+			<scroll-view scroll-x class="indices-scroll" show-scrollbar="false">
+				<view class="indices-list">
+					<view class="index-item" v-for="(item, index) in marketIndices" :key="index">
+						<text class="index-name">{{ item.name }}</text>
+						<text class="index-value">{{ item.value }}</text>
+						<text :class="['index-change', item.change >= 0 ? 'increase' : 'decrease']">
+							{{ item.change >= 0 ? '+' : '' }}{{ item.change }}%
+						</text>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+		
+		<view class="two-column-grid">
+			<!-- 热点板块 -->
+			<view class="section hot-sectors-section">
+				<view class="section-header">
+					<view class="section-title-container">
+						<text class="section-title">热点板块</text>
+						<text class="section-badge hot-sectors">板块分析</text>
+					</view>
+					<text class="refresh-btn" @tap="refreshSectors">刷新</text>
+				</view>
+				
+				<view class="sectors-grid">
+					<view class="sector-item" v-for="(item, index) in hotSectors" :key="index" @tap="showSectorDetail(item)">
+						<view class="sector-info">
+							<text class="sector-name">{{ item.name }}</text>
+							<text :class="['sector-change', item.change >= 0 ? 'increase' : 'decrease']">
+								{{ item.change >= 0 ? '+' : '' }}{{ item.change }}%
+							</text>
+						</view>
+						<view class="sector-progress">
+							<view class="progress-bar">
+								<view class="progress-inner" :style="{ width: item.momentum * 100 + '%', backgroundColor: item.change >= 0 ? '#f5222d' : '#52c41a' }"></view>
+							</view>
+							<text class="momentum-text">热度 {{ Math.round(item.momentum * 100) }}%</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 市场热度图 -->
+			<view class="section heatmap-section">
+				<view class="section-header">
+					<view class="section-title-container">
+						<text class="section-title">市场热度图</text>
+						<text class="section-badge heatmap-badge">趋势分析</text>
+					</view>
+				</view>
+				
+				<view class="heatmap">
+					<canvas canvas-id="marketHeatmap" class="heatmap-canvas"></canvas>
+					<view class="heatmap-legend">
+						<view class="legend-item">
+							<view class="legend-color strong-rise"></view>
+							<text class="legend-text">强势上涨</text>
+						</view>
+						<view class="legend-item">
+							<view class="legend-color rise"></view>
+							<text class="legend-text">上涨</text>
+						</view>
+						<view class="legend-item">
+							<view class="legend-color fall"></view>
+							<text class="legend-text">下跌</text>
+						</view>
+						<view class="legend-item">
+							<view class="legend-color strong-fall"></view>
+							<text class="legend-text">强势下跌</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 个股监控 -->
+		<view class="section stocks-section">
+			<view class="section-header">
+				<view class="section-title-container">
+					<text class="section-title">个股监控</text>
+					<text class="section-badge stock-monitor">实时跟踪</text>
+				</view>
+				<text class="add-btn" @tap="showAddStockModal">+添加</text>
+			</view>
+			
+			<view class="stock-list">
+				<view class="stock-item" v-for="(item, index) in watchedStocks" :key="index">
+					<view class="stock-main-info">
+						<view class="stock-info">
+							<text class="stock-code">{{ item.code }}</text>
+							<text class="stock-name">{{ item.name }}</text>
+						</view>
+						<view class="stock-price">
+							<text class="price-value">¥{{ item.price }}</text>
+							<text :class="['price-change', item.change >= 0 ? 'increase' : 'decrease']">
+								{{ item.change >= 0 ? '+' : '' }}{{ item.change }}%
+							</text>
+						</view>
+					</view>
+					<view class="stock-actions">
+						<text class="action-btn buy" @tap="showTradeModal(item, 'buy')">买入</text>
+						<text class="action-btn sell" @tap="showTradeModal(item, 'sell')">卖出</text>
+						<text class="action-btn remove" @tap="removeStock(index)">移除</text>
+					</view>
+				</view>
+				
+				<view v-if="watchedStocks.length === 0" class="empty-tip">
+					<text class="empty-text">暂无监控的个股，点击"+添加"开始监控</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script>
+export default {
+	data() {
+		return {
+			// 大盘指数
+			marketIndices: [
+				{ name: '上证指数', value: '3,258.63', change: 0.56 },
+				{ name: '深证成指', value: '10,825.93', change: -0.23 },
+				{ name: '创业板指', value: '2,156.78', change: 1.05 },
+				{ name: '上证50', value: '2,876.32', change: 0.35 },
+				{ name: '沪深300', value: '3,952.46', change: 0.42 }
+			],
+			
+			// 热点板块
+			hotSectors: [
+				{ name: '半导体', change: 2.35, momentum: 0.85 },
+				{ name: '新能源', change: 1.87, momentum: 0.76 },
+				{ name: '医药生物', change: -0.56, momentum: 0.42 },
+				{ name: '人工智能', change: 3.12, momentum: 0.92 },
+				{ name: '消费电子', change: 1.45, momentum: 0.68 },
+				{ name: '金融', change: -0.78, momentum: 0.35 }
+			],
+			
+			// 个股监控
+			watchedStocks: [
+				{ code: 'SH600519', name: '贵州茅台', price: '1,789.50', change: 1.25 },
+				{ code: 'SZ000858', name: '五粮液', price: '168.75', change: -0.85 },
+				{ code: 'SH601318', name: '中国平安', price: '48.32', change: 0.45 }
+			]
+		}
+	},
+	methods: {
+		// 刷新所有数据
+		refreshAllData() {
+			this.refreshIndices();
+			this.refreshSectors();
+			this.drawHeatmap();
+			
+			uni.showToast({
+				title: '所有数据已刷新',
+				icon: 'success'
+			});
+		},
+		
+		// 刷新大盘指数
+		refreshIndices() {
+			// 模拟数据更新
+			this.marketIndices.forEach(item => {
+				const randomChange = (Math.random() * 2 - 1).toFixed(2);
+				item.change = parseFloat(randomChange);
+			});
+			
+			uni.showToast({
+				title: '指数数据已更新',
+				icon: 'success'
+			});
+		},
+		
+		// 刷新板块数据
+		refreshSectors() {
+			// 模拟数据更新
+			this.hotSectors.forEach(item => {
+				const randomChange = (Math.random() * 4 - 2).toFixed(2);
+				item.change = parseFloat(randomChange);
+				item.momentum = Math.random() * 0.5 + 0.3;
+			});
+			
+			// 按涨幅排序
+			this.hotSectors.sort((a, b) => b.change - a.change);
+			
+			uni.showToast({
+				title: '板块数据已更新',
+				icon: 'success'
+			});
+		},
+		
+		// 显示板块详情
+		showSectorDetail(sector) {
+			uni.showModal({
+				title: sector.name + '板块详情',
+				content: `当前涨跌幅: ${sector.change}%\n成交量: ${(Math.random() * 1000).toFixed(0)}亿\n主力资金: ${sector.change > 0 ? '净流入' : '净流出'}${(Math.random() * 50).toFixed(1)}亿`,
+				showCancel: false
+			});
+		},
+		
+		// 显示添加股票弹窗
+		showAddStockModal() {
+			uni.showModal({
+				title: '添加监控股票',
+				content: '请输入股票代码',
+				editable: true,
+				placeholderText: '如: SH600519',
+				success: (res) => {
+					if (res.confirm && res.content) {
+						// 模拟添加股票
+						const stockCode = res.content.toUpperCase();
+						const newStock = {
+							code: stockCode,
+							name: this.getRandomStockName(),
+							price: (Math.random() * 100 + 50).toFixed(2),
+							change: (Math.random() * 4 - 2).toFixed(2)
+						};
+						
+						this.watchedStocks.push(newStock);
+						
+						uni.showToast({
+							title: '已添加到监控列表',
+							icon: 'success'
+						});
+					}
+				}
+			});
+		},
+		
+		// 显示交易弹窗
+		showTradeModal(stock, action) {
+			uni.showModal({
+				title: `${action === 'buy' ? '买入' : '卖出'} ${stock.name}`,
+				content: `当前价格: ${stock.price}\n请确认是否${action === 'buy' ? '买入' : '卖出'}?`,
+				success: (res) => {
+					if (res.confirm) {
+						uni.showToast({
+							title: `已发出${action === 'buy' ? '买入' : '卖出'}委托`,
+							icon: 'success'
+						});
+					}
+				}
+			});
+		},
+		
+		// 移除监控的股票
+		removeStock(index) {
+			uni.showModal({
+				title: '移除确认',
+				content: `确定要移除 ${this.watchedStocks[index].name} 的监控吗？`,
+				success: (res) => {
+					if (res.confirm) {
+						this.watchedStocks.splice(index, 1);
+						
+						uni.showToast({
+							title: '已移除监控',
+							icon: 'success'
+						});
+					}
+				}
+			});
+		},
+		
+		// 生成随机股票名称（模拟用）
+		getRandomStockName() {
+			const prefixes = ['中国', '国泰', '华夏', '东方', '南方', '北方', '西部', '科技', '创新', '未来'];
+			const suffixes = ['科技', '电子', '医药', '能源', '金融', '证券', '保险', '通信', '汽车', '食品'];
+			
+			return prefixes[Math.floor(Math.random() * prefixes.length)] + 
+				   suffixes[Math.floor(Math.random() * suffixes.length)];
+		},
+		
+		// 绘制市场热度图
+		drawHeatmap() {
+			const ctx = uni.createCanvasContext('marketHeatmap', this);
+			const width = 300;
+			const height = 200;
+			
+			// 清空画布
+			ctx.clearRect(0, 0, width, height);
+			
+			// 绘制背景
+			ctx.setFillStyle('#f8f8f8');
+			ctx.fillRect(0, 0, width, height);
+			
+			// 生成热度图数据 (10x6网格)
+			const gridWidth = 10;
+			const gridHeight = 6;
+			const cellWidth = width / gridWidth;
+			const cellHeight = height / gridHeight;
+			
+			// 绘制热度格子
+			for (let i = 0; i < gridWidth; i++) {
+				for (let j = 0; j < gridHeight; j++) {
+					// 随机生成涨跌幅 (-5% 到 +5%)
+					const change = Math.random() * 10 - 5;
+					
+					// 根据涨跌幅设置颜色
+					let color;
+					if (change > 3) {
+						color = '#ef5350'; // 深红
+					} else if (change > 1) {
+						color = '#f5766c'; // 红色
+					} else if (change > 0) {
+						color = '#ffcdd2'; // 浅红
+					} else if (change > -1) {
+						color = '#c8e6c9'; // 浅绿
+					} else if (change > -3) {
+						color = '#81c784'; // 绿色
+					} else {
+						color = '#4caf50'; // 深绿
+					}
+					
+					ctx.setFillStyle(color);
+					ctx.fillRect(i * cellWidth, j * cellHeight, cellWidth - 1, cellHeight - 1);
+				}
+			}
+			
+			// 绘制标题
+			ctx.setFillStyle('#333');
+			ctx.setFontSize(12);
+			ctx.fillText('市场热度图 (红涨绿跌)', 10, 20);
+			
+			// 提交绘制
+			ctx.draw();
+		}
+	},
+	onLoad() {
+		// 绘制热度图
+		setTimeout(() => {
+			this.drawHeatmap();
+		}, 300);
+	}
+}
+</script>
+
+<style>
+.container {
+	padding: 20rpx;
+	background-color: #f0f2f5;
+}
+
+.dashboard-header {
+	margin-bottom: 30rpx;
+	background: linear-gradient(135deg, #1a237e, #0d47a1, #01579b);
+	padding: 30rpx 24rpx;
+	border-radius: 16rpx;
+	color: white;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.15);
+}
+
+.dashboard-title {
+	font-size: 40rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+	display: block;
+}
+
+.dashboard-subtitle {
+	font-size: 24rpx;
+	color: rgba(255, 255, 255, 0.8);
+}
+
+.global-refresh-btn {
+	background-color: rgba(255, 255, 255, 0.2);
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	color: white;
+	padding: 8rpx 24rpx;
+	border-radius: 30rpx;
+	font-size: 24rpx;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.1);
+}
+
+.btn-icon {
+	font-weight: bold;
+	margin-right: 8rpx;
+}
+
+.two-column-grid {
+	display: flex;
+	gap: 20rpx;
+	margin-bottom: 30rpx;
+}
+
+.hot-sectors-section, .heatmap-section {
+	flex: 1;
+	min-width: 0;
+}
+
+.section {
+	margin-bottom: 30rpx;
+	background-color: #fff;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.08);
+	overflow: hidden;
+}
+
+.market-indices-section {
+	border-left: 5rpx solid #1890ff;
+}
+
+.hot-sectors-section {
+	border-left: 5rpx solid #fa8c16;
+}
+
+.stocks-section {
+	border-left: 5rpx solid #52c41a;
+}
+
+.heatmap-section {
+	border-left: 5rpx solid #722ed1;
+}
+
+.section-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20rpx;
+	border-bottom: 1px solid #eee;
+	padding-bottom: 16rpx;
+}
+
+.section-title-container {
+	display: flex;
+	align-items: center;
+}
+
+.section-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	margin-right: 12rpx;
+}
+
+.section-badge {
+	font-size: 22rpx;
+	padding: 4rpx 12rpx;
+	border-radius: 10rpx;
+}
+
+.section-badge.market-indices {
+	background-color: #e6f7ff;
+	color: #1890ff;
+}
+
+.section-badge.hot-sectors {
+	background-color: #fff7e6;
+	color: #fa8c16;
+}
+
+.section-badge.stock-monitor {
+	background-color: #f6ffed;
+	color: #52c41a;
+}
+
+.section-badge.heatmap-badge {
+	background-color: #f9f0ff;
+	color: #722ed1;
+}
+
+.refresh-btn, .add-btn {
+	font-size: 24rpx;
+	color: #1989fa;
+	background: rgba(25, 137, 250, 0.1);
+	padding: 6rpx 16rpx;
+	border-radius: 30rpx;
+	transition: all 0.3s;
+}
+
+.refresh-btn:active, .add-btn:active {
+	background: rgba(25, 137, 250, 0.2);
+	transform: scale(0.95);
+}
+
+/* 大盘指数样式 */
+.indices-scroll {
+	width: 100%;
+	white-space: nowrap;
+}
+
+.indices-list {
+	display: flex;
+	flex-direction: row;
+	padding: 20rpx 0 10rpx;
+	gap: 16rpx;
+}
+
+.index-item {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 20rpx 30rpx;
+	background: linear-gradient(to bottom, #ffffff, #f5f5f5);
+	border: 1px solid #eaeaea;
+	border-radius: 12rpx;
+	min-width: 180rpx;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+	transition: all 0.3s;
+}
+
+.index-item:active {
+	transform: translateY(2rpx);
+	box-shadow: 0 1rpx 3rpx rgba(0, 0, 0, 0.1);
+}
+
+.index-name {
+	font-size: 24rpx;
+	color: #666;
+	margin-bottom: 10rpx;
+}
+
+.index-value {
+	font-size: 32rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+}
+
+.index-change {
+	font-size: 24rpx;
+	padding: 4rpx 12rpx;
+	border-radius: 20rpx;
+	font-weight: bold;
+}
+
+.increase {
+	color: #fff;
+	background-color: #f5222d;
+}
+
+.decrease {
+	color: #fff;
+	background-color: #52c41a;
+}
+
+/* 热点板块样式 */
+.sectors-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 16rpx;
+}
+
+.sector-item {
+	padding: 20rpx;
+	background: linear-gradient(to right, #ffffff, #f8f8f8);
+	border-radius: 12rpx;
+	border: 1px solid #f0f0f0;
+	transition: all 0.3s;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03);
+}
+
+.sector-item:active {
+	transform: scale(0.98);
+	box-shadow: 0 0 10rpx rgba(0, 0, 0, 0.1);
+}
+
+.sector-info {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 15rpx;
+}
+
+.sector-name {
+	font-size: 28rpx;
+	font-weight: bold;
+}
+
+.sector-change {
+	font-size: 26rpx;
+	padding: 2rpx 12rpx;
+	border-radius: 20rpx;
+	font-weight: bold;
+}
+
+.sector-progress {
+	margin-top: 10rpx;
+}
+
+.progress-bar {
+	height: 12rpx;
+	background-color: #f0f0f0;
+	border-radius: 6rpx;
+	overflow: hidden;
+	margin-bottom: 8rpx;
+}
+
+.progress-inner {
+	height: 100%;
+	border-radius: 6rpx;
+}
+
+.momentum-text {
+	font-size: 20rpx;
+	color: #999;
+	text-align: right;
+}
+
+/* 个股监控样式 */
+.stock-list {
+	padding: 10rpx 0;
+	display: flex;
+	flex-direction: column;
+	gap: 16rpx;
+}
+
+.stock-item {
+	display: flex;
+	flex-direction: column;
+	padding: 24rpx;
+	border-radius: 12rpx;
+	background: linear-gradient(to bottom, #ffffff, #fafafa);
+	border: 1px solid #eaeaea;
+	box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.05);
+	gap: 16rpx;
+}
+
+.stock-main-info {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.stock-info {
+	flex: 1;
+}
+
+.stock-code {
+	font-size: 24rpx;
+	color: #666;
+	margin-bottom: 5rpx;
+}
+
+.stock-name {
+	font-size: 32rpx;
+	font-weight: bold;
+}
+
+.stock-price {
+	text-align: right;
+}
+
+.price-value {
+	font-size: 32rpx;
+	font-weight: bold;
+	margin-bottom: 5rpx;
+	display: block;
+}
+
+.price-change {
+	font-size: 24rpx;
+	padding: 4rpx 12rpx;
+	border-radius: 20rpx;
+	font-weight: bold;
+}
+
+.stock-actions {
+	display: flex;
+	gap: 12rpx;
+}
+
+.action-btn {
+	flex: 1;
+	padding: 12rpx 0;
+	font-size: 24rpx;
+	border-radius: 8rpx;
+	text-align: center;
+	font-weight: bold;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+	transition: all 0.3s;
+}
+
+.action-btn:active {
+	transform: scale(0.95);
+}
+
+.buy {
+	background: linear-gradient(to right, #ff4d4f, #ff7875);
+	color: white;
+}
+
+.sell {
+	background: linear-gradient(to right, #52c41a, #73d13d);
+	color: white;
+}
+
+.remove {
+	background: linear-gradient(to right, #f0f0f0, #d9d9d9);
+	color: #666;
+}
+
+.empty-tip {
+	padding: 60rpx 0;
+	text-align: center;
+	background-color: #fafafa;
+	border-radius: 12rpx;
+	margin: 20rpx 0;
+	border: 1px dashed #d9d9d9;
+}
+
+.empty-text {
+	font-size: 26rpx;
+	color: #999;
+}
+
+/* 市场热度图样式 */
+.heatmap {
+	height: 250px;
+	position: relative;
+	background-color: #fafafa;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	border: 1px solid #f0f0f0;
+}
+
+.heatmap-canvas {
+	width: 100%;
+	height: 180px;
+	margin-bottom: 16rpx;
+}
+
+.heatmap-legend {
+	display: flex;
+	justify-content: space-around;
+	padding: 10rpx 0;
+}
+
+.legend-item {
+	display: flex;
+	align-items: center;
+}
+
+.legend-color {
+	width: 16rpx;
+	height: 16rpx;
+	border-radius: 4rpx;
+	margin-right: 6rpx;
+}
+
+.legend-color.strong-rise {
+	background-color: #ef5350;
+}
+
+.legend-color.rise {
+	background-color: #ffcdd2;
+}
+
+.legend-color.fall {
+	background-color: #c8e6c9;
+}
+
+.legend-color.strong-fall {
+	background-color: #4caf50;
+}
+
+.legend-text {
+	font-size: 20rpx;
+	color: #666;
+}
+
+/* 针对不同屏幕尺寸的响应式设计 */
+@media screen and (max-width: 768px) {
+	.two-column-grid {
+		flex-direction: column;
+	}
+}
+
+@media screen and (max-width: 375px) {
+	.sectors-grid {
+		flex-direction: column;
+	}
+	
+	.stock-item {
+		padding: 16rpx;
+	}
+	
+	.stock-main-info {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	
+	.stock-price {
+		text-align: left;
+		padding: 10rpx 0;
+	}
+	
+	.section-title {
+		font-size: 28rpx;
+	}
+	
+	.action-btn {
+		font-size: 22rpx;
+		padding: 10rpx 0;
+	}
+}
+</style> 

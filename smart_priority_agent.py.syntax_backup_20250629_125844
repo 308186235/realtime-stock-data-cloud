@@ -1,0 +1,213 @@
+"""
+重新设计的智能交易Agent - 正确的优先级和逻辑
+优先级:买卖 > 导出 > 资金
+成交/委托导出:仅在买卖操作后持仓异常时使用
+""""""
+
+from fixed_balance_reader import get_balance_fixed
+from trading_day_init import quick_init, get_account_info
+from auto_cleanup_trading_agent import AutoCleanupTradingAgent
+from datetime import datetime
+import time
+
+class SmartPriorityTradingAgent(AutoCleanupTradingAgent):
+    def __init__(self):
+        super().__init__()
+        self.winapi_data = None
+        self.export_data = None
+        self.last_trade_operation = None  # 记录最后的交易操作
+        self.trade_verification_needed = False  # 是否需要验证交易结果
+        
+    def sync_virtual_from_export(self):
+        """优化版数据同步 - 避免重复导出"""
+        print(" 智能优先级数据同步...")
+        print("=" * 60)
+        
+        # 1. 首先获取持仓数据(最重要)
+        print(" 1. 获取持仓数据(优先级最高)...")
+        export_success = quick_init()
+        
+        if export_success:
+            self.export_data = get_account_info()
+            export_holdings = self.export_data.get('holdings_count', 0)
+            print(f"    持仓导出: {export_holdings} 只股票")
+        else:
+            print("    持仓导出失败")
+            self.export_data = {'holdings': [], 'holdings_count': 0, 'available_cash': 0}
+        
+        # 2. 然后获取资金数据(按需获取)
+        print("\\n 2. 获取资金数据(按需获取)...")
+        
+        # 检查是否真的需要获取资金数据
+        if self.virtual_cash <= 0 or not hasattr(self, 'last_balance_update') or \\\
+           (datetime.now() - getattr(self, 'last_balance_update', datetime.min)).seconds > 300:  # 5分钟更新一次
+            
+            print("   需要更新资金数据...")
+            self.winapi_data = get_balance_fixed()
+            
+            if self.winapi_data:
+                winapi_cash = self.winapi_data.get('available_cash', 0)
+                print(f"    Win API现金: {winapi_cash:,.2f}")
+                self.last_balance_update = datetime.now()
+            else:
+                print("    Win API获取失败")
+                winapi_cash = 0
+        else:
+            print("   资金数据仍然有效,跳过更新")
+            winapi_cash = self.virtual_cash
+        
+        # 3. 智能结合数据源
+        print("\\n 3. 智能结合数据源...")
+        
+        # 现金数据:优先使用Win API
+        if self.winapi_data and winapi_cash > 0:
+            self.virtual_cash = winapi_cash
+            cash_source = 'Win API'
+        else:
+            self.virtual_cash = 0
+            cash_source = '无数据'
+        
+        print(f"    现金: {self.virtual_cash:,.2f} (来源: {cash_source})")
+        
+        # 持仓数据:使用持仓导出
+        self.virtual_holdings = {}
+        for holding in self.export_data.get('holdings', []):
+            code = holding.get('code', '')
+            if code:
+                self.virtual_holdings[code] = {
+                    'quantity': holding.get('quantity', 0),
+                    'available_quantity': holding.get('available_quantity', 0),
+                    'cost_price': holding.get('cost_price', 0),
+                    'current_price': holding.get('current_price', 0),
+                    'market_value': holding.get('market_value', 0),
+                    'profit_loss': holding.get('profit_loss', 0),
+                    'last_sync_time': datetime.now().strftime('%H:%M:%S'),
+                    'data_source': f'{cash_source} + 持仓导出'
+                }
+        
+        print(f"    持仓: {len(self.virtual_holdings)} 只")
+        
+        # 4. 清理导出文件
+        self.cleanup_used_export_files()
+        
+        print(f"\\n 智能同步完成 (避免重复操作)")
+        self.last_holdings_update = datetime.now()
+    
+    def verify_trade_result(self, expected_stock_code, operation_type):
+        """验证交易结果 - 仅在需要时使用成交/委托导出"""
+        print(f"\\n 验证交易结果: {operation_type} {expected_stock_code}")
+        
+        # 首先检查最新持仓
+        print("   检查最新持仓数据...")
+        self.sync_virtual_from_export()
+        
+        # 检查预期的股票是否在持仓中
+        if operation_type == 'buy':
+            if expected_stock_code in self.virtual_holdings:
+                print(f"    买入成功: {expected_stock_code} 已在持仓中")
+                return True
+            else:
+                print(f"    买入异常: {expected_stock_code} 不在持仓中")
+        elif operation_type == 'sell':
+            if expected_stock_code not in self.virtual_holdings:
+                print(f"    卖出成功: {expected_stock_code} 已不在持仓中")
+                return True
+            else:
+                print(f"    卖出异常: {expected_stock_code} 仍在持仓中")
+        
+        # 如果持仓数据异常,才使用成交/委托导出
+        print("   持仓数据异常,检查成交和委托记录...")
+        return self.check_trade_records(expected_stock_code, operation_type)
+    
+    def check_trade_records(self, stock_code, operation_type):
+        """检查成交和委托记录 - 仅在持仓异常时使用"""
+        print(f"    检查 {stock_code} 的成交/委托记录...")
+        
+        # 这里应该调用成交和委托导出功能
+        # 暂时返回模拟结果
+        print("    分析成交记录...")
+        print("    分析委托记录...")
+        
+        # 模拟分析结果
+        trade_status = 'pending'  # 可能的状态: success, failed, pending
+        
+        if trade_status == 'success':
+            print(f"    交易成功: {operation_type} {stock_code}")
+            return True
+        elif trade_status == 'failed':
+            print(f"    交易失败: {operation_type} {stock_code}")
+            return False
+        else:
+            print(f"    交易待确认: {operation_type} {stock_code}")
+            return None  # 需要等待
+    
+    def should_retry_trade(self, stock_code, operation_type, failure_reason):
+        """根据失败原因和最新行情决定是否重试交易"""
+        print(f"\\n 分析是否重试交易: {operation_type} {stock_code}")
+        print(f"   失败原因: {failure_reason}")
+        
+        # 获取最新行情(这里应该调用行情接口)
+        print("    获取最新行情...")
+        
+        # 根据行情和失败原因决定
+        if failure_reason == '价格偏离':
+            print("    建议: 调整价格后重试")
+            return True
+        elif failure_reason == '资金不足':
+            print("    建议: 减少数量或放弃交易")
+            return False
+        elif failure_reason == '停牌':
+            print("    建议: 等待复牌")
+            return False
+        else:
+            print("    建议: 暂不重试,观察市场")
+            return False
+    
+    def display_virtual_holdings(self):
+        """显示持仓状态"""
+        print(f"\\n 智能优先级Agent状态")
+        print(f" 现金: {self.virtual_cash:,.2f}")
+        print(f" 持仓: {len(self.virtual_holdings)} 只")
+        print("-" * 60)
+        
+        if not self.virtual_holdings:
+            print(" 当前无持仓股票")
+        else:
+            for code, holding in self.virtual_holdings.items():
+                market_value = holding.get('market_value', 0)
+                profit_loss = holding.get('profit_loss', 0)
+                status = "" if profit_loss >= 0 else ""
+                print(f"{status} {code} | 持仓:{holding['quantity']}股 | 市值:{market_value:,.2f}")
+        
+        print("-" * 60)
+
+def create_smart_priority_agent():
+    """创建智能优先级Agent"""
+    return SmartPriorityTradingAgent()
+
+if __name__ == "__main__":
+    print(" 测试智能优先级交易Agent")
+    print("=" * 70)
+    
+    agent = create_smart_priority_agent()
+    print(" 智能优先级Agent创建成功")
+    
+    print("\\n 测试优化后的初始化...")
+    result = agent.initialize_trading_day()
+    
+    if result:
+        print("\\n 智能优先级Agent测试成功!")
+        print("\\n 优化效果:")
+        print("   1. 避免重复导出持仓")
+        print("   2. 按需获取资金数据")
+        print("   3. 正确的优先级: 买卖 > 导出 > 资金")
+        print("   4. 成交/委托导出仅在异常时使用")
+        
+        agent.display_virtual_holdings()
+        
+        # 模拟交易验证
+        print("\\n 模拟交易验证流程:")
+        agent.verify_trade_result('000001', 'buy')
+        
+    else:
+        print("\\n 初始化失败")

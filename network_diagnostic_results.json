@@ -1,0 +1,10 @@
+{
+  "local_api": true,
+  "ngrok": true,
+  "port_forwarding": false,
+  "running_processes": [
+    "python.exe",
+    "ngrok.exe",
+    "cloudflared.exe"
+  ]
+}

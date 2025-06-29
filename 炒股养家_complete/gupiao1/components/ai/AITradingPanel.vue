@@ -1,0 +1,3300 @@
+<template>
+  <view class="agent-trading-panel">
+    <!-- AI头像和状态 -->
+    <view class="ai-header">
+      <view class="ai-avatar">
+        <image src="/static/images/ai-avatar.png" mode="aspectFit" />
+        <view class="ai-status-indicator" :class="{ active: isRunning }"></view>
+      </view>
+      <view class="ai-info">
+        <text class="ai-name">Agent智能交易助手</text>
+        <text class="ai-status">{{ isRunning ? '正在为您执行交易决策' : '交易系统待命中' }}</text>
+      </view>
+      <view class="ai-controls">
+        <button class="ai-toggle-btn" :class="{ active: isRunning }" @click="toggleAISystem">
+          {{ isRunning ? '停止AI' : '启动AI' }}
+        </button>
+      </view>
+    </view>
+    
+    <view class="panel-header">
+      <text class="panel-title">Agent智能交易</text>
+      <text class="panel-subtitle">基于AI决策的自动化交易系统</text>
+      
+      <!-- 数据源延迟显示 -->
+      <view class="data-source-delay">
+        <view class="delay-item">
+          <text class="delay-label">通达信:</text>
+          <text class="delay-value" :class="{'normal': tdxDelay < 500, 'warning': tdxDelay >= 500 && tdxDelay < 1000, 'critical': tdxDelay >= 1000}">
+            {{ tdxDelay }}ms
+          </text>
+        </view>
+        <view class="delay-item">
+          <text class="delay-label">同花顺:</text>
+          <text class="delay-value" :class="{'normal': thsDelay < 500, 'warning': thsDelay >= 500 && thsDelay < 1000, 'critical': thsDelay >= 1000}">
+            {{ thsDelay }}ms
+          </text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 状态卡片 -->
+    <view class="status-card" :class="isRunning ? 'status-running' : 'status-stopped'">
+      <view class="status-header">
+        <text class="status-title">系统状态</text>
+        <text class="status-indicator">{{ isRunning ? '运行中' : '已停止' }}</text>
+      </view>
+      
+      <!-- 市场追踪数据状态 - 显示后端市场追踪服务仍在工作 -->
+      <view class="market-tracking-status">
+        <text class="tracking-label">市场追踪数据:</text>
+        <text class="tracking-value" :class="{'connected': marketDataConnected}">
+          {{ marketDataConnected ? '数据流正常' : '数据连接断开' }}
+        </text>
+        <text class="tracking-updated">最后更新: {{ lastMarketDataUpdate }}</text>
+      </view>
+      
+      <view class="status-details">
+        <view class="status-item">
+          <text class="status-label">当前策略</text>
+          <text class="status-value">{{ currentStrategies.join(',') || '未选择' }}</text>
+        </view>
+        <view class="status-item">
+          <text class="status-label">运行时间</text>
+          <text class="status-value">{{ runningTime }}</text>
+        </view>
+        <view class="status-item">
+          <text class="status-label">交易次数</text>
+          <text class="status-value">{{ tradeCount }}</text>
+        </view>
+        <view class="status-item">
+          <text class="status-label">当日盈亏</text>
+          <text class="status-value" :class="dailyProfit >= 0 ? 'profit' : 'loss'">
+            {{ dailyProfit >= 0 ? '+' : '' }}¥{{ Math.abs(dailyProfit).toFixed(2) }}
+          </text>
+        </view>
+      </view>
+      
+      <!-- AI可操作资金设置 -->
+      <view class="ai-fund-control">
+        <view class="fund-control-header">
+          <text class="fund-control-title">AI可操作资金</text>
+        </view>
+        <view class="fund-control-input">
+          <input 
+            type="number" 
+            class="fund-input" 
+            :value="aiControlFunds" 
+            @input="updateAIFunds"
+            placeholder="请输入金额"
+          />
+          <text class="fund-unit">元</text>
+        </view>
+        <view class="fund-control-slider">
+          <slider 
+            :value="fundPercentage" 
+            @change="updateFundPercentage" 
+            min="0" 
+            max="100" 
+            show-value
+            :disabled="!isConnected"
+          />
+          <text class="fund-percentage">账户资金的 {{ fundPercentage }}%</text>
+        </view>
+        
+        <!-- 资金使用进度 -->
+        <view class="fund-usage">
+          <text class="fund-usage-label">资金使用情况:</text>
+          <view class="fund-progress-container">
+            <view 
+              class="fund-progress-bar" 
+              :style="{ width: `${calculateFundUsagePercentage()}%` }"
+              :class="{'warning': calculateFundUsagePercentage() > 70, 'danger': calculateFundUsagePercentage() > 90}"
+            ></view>
+          </view>
+          <text class="fund-usage-text">{{ calculateUsedFunds().toFixed(2) }}/{{ aiControlFunds }}元 ({{ calculateFundUsagePercentage() }}%)</text>
+        </view>
+        
+        <view class="fund-description">
+          <text>设置Agent交易系统可操作的最大资金额度,用于控制风险</text>
+        </view>
+        
+        <!-- 通知设置 -->
+        <view class="notification-settings">
+          <text class="notification-label">通知栏推送提醒:</text>
+          <switch :checked="enableNotifications" @change="toggleNotifications" color="#1989fa" style="transform: scale(0.8);"/>
+          <text class="notification-status">{{ enableNotifications ? '已开启' : '已关闭' }}</text>
+        </view>
+      </view>
+      
+      <view class="connection-status">
+        <text class="connection-label">交易账户:</text>
+        <text class="connection-value" :class="{'connected': isConnected}">
+          {{ isConnected ? `${brokerName} (已连接)` : '未连接' }}
+        </text>
+        <button v-if="!isConnected" class="connect-btn" @click="showConnectionDialog">连接账户</button>
+      </view>
+      
+      <!-- T+0 交易控制 -->
+      <view class="t0-trading-controls">
+        <view class="t0-header">
+          <text class="t0-title">T+0交易设置</text>
+        </view>
+        
+        <view class="t0-options">
+          <view class="t0-mode-selection">
+            <text class="t0-label">交易模式:</text>
+            <view class="mode-buttons">
+              <view class="mode-button" :class="{ active: tradeTimeMode === 'EOD' }" @click="setTradeTimeMode('EOD')">
+                尾盘选股
+              </view>
+              <view class="mode-button" :class="{ active: tradeTimeMode === 'INTRADAY', disabled: t0Enabled }" @click="setTradeTimeMode('INTRADAY')">
+                盘中选股
+              </view>
+            </view>
+          </view>
+          
+          <view class="t0-toggle">
+            <text class="t0-label">交易类型:</text>
+            <switch :checked="t0Enabled" @change="toggleT0Mode" color="#1989fa" style="transform: scale(0.8);"/>
+            <text class="t0-status">{{ t0Enabled ? 'T+0' : 'T+1' }}</text>
+          </view>
+        </view>
+        
+        <view class="t0-info" v-if="tradeTimeMode === 'EOD'">
+          <text class="t0-info-text">T+0策略核心是尾盘买入异动或热点股,次日开盘高抛,控制单股仓位在20-30%内</text>
+          <view v-if="lastEodUpdateTime" class="last-update">
+            <text>最近更新: {{ lastEodUpdateTime }}</text>
+            <text class="update-status" :class="isEodTime ? 'eod-time' : 'not-eod-time'">
+              {{ isEodTime ? '尾盘时段' : '非尾盘时段' }}
+            </text>
+          </view>
+        </view>
+      </view>
+      
+      <view class="control-buttons">
+        <button class="control-btn" :class="isRunning ? 'btn-stop' : 'btn-start'" 
+                @click="toggleSystem" :disabled="!isConnected">
+          {{ isRunning ? '停止系统' : '启动系统' }}
+        </button>
+        <button class="control-btn btn-settings" @click="showSettings">
+          系统设置
+        </button>
+      </view>
+    </view>
+    
+    <!-- T+0股票池 -->
+    <view class="t0-stocks-pool" v-if="t0Enabled && t0StocksPool.length > 0">
+      <view class="card-header">
+        <text class="card-title">T+0交易股票池</text>
+        <text class="refresh-btn" @click="refreshT0StocksPool">刷新</text>
+      </view>
+      
+      <view class="pool-description">
+        <text>以下股票适合实施T+0策略(尾盘买入,次日早盘卖出,快速获利)</text>
+      </view>
+      
+      <scroll-view scroll-x class="t0-stocks-table">
+        <view class="stocks-table">
+          <!-- Table header -->
+          <view class="table-header">
+            <view class="table-cell">代码</view>
+            <view class="table-cell">名称</view>
+            <view class="table-cell">现价</view>
+            <view class="table-cell">涨跌幅</view>
+            <view class="table-cell">量比</view>
+            <view class="table-cell">成交模式</view>
+            <view class="table-cell">T+0信号</view>
+            <view class="table-cell">操作</view>
+          </view>
+          
+          <!-- Table body -->
+          <view class="table-body">
+            <view class="table-row" v-for="(stock, index) in t0StocksPool" :key="index">
+              <view class="table-cell">{{ stock.symbol }}</view>
+              <view class="table-cell">{{ stock.name }}</view>
+              <view class="table-cell">{{ stock.price }}</view>
+              <view class="table-cell" :class="stock.changePercent >= 0 ? 'positive' : 'negative'">
+                {{ stock.changePercent >= 0 ? '+' : '' }}{{ stock.changePercent }}%
+              </view>
+              <view class="table-cell" :class="getVolumeRatioClass(stock)">
+                {{ stock.volumeAnalysis ? stock.volumeAnalysis.volumeRatio.toFixed(2) : '1.00' }}
+              </view>
+              <view class="table-cell volume-pattern">
+                <text class="volume-pattern-tag" :class="getVolumePatternClass(stock)">
+                  {{ stock.volumeAnalysis && stock.volumeAnalysis.pattern ? stock.volumeAnalysis.pattern.name : '正常' }}
+                </text>
+              </view>
+              <view class="table-cell">
+                <text class="t0-signal">{{ stock.t0Signal || '波动交易' }}</text>
+              </view>
+              <view class="table-cell actions">
+                <button class="action-btn buy" @click="quickTrade(stock, 'BUY')">买入</button>
+                <button class="action-btn details" @click="showVolumeDetail(stock)">详情</button>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+      
+      <view class="pool-note">
+        <text>注: T+0股票筛选基于市场热点,技术指标和成交量变化,每日尾盘更新推荐</text>
+      </view>
+    </view>
+    
+    <!-- T+0模式提示框 -->
+    <view v-if="showT0Toast" class="t0-toast">
+      <view class="t0-toast-content">
+        已开启T+0交易模式
+      </view>
+    </view>
+    
+    <!-- AI决策历史 -->
+    <view class="decisions-card" v-if="isConnected">
+      <view class="card-header">
+        <text class="card-title">最近AI决策</text>
+        <text class="refresh-btn" @click="refreshDecisions">刷新</text>
+      </view>
+      
+      <view class="decision-list" v-if="decisions.length > 0">
+        <view class="decision-item" v-for="(decision, index) in decisions" :key="index">
+          <view class="decision-header">
+            <view class="decision-stock">
+              <text class="decision-symbol">{{ decision.symbol }}</text>
+              <text class="decision-name">{{ decision.name }}</text>
+            </view>
+            <view class="decision-action" :class="decision.action === 'BUY' || decision.action === 'buy' ? 'buy-action' : 'sell-action'">
+              {{ decision.action === 'BUY' || decision.action === 'buy' ? '买入' : decision.action === 'SELL' || decision.action === 'sell' ? '卖出' : '持有' }}
+            </view>
+          </view>
+          <view class="decision-details">
+            <view class="decision-detail-item">
+              <text class="detail-label">价格</text>
+              <text class="detail-value">{{ decision.price }}</text>
+            </view>
+            <view class="decision-detail-item">
+              <text class="detail-label">数量</text>
+              <text class="detail-value">{{ decision.volume || decision.suggested_quantity }}股</text>
+            </view>
+            <view class="decision-detail-item">
+              <text class="detail-label">置信度</text>
+              <text class="detail-value confidence">{{ ((decision.confidence || 0.5) * 100).toFixed(0) }}%</text>
+            </view>
+            <view class="decision-detail-item">
+              <text class="detail-label">决策源</text>
+              <text class="detail-value">{{ decision.source || decision.strategy_id || "AI综合分析" }}</text>
+            </view>
+          </view>
+          <view class="decision-reason">
+            <text class="reason-title">决策理由:</text>
+            <text class="reason-content">{{ decision.reason || decision.detailedReasons || (decision.reasons ? decision.reasons.join(', ') : '') }}</text>
+            
+            <!-- 决策指标详情 -->
+            <view class="decision-indicators" v-if="(decision.signalDetails && hasSignals(decision)) || (decision.risk_reward)">
+              <text class="indicators-title">关键指标:</text>
+              <view class="indicator-tags">
+                <!-- 技术指标 -->
+                <view 
+                  v-for="(signal, index) in getSignalsByType(decision, 'technical')" 
+                  :key="'tech-'+index" 
+                  class="indicator-tag"
+                  :class="signal.type === 'bullish' ? 'bullish-tag' : 'bearish-tag'"
+                >
+                  <text class="indicator-tag-text">{{ signal.name }}</text>
+                </view>
+                
+                <!-- 形态指标 -->
+                <view 
+                  v-for="(signal, index) in getSignalsByType(decision, 'pattern')" 
+                  :key="'pattern-'+index" 
+                  class="indicator-tag"
+                  :class="signal.type === 'bullish' ? 'bullish-tag' : 'bearish-tag'"
+                >
+                  <text class="indicator-tag-text">{{ signal.name }}</text>
+                </view>
+                
+                <!-- 量价指标 -->
+                <view 
+                  v-for="(signal, index) in getSignalsByType(decision, 'volume')" 
+                  :key="'volume-'+index" 
+                  class="indicator-tag"
+                  :class="signal.type === 'bullish' ? 'bullish-tag' : 'bearish-tag'"
+                >
+                  <text class="indicator-tag-text">{{ signal.name }}</text>
+                </view>
+                
+                <!-- 风险收益指标 -->
+                <view class="indicator-tag risk-reward-tag" v-if="decision.risk_reward">
+                  <text class="indicator-tag-text">R/R比: {{ decision.risk_reward.risk_reward_ratio.toFixed(2) }}</text>
+                </view>
+              </view>
+            </view>
+            
+            <!-- 风险收益详情 -->
+            <view class="risk-reward-info" v-if="decision.risk_reward">
+              <view class="risk-reward-header">
+                <text class="risk-reward-title">风险收益分析:</text>
+              </view>
+              <view class="risk-reward-body">
+                <view class="risk-reward-item">
+                  <text class="risk-item-label">目标价:</text>
+                  <text class="risk-item-value">{{ decision.risk_reward.target_price.toFixed(2) }}</text>
+                </view>
+                <view class="risk-reward-item">
+                  <text class="risk-item-label">止损价:</text>
+                  <text class="risk-item-value">{{ decision.risk_reward.stop_loss.toFixed(2) }}</text>
+                </view>
+                <view class="risk-reward-item">
+                  <text class="risk-item-label">预期收益:</text>
+                  <text class="risk-item-value profit">¥{{ decision.risk_reward.potential_gain.toFixed(2) }}</text>
+                </view>
+                <view class="risk-reward-item">
+                  <text class="risk-item-label">潜在风险:</text>
+                  <text class="risk-item-value loss">¥{{ decision.risk_reward.potential_loss.toFixed(2) }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <view class="decision-actions" v-if="!decision.executed && decision.action !== 'hold'">
+            <button class="action-btn execute-btn" @click="executeDecision(decision)">
+              执行交易
+            </button>
+            <button class="action-btn ignore-btn" @click="ignoreDecision(decision)">
+              忽略
+            </button>
+          </view>
+          <view class="decision-status" v-else-if="decision.executed">
+            <text class="status-text" :class="decision.executionResult?.success ? 'status-success' : 'status-failed'">
+              {{ decision.executionResult?.success ? '交易成功' : '交易失败' }}
+            </text>
+            <text class="status-message" v-if="decision.executionResult?.message">
+              {{ decision.executionResult.message }}
+            </text>
+          </view>
+          <view class="decision-status" v-else-if="decision.action === 'hold'">
+            <text class="status-text status-hold">建议持有观望</text>
+          </view>
+        </view>
+      </view>
+      
+      <view class="empty-decisions" v-else>
+        <text class="empty-text">暂无AI决策记录</text>
+      </view>
+    </view>
+    
+    <!-- AI学习进度 -->
+    <view class="learning-card">
+      <view class="card-header">
+        <text class="card-title">AI学习进度</text>
+      </view>
+      
+      <view class="learning-progress">
+        <view class="progress-bar-container">
+          <view class="progress-bar" :style="{ width: `${learningProgress}%` }"></view>
+        </view>
+        <text class="progress-text">已完成 {{ learningProgress }}%</text>
+      </view>
+      
+      <view class="learning-stats">
+        <view class="stat-item">
+          <text class="stat-label">训练样本数</text>
+          <text class="stat-value">{{ trainingSamples }}</text>
+        </view>
+        <view class="stat-item">
+          <text class="stat-label">学习次数</text>
+          <text class="stat-value">{{ learningIterations }}</text>
+        </view>
+        <view class="stat-item">
+          <text class="stat-label">准确率</text>
+          <text class="stat-value">{{ (accuracy * 100).toFixed(2) }}%</text>
+        </view>
+      </view>
+      
+      <view class="learning-metrics">
+        <view class="metric-item">
+          <text class="metric-label">策略回测收益率</text>
+          <text class="metric-value" :class="strategyReturns >= 0 ? 'profit' : 'loss'">
+            {{ strategyReturns >= 0 ? '+' : '' }}{{ strategyReturns }}%
+          </text>
+        </view>
+        <view class="metric-item">
+          <text class="metric-label">胜率</text>
+          <text class="metric-value">{{ winRate }}%</text>
+        </view>
+        <view class="metric-item">
+          <text class="metric-label">最大回撤</text>
+          <text class="metric-value loss">-{{ maxDrawdown }}%</text>
+        </view>
+      </view>
+      
+      <view class="learning-actions">
+        <button class="learning-btn" @click="startManualLearning">
+          开始训练
+        </button>
+        <button class="learning-btn" @click="viewLearningDetails">
+          查看详情
+        </button>
+      </view>
+    </view>
+  </view>
+  
+  <!-- 设置弹窗 -->
+  <uni-popup ref="settingsPopup" type="center">
+    <AITradingSettings @close="closeSettings" />
+  </uni-popup>
+  
+  <!-- 成交量详情弹窗 -->
+  <uni-popup ref="volumeDetailPopup" type="center">
+    <VolumeDetailPopup @close="hideVolumeDetail" :stock="currentDetailStock" />
+  </uni-popup>
+</template>
+
+<script>
+import agentTradingService from '@/services/agentTradingService.js';
+import AITradingSettings from './AITradingSettings.vue';
+import uniPopup from '@dcloudio/uni-ui/lib/uni-popup/uni-popup.vue';
+import VolumeDetailPopup from './VolumeDetailPopup.vue';
+
+export default {
+  name: 'AgentTradingPanel',
+  components: {
+    AITradingSettings,
+    uniPopup,
+    VolumeDetailPopup
+  },
+  data() {
+    return {
+      // 系统状态
+      isRunning: false,
+      isConnected: false,
+      brokerName: '',
+      runningTime: '00:00:00',
+      tradeCount: 0,
+      dailyProfit: 0,
+      currentStrategies: [],
+      
+      // 数据源延迟
+      tdxDelay: 0,     // 通达信延迟(毫秒)
+      thsDelay: 0,     // 同花顺延迟(毫秒)
+      delayTimer: null, // 延迟更新定时器
+      
+      // AI可操作资金设置
+      aiControlFunds: 100000,
+      fundPercentage: 50,
+      
+      // 持仓数据
+      currentHoldings: [],
+      tradeHistory: [],
+      
+      // AI决策
+      decisions: [],
+      
+      // AI学习数据
+      learningProgress: 68,
+      trainingSamples: 2580,
+      learningIterations: 42,
+      accuracy: 0.857,
+      strategyReturns: 12.6,
+      winRate: 65,
+      maxDrawdown: 8.2,
+      
+      // 定时器
+      timer: null,
+      startTime: null,
+      
+      // WebSocket连接
+      wsConnection: null,
+      
+      // 市场追踪数据状态
+      marketDataConnected: true,
+      lastMarketDataUpdate: 'N/A',
+      
+      // T+0 相关属性
+      t0Enabled: false,
+      tradeTimeMode: 'EOD',
+      showT0Toast: false,
+      lastEodUpdateTime: null,
+      t0StocksPool: [],
+      isEodTime: false,
+      
+      // 通知设置
+      enableNotifications: true,
+      
+      // 成交量详情相关
+      currentDetailStock: null,
+    };
+  },
+  created() {
+    // 初始化数据
+    this.initData();
+    
+    // 开始轮询更新
+    this.startPolling();
+    
+    // 获取市场追踪数据状态
+    this.checkMarketDataStatus();
+    
+    // 初始化数据源延迟数据并开始更新
+    this.simulateDataSourceDelays();
+    this.startDelayUpdates();
+  },
+  beforeDestroy() {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+    
+    // 关闭WebSocket连接
+    if (this.wsConnection) {
+      this.wsConnection.close();
+    }
+    
+    // 清除定时器
+    this.stopPolling();
+    
+    // 清除延迟更新定时器
+    if (this.delayTimer) {
+      clearInterval(this.delayTimer);
+      this.delayTimer = null;
+    }
+  },
+  onLoad() {
+    // 从本地存储加载AI资金设置
+    this.loadAIFundsSettings();
+    
+    // 从本地存储加载通知设置
+    this.loadNotificationSettings();
+    
+    // 检查交易系统连接状态
+    this.checkConnectionStatus();
+    
+    // 初始化其他数据 
+    this.initTradeData();
+    
+    // 检查资金使用情况
+    this.$nextTick(() => {
+      this.checkFundUsageWarning();
+    });
+  },
+  methods: {
+    // 初始化数据
+    async initData() {
+      try {
+        // 获取系统状态
+        const statusResponse = await agentTradingService.getSystemStatus();
+        if (statusResponse && statusResponse.success) {
+          const statusData = statusResponse.data;
+          this.isRunning = statusData.isRunning;
+          this.isConnected = statusData.isConnected;
+          this.brokerName = statusData.brokerName || '';
+          this.runningTime = statusData.runningTime || '00:00:00';
+          this.tradeCount = statusData.tradeCount || 0;
+          this.dailyProfit = statusData.dailyProfit || 0;
+          this.currentStrategies = statusData.currentStrategies || [];
+          
+          // 设置 T+0 相关属性
+          this.t0Enabled = statusData.t0Enabled || false;
+          this.tradeTimeMode = statusData.tradeTimeMode || 'EOD';
+          this.lastEodUpdateTime = statusData.lastEodUpdateTime || null;
+          this.t0StocksPool = statusData.t0StocksPool || [];
+        }
+        
+        // 获取AI决策
+        await this.refreshDecisions();
+        
+        // 检查是否是尾盘时间
+        this.checkEodTime();
+        
+        // 设置定时检查尾盘时间
+        this.eodCheckTimer = setInterval(() => {
+          this.checkEodTime();
+        }, 60000); // 每分钟检查一次
+        
+      } catch (error) {
+        console.error('初始化Agent交易面板数据失败:', error);
+        uni.showToast({
+          title: '加载数据失败',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 开始轮询更新数据
+    startPolling() {
+      this.pollingTimer = setInterval(() => {
+        this.refreshData();
+      }, 30000); // 每30秒更新一次
+    },
+    
+    // 停止轮询
+    stopPolling() {
+      if (this.pollingTimer) {
+        clearInterval(this.pollingTimer);
+        this.pollingTimer = null;
+      }
+      
+      if (this.eodCheckTimer) {
+        clearInterval(this.eodCheckTimer);
+        this.eodCheckTimer = null;
+      }
+    },
+    
+    // 刷新数据
+    async refreshData() {
+      try {
+        // 获取系统状态
+        const statusResponse = await agentTradingService.getSystemStatus();
+        if (statusResponse && statusResponse.success) {
+          const statusData = statusResponse.data;
+          this.isRunning = statusData.isRunning;
+          this.isConnected = statusData.isConnected;
+          this.runningTime = statusData.runningTime || '00:00:00';
+          this.tradeCount = statusData.tradeCount || 0;
+          this.dailyProfit = statusData.dailyProfit || 0;
+          
+          // 设置 T+0 相关属性
+          this.t0Enabled = statusData.t0Enabled || false;
+          this.tradeTimeMode = statusData.tradeTimeMode || 'EOD';
+          this.lastEodUpdateTime = statusData.lastEodUpdateTime || null;
+          this.t0StocksPool = statusData.t0StocksPool || [];
+        }
+        
+        // 获取最新设置
+        const settingsResponse = await agentTradingService.getSettings();
+        if (settingsResponse && settingsResponse.success && settingsResponse.data) {
+          const settings = settingsResponse.data;
+          // 更新当前策略
+          this.currentStrategies = [this.getStrategyName(settings.strategy_id)];
+        }
+        
+        // 检查市场追踪数据状态
+        this.checkMarketDataStatus();
+        
+        // 检查是否是尾盘时间
+        this.checkEodTime();
+        
+      } catch (error) {
+        console.error('刷新Agent交易数据失败:', error);
+      }
+    },
+    
+    // 检查市场追踪数据状态 - 添加重试机制
+    async checkMarketDataStatus() {
+      // 最大重试次数
+      const maxRetries = 2;
+      let retryCount = 0;
+      let success = false;
+      
+      while (!success && retryCount <= maxRetries) {
+        try {
+          // 尝试获取数据,增加retry_count参数供后端记录
+          const response = await agentTradingService.checkMarketDataStatus(retryCount);
+          
+          if (response && response.success) {
+            this.marketDataConnected = response.data.connected;
+            this.lastMarketDataUpdate = response.data.lastUpdate || new Date().toLocaleTimeString();
+            
+            // 检查并存储是否使用模拟数据
+            this.isUsingSimulatedData = response.data.isSimulated;
+            
+            // 如果返回了数据源延迟信息,更新延迟值
+            if (response.data.dataSourceDelays) {
+              this.updateDataSourceDelays(response.data.dataSourceDelays);
+              success = true;
+            } else {
+              // 如果API不返回延迟信息,使用模拟值
+              this.simulateDataSourceDelays();
+              success = true;
+            }
+          } else {
+            // 增加重试次数
+            retryCount++;
+            // 简单的退避策略:每次重试等待时间增加
+            if (retryCount <= maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            } else {
+              this.marketDataConnected = false;
+              this.simulateDataSourceDelays();
+            }
+          }
+        } catch (error) {
+          console.error(`检查市场追踪数据状态失败(尝试${retryCount}): ${error}`);
+          retryCount++;
+          
+          // 简单的退避策略:每次重试等待时间增加
+          if (retryCount <= maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          } else {
+            this.marketDataConnected = false;
+            // 出错时使用模拟值
+            this.simulateDataSourceDelays();
+          }
+        }
+      }
+    },
+    
+    // 生成模拟的数据源延迟
+    simulateDataSourceDelays() {
+      // 生成随机延迟值
+      this.tdxDelay = Math.floor(Math.random() * 800) + 100; // 100-900ms
+      this.thsDelay = Math.floor(Math.random() * 600) + 200; // 200-800ms
+    },
+    
+    // 更新数据源延迟
+    updateDataSourceDelays(delays) {
+      if (delays) {
+        // 更新通达信延迟
+        if (delays.tdx !== undefined) {
+          this.tdxDelay = delays.tdx;
+        }
+        
+        // 更新同花顺延迟
+        if (delays.ths !== undefined) {
+          this.thsDelay = delays.ths;
+        }
+      }
+    },
+    
+    // 启动延迟更新
+    startDelayUpdates() {
+      // 清除现有定时器
+      if (this.delayTimer) {
+        clearInterval(this.delayTimer);
+      }
+      
+      // 设置更合理的轮询间隔:15秒而不是5秒
+      // 可以减轻服务器负载并保持UI响应性
+      this.delayTimer = setInterval(() => {
+        // 调用API获取最新延迟
+        this.checkMarketDataStatus();
+      }, 15000);
+    },
+    
+    // 建立WebSocket连接
+    setupWebSocket() {
+      this.wsConnection = agentTradingService.createWebSocketConnection(
+        // 消息处理
+        (data) => {
+          console.log('收到WebSocket消息:', data);
+          
+          if (data.type === 'new_decision') {
+            // 处理新决策
+            this.handleNewDecisions(data.data.decisions);
+          } else if (data.type === 'trade_executed') {
+            // 处理交易执行
+            this.handleTradeExecuted(data.data);
+          } else if (data.type === 'status_update') {
+            // 处理状态更新
+            this.updateStatus(data.data);
+          } else if (data.type === 'settings_updated') {
+            // 处理设置更新
+            console.log('设置已更新:', data.data);
+          } else if (data.type === 'error') {
+            // 处理错误
+            uni.showToast({
+              title: `错误: ${data.data.message}`,
+              icon: 'none'
+            });
+          }
+        },
+        // 错误处理
+        (error) => {
+          console.error('WebSocket错误:', error);
+          uni.showToast({
+            title: 'WebSocket连接错误',
+            icon: 'none'
+          });
+        },
+        // 关闭处理
+        () => {
+          console.log('WebSocket连接已关闭');
+          // 尝试重新连接
+          setTimeout(() => {
+            this.setupWebSocket();
+          }, 5000);
+        }
+      );
+    },
+    
+    // 处理新决策
+    handleNewDecisions(decisions) {
+      if (!Array.isArray(decisions) || decisions.length === 0) return;
+      
+      // 将新决策添加到列表中
+      const newDecisions = decisions.map(d => ({
+        ...d,
+        executed: false
+      }));
+      
+      // 添加到顶部,限制最多显示10条
+      this.decisions = [...newDecisions, ...this.decisions].slice(0, 10);
+      
+      // 显示通知
+      uni.showToast({
+        title: `收到${newDecisions.length}个新AI决策`,
+        icon: 'none'
+      });
+    },
+    
+    // 处理交易执行
+    handleTradeExecuted(tradeRecord) {
+      // 更新决策状态
+      const index = this.decisions.findIndex(d => 
+        d.symbol === tradeRecord.symbol && 
+        d.timestamp === tradeRecord.timestamp
+      );
+      
+      if (index >= 0) {
+        this.decisions[index].executed = true;
+        this.decisions[index].executionResult = tradeRecord.execution_result;
+      }
+      
+      // 更新交易计数
+      this.tradeCount++;
+      
+      // 更新盈亏 - 简化计算
+      if (tradeRecord.action === 'SELL') {
+        // 简单估算卖出收益
+        const profit = tradeRecord.price * tradeRecord.volume * 0.01; // 假设1%的收益
+        this.dailyProfit += profit;
+      }
+    },
+    
+    // 更新系统状态
+    updateStatus(status) {
+      if (status.status) {
+        this.isRunning = status.status === 'running';
+      }
+      
+      if (status.trade_count !== undefined) {
+        this.tradeCount = status.trade_count;
+      }
+      
+      if (status.last_decision) {
+        // 检查是否已有此决策
+        const exists = this.decisions.some(d => 
+          d.symbol === status.last_decision.symbol && 
+          d.timestamp === status.last_decision.timestamp
+        );
+        
+        if (!exists) {
+          this.decisions.unshift({
+            ...status.last_decision,
+            executed: false
+          });
+          
+          // 限制最多显示10条
+          if (this.decisions.length > 10) {
+            this.decisions.pop();
+          }
+        }
+      }
+    },
+    
+    // 检查交易账户连接状态
+    async checkConnection() {
+      // 从本地存储获取会话信息
+      const sessionData = uni.getStorageSync('trading_session');
+      if (sessionData) {
+        try {
+          const session = JSON.parse(sessionData);
+          if (session && session.connected) {
+            this.isConnected = true;
+            this.brokerName = session.broker_name || '东吴证券';
+          }
+        } catch (e) {
+          console.error('解析会话数据失败:', e);
+        }
+      }
+    },
+    
+    // 获取Agent交易系统状态
+    async fetchAITradingStatus() {
+      try {
+        const result = await agentTradingService.getAITradingStatus();
+        
+        if (result.success) {
+          const data = result.data;
+          
+          this.isRunning = data.status === 'running';
+          this.tradeCount = data.trade_count || 0;
+          
+          if (data.active_strategies && data.active_strategies.length > 0) {
+            this.currentStrategies = data.active_strategies.map(s => this.getStrategyName(s));
+          }
+          
+          if (data.start_time) {
+            this.startTime = new Date(data.start_time);
+            this.updateRunningTime();
+            this.timer = setInterval(() => this.updateRunningTime(), 1000);
+          }
+          
+          if (data.last_decision) {
+            // 检查是否已有此决策
+            const exists = this.decisions.some(d => 
+              d.symbol === data.last_decision.symbol && 
+              d.timestamp === data.last_decision.timestamp
+            );
+            
+            if (!exists) {
+              this.decisions.unshift({
+                ...data.last_decision,
+                executed: false
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取Agent交易系统状态失败:', error);
+      }
+    },
+    
+    // 获取AI学习进度
+    async fetchLearningProgress() {
+      try {
+        const result = await agentTradingService.getLearningProgress();
+        
+        if (result.success && result.data) {
+          const data = result.data;
+          
+          this.learningProgress = data.progress || 68;
+          this.trainingSamples = data.trainingSamples || 2580;
+          this.learningIterations = data.iterations || 42;
+          this.accuracy = data.accuracy ? data.accuracy / 100 : 0.857;
+          
+          // 简单计算其他指标
+          this.strategyReturns = (this.accuracy * 15).toFixed(1);
+          this.winRate = Math.round(this.accuracy * 75);
+          this.maxDrawdown = (10 - this.accuracy * 2).toFixed(1);
+        }
+      } catch (error) {
+        console.error('获取AI学习进度失败:', error);
+      }
+    },
+    
+    // 更新运行时间
+    updateRunningTime() {
+      if (!this.startTime) return;
+      
+      const now = new Date();
+      const diff = Math.floor((now - this.startTime) / 1000);
+      const hours = Math.floor(diff / 3600).toString().padStart(2, '0');
+      const minutes = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+      const seconds = (diff % 60).toString().padStart(2, '0');
+      this.runningTime = `${hours}:${minutes}:${seconds}`;
+    },
+    
+    // 显示连接对话框
+    showConnectionDialog() {
+      uni.navigateTo({
+        url: '/pages/trade/index'
+      });
+    },
+    
+    // 切换系统状态
+    async toggleSystem() {
+      if (!this.isConnected) {
+        uni.showToast({
+          title: '请先连接交易账户',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      try {
+        if (this.isRunning) {
+          // 停止系统
+          uni.showLoading({
+            title: '正在停止系统...'
+          });
+          
+          const result = await agentTradingService.stopAITrading();
+          
+          uni.hideLoading();
+          
+          if (result.success) {
+            this.isRunning = false;
+            if (this.timer) {
+              clearInterval(this.timer);
+              this.timer = null;
+            }
+            
+            uni.showToast({
+              title: 'Agent交易系统已停止',
+              icon: 'success'
+            });
+          } else {
+            uni.showToast({
+              title: result.message || '停止失败',
+              icon: 'none'
+            });
+          }
+        } else {
+          // 启动系统
+          uni.showLoading({
+            title: '正在启动系统...'
+          });
+          
+          // 获取交易会话ID
+          const sessionData = uni.getStorageSync('trading_session');
+          let sessionId = null;
+          
+          if (sessionData) {
+            try {
+              const session = JSON.parse(sessionData);
+              sessionId = session.session_id;
+            } catch (e) {
+              console.error('解析会话数据失败:', e);
+            }
+          }
+          
+          if (!sessionId) {
+            uni.hideLoading();
+            uni.showToast({
+              title: '未找到有效的交易会话',
+              icon: 'none'
+            });
+            return;
+          }
+          
+          const result = await agentTradingService.startAITrading(sessionId);
+          
+          uni.hideLoading();
+          
+          if (result.success) {
+            this.isRunning = true;
+            this.startTime = new Date();
+            
+            // 启动计时器更新运行时间
+            this.timer = setInterval(() => this.updateRunningTime(), 1000);
+            
+            uni.showToast({
+              title: 'Agent交易系统已启动',
+              icon: 'success'
+            });
+          } else {
+            uni.showToast({
+              title: result.message || '启动失败',
+              icon: 'none'
+            });
+          }
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('切换系统状态失败:', error);
+        uni.showToast({
+          title: '操作失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 显示设置对话框
+    showSettings() {
+      this.$refs.settingsPopup.open();
+    },
+    
+    // 关闭设置对话框
+    closeSettings() {
+      this.$refs.settingsPopup.close();
+      
+      // 刷新数据以显示最新设置
+      this.refreshData();
+    },
+    
+    // 刷新AI决策列表
+    async refreshDecisions() {
+      try {
+        uni.showLoading({
+          title: '正在刷新...'
+        });
+        
+        // 获取交易历史
+        const result = await agentTradingService.getTradeHistory();
+        
+        if (result.success && result.data && result.data.trades) {
+          // 将交易历史转换为决策列表
+          const decisions = result.data.trades.map(trade => ({
+            symbol: trade.symbol,
+            name: trade.name || this.getStockName(trade.symbol),
+            action: trade.action,
+            price: trade.price,
+            volume: trade.volume,
+            reason: trade.reason || '未提供决策理由',
+            confidence: trade.confidence || 0.75,
+            strategy_id: trade.strategy_id,
+            timestamp: trade.timestamp,
+            executed: true,
+            executionResult: trade.execution_result
+          }));
+          
+          this.decisions = decisions;
+          
+          // 获取最新的实时AI统一决策,如果有活跃的股票
+          await this.getLatestUnifiedDecision();
+          
+          uni.hideLoading();
+          uni.showToast({
+            title: '决策已更新',
+            icon: 'success'
+          });
+        } else {
+          uni.hideLoading();
+          // 如果没有交易历史,仍尝试获取最新的统一决策
+          await this.getLatestUnifiedDecision();
+          
+          if (this.decisions.length > 0) {
+            uni.showToast({
+              title: '已获取最新AI决策',
+              icon: 'success'
+            });
+          } else {
+            uni.showToast({
+              title: '没有新的交易决策',
+              icon: 'none'
+            });
+          }
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('刷新决策列表失败:', error);
+        uni.showToast({
+          title: '刷新失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 获取最新的统一AI决策
+    async getLatestUnifiedDecision() {
+      try {
+        // 检查是否有活跃的股票信息
+        const activeStock = uni.getStorageSync('active_stock');
+        if (!activeStock) return;
+        
+        const stockInfo = JSON.parse(activeStock);
+        if (!stockInfo || !stockInfo.code) return;
+        
+        // 获取历史数据(实际项目中应从缓存或API获取)
+        const historicalData = null; // 如果有历史数据可以传入
+        
+        // 获取统一AI决策
+        const result = await agentTradingService.getUnifiedAIDecision(stockInfo, historicalData);
+        
+        if (result && result.success && result.data) {
+          const aiDecision = result.data;
+          
+          // 创建新的决策对象
+          const newDecision = {
+            symbol: stockInfo.code,
+            name: stockInfo.name,
+            action: aiDecision.action,
+            price: aiDecision.price || stockInfo.currentPrice,
+            suggested_quantity: aiDecision.suggested_quantity || 0,
+            reasons: aiDecision.reasons || [],
+            confidence: aiDecision.confidence || 0.5,
+            source: 'unified_ai_model',
+            timestamp: new Date().toISOString(),
+            executed: false,
+            risk_reward: aiDecision.risk_reward
+          };
+          
+          // 添加到决策列表顶部
+          if (aiDecision.action !== 'hold' || this.isRunning) {
+            this.decisions.unshift(newDecision);
+            
+            // 如果决策列表太长,删除较旧的项
+            if (this.decisions.length > 10) {
+              this.decisions = this.decisions.slice(0, 10);
+            }
+            
+            // 如果AI处于自动执行模式,并且决策执行动作具有高置信度,自动执行
+            if (this.isRunning && aiDecision.confidence > 0.8 && aiDecision.action !== 'hold') {
+              setTimeout(() => {
+                this.executeDecision(newDecision, true);
+              }, 1000);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取统一AI决策失败:', error);
+      }
+    },
+    
+    // 执行交易决策
+    async executeDecision(decision) {
+      if (!this.isConnected) {
+        uni.showToast({
+          title: '请先连接交易账户',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      // 检查AI是否已启用自动执行模式
+      let isAutoExecution = false;
+      try {
+        const executionSettings = await this.getExecutionSettings();
+        isAutoExecution = executionSettings && executionSettings.auto_execute;
+        
+        // 检查交易金额是否超过限制
+        if (isAutoExecution) {
+          const tradeAmount = decision.price * decision.volume;
+          if (tradeAmount > executionSettings.max_trade_amount) {
+            isAutoExecution = false;
+            console.log(`交易金额${tradeAmount}超过自动执行上限${executionSettings.max_trade_amount},需要人工确认`);
+          }
+        }
+      } catch (error) {
+        console.error('获取自动执行设置失败:', error);
+        isAutoExecution = false;
+      }
+      
+      // T+0 卖出检查 - 如果是卖出操作且T+0已启用,需要检查是否是T+0股票池中的股票
+      if (this.t0Enabled && decision.action === 'SELL') {
+        // 检查是否是T+0股票池中的股票
+        const isT0Stock = this.t0StocksPool.some(stock => stock.symbol === decision.symbol);
+        
+        if (!isT0Stock) {
+          uni.showModal({
+            title: 'T+0交易提示',
+            content: '该股票不在T+0交易池中,无法当日卖出。如需使用T+0交易功能,请在尾盘时段(14:30-15:00)查看可用的T+0股票池。',
+            showCancel: false
+          });
+          return;
+        }
+      }
+      
+      // 如果是自动执行模式,直接执行交易
+      if (isAutoExecution) {
+        this._directlyExecuteDecision(decision);
+        return;
+      }
+      
+      // 否则,显示简化的确认对话框
+      uni.showModal({
+        title: 'Agent交易建议',
+        content: `AI建议${decision.action === 'BUY' ? '买入' : '卖出'} ${decision.name}${decision.volume}股,价格${decision.price}元。确认执行此交易吗?`,
+        confirmText: '执行交易',
+        confirmColor: '#007aff',
+        success: async (res) => {
+          if (res.confirm) {
+            this._directlyExecuteDecision(decision);
+          }
+        }
+      });
+    },
+    
+    async _directlyExecuteDecision(decision) {
+      try {
+        uni.showLoading({
+          title: '执行交易中...'
+        });
+        
+        // 添加T+0标记
+        const tradeDecision = {
+          ...decision,
+          t0Enabled: this.t0Enabled
+        };
+        
+        const result = await agentTradingService.executeTradeDecision(tradeDecision, true);
+        
+        uni.hideLoading();
+        
+        if (result.success) {
+          // 更新决策状态
+          const index = this.decisions.findIndex(d => 
+            d.symbol === decision.symbol && 
+            d.timestamp === decision.timestamp
+          );
+          
+          if (index >= 0) {
+            this.decisions[index].executed = true;
+            this.decisions[index].executionResult = {
+              success: true,
+              message: result.message || '委托已提交'
+            };
+            
+            // 更新交易计数
+            this.tradeCount++;
+            
+            // 发送成功通知
+            this.sendNotification(
+              'Agent交易执行成功', 
+              `${decision.action === 'BUY' ? '买入' : '卖出'} ${decision.name} ${decision.volume}股 @ ¥${decision.price}`
+            );
+            
+            uni.showToast({
+              title: 'Agent交易已执行',
+              icon: 'success'
+            });
+          }
+        } else {
+          uni.showToast({
+            title: result.message || '执行失败',
+            icon: 'none'
+          });
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('执行交易决策失败:', error);
+        uni.showToast({
+          title: '执行失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 获取自动执行设置
+    async getExecutionSettings() {
+      try {
+        const response = await uni.request({
+          url: '/api/t-trading/ai-execution-settings',
+          method: 'GET'
+        });
+        
+        if (response && response.data) {
+          return response.data;
+        }
+        return null;
+      } catch (error) {
+        console.error('获取AI自动执行设置失败:', error);
+        return null;
+      }
+    },
+    
+    // 忽略交易决策
+    ignoreDecision(decision) {
+      const index = this.decisions.findIndex(d => 
+        d.symbol === decision.symbol && 
+        d.timestamp === decision.timestamp
+      );
+      
+      if (index >= 0) {
+        this.decisions.splice(index, 1);
+      }
+      
+      uni.showToast({
+        title: '已忽略该决策',
+        icon: 'success'
+      });
+    },
+    
+    // 获取策略名称
+    getStrategyName(strategyId) {
+      const strategyNames = {
+        'momentum': '动量策略',
+        'mean_reversion': '均值回归',
+        'trend_following': '趋势跟踪',
+        'pattern_recognition': '形态识别',
+        'dual_thrust': '双重突破',
+        'volatility_breakout': '波动率突破'
+      };
+      
+      return strategyNames[strategyId] || strategyId;
+    },
+    
+    // 获取股票名称
+    getStockName(symbol) {
+      const stockNames = {
+        '600519': '贵州茅台',
+        '000858': '五粮液',
+        '601318': '中国平安',
+        '600036': '招商银行'
+      };
+      
+      return stockNames[symbol] || '未知股票';
+    },
+    
+    // 开始手动学习
+    async startManualLearning() {
+      try {
+        uni.showLoading({
+          title: '开始AI训练...'
+        });
+        
+        const result = await agentTradingService.startModelTraining();
+        
+        uni.hideLoading();
+        
+        if (result.success) {
+          // 模拟训练进度增加
+          this.learningProgress = Math.min(100, this.learningProgress + 5);
+          this.learningIterations += 1;
+          this.accuracy = Math.min(0.95, this.accuracy + 0.01);
+          
+          uni.showToast({
+            title: result.message || 'AI训练已启动',
+            icon: 'success'
+          });
+        } else {
+          uni.showToast({
+            title: result.message || '训练启动失败',
+            icon: 'none'
+          });
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('启动AI训练失败:', error);
+        uni.showToast({
+          title: '训练启动失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 查看学习详情
+    viewLearningDetails() {
+      // 将当前的学习数据作为参数传递给AI学习详情页面
+      uni.navigateTo({
+        url: `/pages/agent-training/index?progress=${this.learningProgress}&samples=${this.trainingSamples}&iterations=${this.learningIterations}&accuracy=${this.accuracy}&returns=${this.strategyReturns}&winRate=${this.winRate}&drawdown=${this.maxDrawdown}`,
+        success: () => {
+          console.log('跳转到AI学习详情页面成功');
+        },
+        fail: (err) => {
+          console.error('跳转到AI学习详情页面失败:', err);
+          uni.showToast({
+            title: '跳转失败,请重试',
+            icon: 'none'
+          });
+        }
+      });
+    },
+    
+    // 切换T+0模式
+    toggleT0Mode(e) {
+      this.t0Enabled = e.detail.value;
+      
+      if (this.t0Enabled) {
+        // 如果开启T+0,自动切换到尾盘选股模式
+        this.tradeTimeMode = 'EOD';
+        
+        // 显示自定义提示框
+        this.showT0Toast = true;
+        setTimeout(() => {
+          this.showT0Toast = false;
+        }, 2000);
+      }
+      
+      // 保存T+0配置
+      this.saveT0Config();
+      
+      uni.showToast({
+        title: this.t0Enabled ? '已开启T+0交易模式' : '已关闭T+0交易模式',
+        icon: 'success'
+      });
+    },
+    
+    // 设置交易模式
+    setTradeTimeMode(mode) {
+      // 如果T+0已开启且尝试切换到盘中选股,阻止操作
+      if (this.t0Enabled && mode === 'INTRADAY') {
+        uni.showToast({
+          title: 'T+0模式下只能使用尾盘选股',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      this.tradeTimeMode = mode;
+      
+      // 保存T+0配置
+      this.saveT0Config();
+      
+      uni.showToast({
+        title: `已设置交易模式为${mode === 'EOD' ? '尾盘' : '盘中'}选股`,
+        icon: 'success'
+      });
+    },
+    
+    // 保存T+0配置
+    async saveT0Config() {
+      try {
+        const config = {
+          t0Enabled: this.t0Enabled,
+          tradeTimeMode: this.tradeTimeMode,
+          lastEodUpdateTime: this.lastEodUpdateTime,
+          t0StocksPool: this.t0StocksPool
+        };
+        
+        await agentTradingService.updateT0Config(config);
+      } catch (error) {
+        console.error('保存T+0配置失败:', error);
+      }
+    },
+    
+    // 检查是否是尾盘时间
+    checkEodTime() {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      
+      // 判断是否是交易日的14:30以后
+      this.isEodTime = (hour > 14 || (hour === 14 && minute >= 30)) && hour < 15;
+    },
+    
+    // 刷新T+0股票池
+    async refreshT0StocksPool() {
+      try {
+        uni.showLoading({
+          title: '正在刷新T+0股票池...'
+        });
+        
+        // 改用增强版T+0股票池API,包含成交量分析
+        const result = await agentTradingService.getEnhancedT0StocksPool();
+        
+        uni.hideLoading();
+        
+        if (result.success && result.data && result.data.stocks) {
+          this.t0StocksPool = result.data.stocks;
+          uni.showToast({
+            title: 'T+0股票池已更新',
+            icon: 'success'
+          });
+        } else {
+          uni.showToast({
+            title: '没有新的T+0股票池',
+            icon: 'none'
+          });
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('刷新T+0股票池失败:', error);
+        uni.showToast({
+          title: '刷新失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 快速交易
+    async quickTrade(stock, action) {
+      if (!this.isConnected) {
+        uni.showToast({
+          title: '请先连接交易账户',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      try {
+        uni.showLoading({
+          title: '执行快速交易...'
+        });
+        
+        const result = await agentTradingService.executeQuickTrade(stock, action);
+        
+        uni.hideLoading();
+        
+        if (result.success) {
+          // 更新决策状态
+          const index = this.decisions.findIndex(d => 
+            d.symbol === stock.symbol && 
+            d.timestamp === stock.timestamp
+          );
+          
+          if (index >= 0) {
+            this.decisions[index].executed = true;
+            this.decisions[index].executionResult = {
+              success: true,
+              message: result.message || '委托已提交'
+            };
+            
+            // 增加交易次数
+            this.tradeCount++;
+            
+            uni.showToast({
+              title: '交易已执行',
+              icon: 'success'
+            });
+          }
+        } else {
+          uni.showToast({
+            title: result.message || '执行失败',
+            icon: 'none'
+          });
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('执行快速交易失败:', error);
+        uni.showToast({
+          title: '执行失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+    
+    // 获取决策指标
+    getSignalsByType(decision, type) {
+      if (!decision.signalDetails || !decision.signalDetails[type]) return [];
+      
+      return decision.signalDetails[type] || [];
+    },
+    
+    // 判断是否有决策指标
+    hasSignals(decision) {
+      if (!decision.signalDetails) return false;
+      
+      const { technical, pattern, volume, trend } = decision.signalDetails;
+      
+      return (
+        (technical && technical.length > 0) || 
+        (pattern && pattern.length > 0) || 
+        (volume && volume.length > 0) || 
+        (trend && trend.length > 0)
+      );
+    },
+    
+    // AI可操作资金设置
+    updateAIFunds(e) {
+      this.aiControlFunds = e.detail.value;
+      this.saveAIFundsSettings();
+    },
+    
+    updateFundPercentage(e) {
+      this.fundPercentage = e.detail.value;
+      this.saveAIFundsSettings();
+    },
+    
+    saveAIFundsSettings() {
+      // 保存到本地存储
+      uni.setStorageSync('ai_control_funds', {
+        amount: this.aiControlFunds,
+        percentage: this.fundPercentage
+      });
+      
+      // 更新全局应用状态
+      const app = getApp();
+      if (app.globalData) {
+        app.globalData.aiControlFunds = this.aiControlFunds;
+        app.globalData.fundPercentage = this.fundPercentage;
+      }
+      
+      // 显示保存成功提示
+      uni.showToast({
+        title: '资金设置已保存',
+        icon: 'success',
+        duration: 1500
+      });
+    },
+    
+    loadAIFundsSettings() {
+      try {
+        const fundsSettings = uni.getStorageSync('ai_control_funds');
+        if (fundsSettings) {
+          this.aiControlFunds = fundsSettings.amount;
+          this.fundPercentage = fundsSettings.percentage;
+        }
+      } catch (e) {
+        console.error('加载AI资金设置失败:', e);
+      }
+    },
+    
+    // AI控制交易执行
+    executeAITrade(stockInfo, action, amount) {
+      // 检查是否连接到交易账户
+      if (!this.isConnected) {
+        this.showMessage('未连接交易账户,无法执行交易');
+        return false;
+      }
+      
+      // 检查是否超出AI可控资金限制
+      if (!this.isWithinFundLimit(stockInfo.price * amount)) {
+        this.showMessage(`超出AI可操作资金限制:¥${this.aiControlFunds}`);
+        return false;
+      }
+      
+      // 执行交易逻辑
+      console.log(`执行Agent交易: ${action} ${amount}股 ${stockInfo.name}(${stockInfo.code})`);
+      
+      // 模拟交易执行,实际项目中这里应调用真实交易API
+      try {
+        // 模拟交易API调用
+        const tradeResult = {
+          success: true,
+          orderId: 'AI-' + Date.now(),
+          details: {
+            stockCode: stockInfo.code,
+            stockName: stockInfo.name,
+            action: action,
+            amount: amount,
+            price: stockInfo.price,
+            timestamp: new Date().toISOString()
+          }
+        };
+        
+        // 更新交易记录
+        this.tradeCount++;
+        this.tradeHistory.unshift({
+          time: new Date().toLocaleTimeString(),
+          stockName: stockInfo.name,
+          stockCode: stockInfo.code,
+          action: action,
+          amount: amount,
+          price: stockInfo.price,
+          total: (stockInfo.price * amount).toFixed(2)
+        });
+        
+        // 计算盈亏
+        if (action === 'buy') {
+          this.dailyProfit -= parseFloat((stockInfo.price * amount * 0.001).toFixed(2)); // 模拟手续费
+        } else {
+          // 假设卖出时有5%的收益
+          this.dailyProfit += parseFloat((stockInfo.price * amount * 0.05).toFixed(2));
+        }
+        
+        // 显示成功消息
+        this.showMessage(`${action === 'buy' ? '买入' : '卖出'}交易执行成功`);
+        
+        // 发送交易成功通知
+        const actionText = action === 'buy' ? '买入' : '卖出';
+        this.sendNotification(
+          'Agent交易成功', 
+          `${actionText} ${amount}股 ${stockInfo.name}(${stockInfo.code}),价格:¥${stockInfo.price}`,
+          'info'
+        );
+        
+        // 检查资金使用情况
+        this.$nextTick(() => {
+          this.checkFundUsageWarning();
+        });
+        
+        return true;
+      } catch (error) {
+        console.error('交易执行失败:', error);
+        this.showMessage('交易执行失败: ' + error.message);
+        
+        // 发送交易失败通知
+        this.sendNotification(
+          'Agent交易失败', 
+          `${action === 'buy' ? '买入' : '卖出'}交易执行失败:${error.message}`,
+          'warning'
+        );
+        
+        return false;
+      }
+    },
+    
+    // 检查交易是否在AI可操作资金限制内
+    isWithinFundLimit(tradeAmount) {
+      // 获取已使用的资金
+      const usedFunds = this.calculateUsedFunds();
+      
+      // 检查当前交易加上已使用资金是否超过限制
+      return (usedFunds + tradeAmount) <= this.aiControlFunds;
+    },
+    
+    // 计算资金使用百分比
+    calculateFundUsagePercentage() {
+      // 获取已使用的资金
+      const usedFunds = this.calculateUsedFunds();
+      
+      // 计算资金使用百分比
+      const usagePercentage = (usedFunds / this.aiControlFunds) * 100;
+      
+      return Math.min(100, parseFloat(usagePercentage.toFixed(2)) || 0);
+    },
+    
+    // 计算已使用的资金
+    calculateUsedFunds() {
+      // 安全检查
+      if (!this.currentHoldings || !Array.isArray(this.currentHoldings)) {
+        return 0;
+      }
+      
+      // 获取已使用的资金
+      const usedFunds = this.currentHoldings.reduce((total, holding) => {
+        return total + ((holding.price || 0) * (holding.amount || 0));
+      }, 0);
+      
+      return usedFunds;
+    },
+    
+    // 检查是否需要显示资金使用警告
+    checkFundUsageWarning() {
+      // 如果没有持仓数据或未连接账户,不显示警告
+      if (!this.currentHoldings || !this.currentHoldings.length || !this.isConnected) {
+        return;
+      }
+      
+      const usagePercentage = this.calculateFundUsagePercentage();
+      
+      // 只有当使用率超过阈值且有实际意义时才显示警告
+      if (usagePercentage > 90 && usagePercentage < 100) {
+        this.showMessage('警告:AI可操作资金使用已超过90%,请注意风险', 'warning');
+        this.sendNotification('资金警告', 'AI可操作资金使用已超过90%,请注意风险控制!', 'warning');
+      } else if (usagePercentage > 70 && usagePercentage < 90) {
+        this.showMessage('提示:AI可操作资金使用已超过70%', 'info');
+        this.sendNotification('资金提示', 'AI可操作资金使用已超过70%,请关注资金使用情况', 'info');
+      }
+    },
+    
+    // 显示消息提示
+    showMessage(message, type = 'info') {
+      uni.showToast({
+        title: message,
+        icon: type === 'warning' ? 'error' : 'none',
+        duration: 3000
+      });
+    },
+    
+    // 检查交易系统连接状态
+    checkConnectionStatus() {
+      try {
+        // 从本地存储获取会话信息
+        const sessionData = uni.getStorageSync('trading_session');
+        if (sessionData) {
+          try {
+            const session = JSON.parse(sessionData);
+            if (session && session.connected) {
+              this.isConnected = true;
+              this.brokerName = session.broker_name || '东吴证券';
+            }
+          } catch (e) {
+            console.error('解析会话数据失败:', e);
+          }
+        }
+      } catch (e) {
+        console.error('检查交易系统连接状态失败:', e);
+      }
+    },
+    
+    // 初始化交易数据
+    initTradeData() {
+      // 如果已连接,尝试获取持仓数据
+      if (this.isConnected) {
+        // 模拟持仓数据
+        this.currentHoldings = [
+          { name: '贵州茅台', code: '600519', price: 1680.55, amount: 5, cost: 1650.78 },
+          { name: '宁德时代', code: '300750', price: 240.23, amount: 10, cost: 235.12 },
+          { name: '中国平安', code: '601318', price: 46.82, amount: 100, cost: 48.25 }
+        ];
+        
+        // 模拟交易历史
+        this.tradeHistory = [
+          { time: '10:34:22', stockName: '贵州茅台', stockCode: '600519', action: 'buy', amount: 5, price: 1650.78, total: '8253.90' },
+          { time: '11:25:16', stockName: '宁德时代', stockCode: '300750', action: 'buy', amount: 10, price: 235.12, total: '2351.20' },
+          { time: '13:45:08', stockName: '中国平安', stockCode: '601318', action: 'buy', amount: 100, price: 48.25, total: '4825.00' }
+        ];
+      } else {
+        // 未连接时清空数据
+        this.currentHoldings = [];
+        this.tradeHistory = [];
+      }
+    },
+    
+    // 发送通知栏推送
+    sendNotification(title, content, type = 'info') {
+      if (!this.enableNotifications) return;
+      
+      try {
+        // 如果支持系统通知
+        if (uni.getSystemInfoSync().platform !== 'devtools') {
+          uni.createPushMessage({
+            title: title,
+            content: content,
+            sound: 'default',
+            force: false
+          });
+        } else {
+          // 使用Toast作为替代
+          uni.showToast({
+            title: `${title}: ${content}`,
+            icon: 'none',
+            duration: 3000
+          });
+        }
+        
+        // 记录到通知历史
+        const notification = {
+          title: title,
+          content: content,
+          time: new Date().toLocaleTimeString()
+        };
+        
+        // 将通知添加到本地存储
+        let notifications = uni.getStorageSync('ai_notifications') || [];
+        notifications.unshift(notification);
+        
+        // 最多保存50条通知
+        if (notifications.length > 50) {
+          notifications = notifications.slice(0, 50);
+        }
+        
+        uni.setStorageSync('ai_notifications', notifications);
+        
+      } catch (error) {
+        console.error('发送通知失败:', error);
+      }
+    },
+    
+    // 切换通知设置
+    toggleNotifications(e) {
+      this.enableNotifications = e.detail.value;
+      
+      // 保存通知设置
+      try {
+        uni.setStorageSync('ai_notifications_enabled', this.enableNotifications);
+        console.log('已保存通知设置:', this.enableNotifications);
+      } catch (e) {
+        console.error('保存通知设置失败:', e);
+      }
+      
+      // 如果启用通知,检查权限
+      if (this.enableNotifications) {
+        this.checkNotificationPermission();
+      }
+    },
+    
+    // 检查通知权限
+    checkNotificationPermission() {
+      try {
+        if (plus && plus.push) {
+          const currentPermission = plus.push.getClientInfo().sound;
+          console.log('当前通知权限状态:', currentPermission);
+          
+          if (!currentPermission) {
+            uni.showModal({
+              title: '通知权限',
+              content: '需要通知权限才能向您发送交易和资金提醒。请在设置中开启通知权限。',
+              success: (res) => {
+                if (res.confirm) {
+                  // 尝试打开应用设置页面
+                  if (plus.runtime) {
+                    plus.runtime.openURL('app-settings://');
+                  }
+                }
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.error('检查通知权限失败:', e);
+      }
+    },
+    
+    // 加载通知设置
+    loadNotificationSettings() {
+      try {
+        const notificationsEnabled = uni.getStorageSync('ai_notifications_enabled');
+        if (notificationsEnabled !== undefined && notificationsEnabled !== null) {
+          this.enableNotifications = notificationsEnabled;
+        } else {
+          // 默认开启通知
+          this.enableNotifications = true;
+        }
+        
+        console.log('加载通知设置:', this.enableNotifications);
+        
+        // 如果启用通知,检查权限
+        if (this.enableNotifications) {
+          this.checkNotificationPermission();
+        }
+      } catch (e) {
+        console.error('加载通知设置失败:', e);
+      }
+    },
+    
+    // 获取成交量比率颜色类
+    getVolumeRatioClass(stock) {
+      if (!stock.volumeAnalysis || !stock.volumeAnalysis.volumeRatio) {
+        return '';
+      }
+      
+      const ratio = stock.volumeAnalysis.volumeRatio;
+      if (ratio >= 2.0) {
+        return 'volume-high';
+      } else if (ratio >= 1.5) {
+        return 'volume-medium';
+      } else if (ratio >= 1.0) {
+        return 'volume-normal';
+      } else {
+        return 'volume-low';
+      }
+    },
+    
+    // 获取成交量模式样式类
+    getVolumePatternClass(stock) {
+      if (!stock.volumeAnalysis || !stock.volumeAnalysis.pattern) {
+        return '';
+      }
+      
+      return stock.volumeAnalysis.pattern.signal === 'bullish' ? 'bullish-pattern' : 'bearish-pattern';
+    },
+    
+    // 获取主力资金流入
+    getMainInflow(stock) {
+      if (!stock.volumeAnalysis || stock.volumeAnalysis.mainNetInflow === undefined) {
+        return 0;
+      }
+      
+      return stock.volumeAnalysis.mainNetInflow;
+    },
+    
+    // 获取时间段数据
+    getTimeSlots(stock) {
+      if (!stock.volumeAnalysis || !stock.volumeAnalysis.volumeAnalysis || !stock.volumeAnalysis.volumeAnalysis.keyTimeSlots) {
+        return [
+          { time: '14:30-15:00', ratio: 20 },
+          { time: '13:00-14:30', ratio: 30 },
+          { time: '11:30-13:00', ratio: 10 },
+          { time: '10:00-11:30', ratio: 25 },
+          { time: '9:30-10:00', ratio: 15 }
+        ];
+      }
+      
+      return stock.volumeAnalysis.volumeAnalysis.keyTimeSlots;
+    },
+    
+    // 生成AI建议
+    generateAdvice(stock) {
+      if (!stock || !stock.volumeAnalysis) {
+        return '暂无足够数据生成建议';
+      }
+      
+      const pattern = stock.volumeAnalysis.pattern;
+      const volumeRatio = stock.volumeAnalysis.volumeRatio;
+      const mainInflow = stock.volumeAnalysis.mainNetInflow;
+      
+      let advice = '';
+      
+      // 基于成交量模式生成建议
+      if (pattern.signal === 'bullish') {
+        if (volumeRatio >= 2.0 && mainInflow > 0) {
+          advice = `该股尾盘成交量显著放大(${volumeRatio.toFixed(2)}倍)且主力资金净流入${mainInflow.toFixed(0)}万元,形成"${pattern.name}"模式,次日早盘有较大概率高开,建议尾盘买入,次日早盘择机卖出。`;
+        } else if (volumeRatio >= 1.5) {
+          advice = `该股成交量较前期有所放大(${volumeRatio.toFixed(2)}倍),形成"${pattern.name}"模式,技术面向好,建议尾盘买入,次日开盘观察走势,高开2%以上可考虑卖出。`;
+        } else {
+          advice = `该股形成"${pattern.name}"模式但成交量配合一般,建议谨慎参与,可小仓位试探性买入,严格设置止损位。`;
+        }
+      } else {
+        if (volumeRatio >= 2.0 && mainInflow < 0) {
+          advice = `该股尾盘成交量显著放大(${volumeRatio.toFixed(2)}倍)但主力资金净流出${Math.abs(mainInflow).toFixed(0)}万元,形成"${pattern.name}"模式,存在较大抛压,不建议现阶段买入,可等待企稳后再考虑介入。`;
+        } else if (pattern.name === '量价背离') {
+          advice = `该股出现"量价背离"走势,价格虽创新高但成交量未配合,上涨动能减弱,不建议追高,可等待回调确认支撑后再考虑。`;
+        } else {
+          advice = `该股形成"${pattern.name}"模式,短期技术面偏弱,建议观望为主,不适合当前进行T+0操作。`;
+        }
+      }
+      
+      return advice;
+    },
+    
+    // 显示成交量详情弹窗
+    showVolumeDetail(stock) {
+      this.currentDetailStock = stock;
+      this.$refs.volumeDetailPopup.open();
+    },
+    
+    // 隐藏成交量详情弹窗
+    hideVolumeDetail() {
+      this.$refs.volumeDetailPopup.close();
+      setTimeout(() => {
+        this.currentDetailStock = null;
+      }, 300);
+    },
+    
+    // 切换AI系统状态
+    async toggleAISystem() {
+      try {
+        if (this.isRunning) {
+          // 停止AI系统
+          uni.showLoading({
+            title: '正在停止AI...'
+          });
+          
+          const result = await agentTradingService.stopAITrading();
+          
+          uni.hideLoading();
+          
+          if (result && result.success) {
+            this.isRunning = false;
+            this.startTime = null;
+            
+            uni.showToast({
+              title: 'AI系统已停止',
+              icon: 'success'
+            });
+          } else {
+            uni.showToast({
+              title: '停止失败:' + (result.message || '未知错误'),
+              icon: 'none'
+            });
+          }
+        } else {
+          // 启动AI系统前检查
+          if (!this.isConnected) {
+            uni.showModal({
+              title: '交易账户未连接',
+              content: '请先连接交易账户,否则AI将无法执行交易',
+              confirmText: '去连接',
+              success: (res) => {
+                if (res.confirm) {
+                  this.showConnectionDialog();
+                }
+              }
+            });
+            return;
+          }
+          
+          // 启动AI系统
+          uni.showLoading({
+            title: '正在启动AI...'
+          });
+          
+          const result = await agentTradingService.startAITrading();
+          
+          uni.hideLoading();
+          
+          if (result && result.success) {
+            this.isRunning = true;
+            this.startTime = new Date();
+            
+            // 发送通知
+            this.sendNotification(
+              'Agent交易系统已启动', 
+              'AI将为您实时监控市场并提供交易建议'
+            );
+            
+            uni.showToast({
+              title: 'AI系统已启动',
+              icon: 'success'
+            });
+          } else {
+            uni.showToast({
+              title: '启动失败:' + (result.message || '未知错误'),
+              icon: 'none'
+            });
+          }
+        }
+      } catch (error) {
+        uni.hideLoading();
+        console.error('切换AI系统状态失败:', error);
+        uni.showToast({
+          title: '操作失败,请重试',
+          icon: 'none'
+        });
+      }
+    },
+  }
+};
+</script>
+
+<style lang="scss">
+.agent-trading-panel {
+  padding: 20rpx;
+}
+
+.panel-header {
+  margin-bottom: 20rpx;
+  position: relative;
+  padding-bottom: 12rpx;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  margin-bottom: 8rpx;
+}
+
+.panel-subtitle {
+  font-size: 24rpx;
+  color: #666;
+  margin-bottom: 12rpx;
+}
+
+/* 状态卡片样式 */
+.status-card {
+  background-color: #222;
+  border-radius: 12rpx;
+  padding: 20rpx 20rpx 20rpx 28rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.status-running {
+  background: linear-gradient(135deg, #142850, #27496d);
+  position: relative;
+}
+
+.status-running::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8rpx;
+  background-color: #0cce6b;
+  border-radius: 4rpx;
+}
+
+.status-stopped {
+  background: linear-gradient(135deg, #333, #222);
+  position: relative;
+}
+
+.status-stopped::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8rpx;
+  background-color: #666;
+  border-radius: 4rpx;
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.status-title {
+  font-size: 30rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.status-indicator {
+  font-size: 26rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.status-running .status-indicator {
+  color: #0cce6b;
+  background-color: rgba(12, 206, 107, 0.15);
+}
+
+.status-stopped .status-indicator {
+  color: #ccc;
+}
+
+.status-details {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 16rpx 0;
+}
+
+.status-item {
+  width: 50%;
+  margin-bottom: 12rpx;
+}
+
+.status-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-bottom: 4rpx;
+}
+
+.status-value {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.connection-status {
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 12rpx;
+  border-radius: 8rpx;
+  display: flex;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.connection-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+
+.connection-value {
+  font-size: 26rpx;
+  color: #ff4d4f;
+}
+
+.connection-value.connected {
+  color: #0cce6b;
+}
+
+.connect-btn {
+  margin-left: auto;
+  font-size: 24rpx;
+  padding: 4rpx 16rpx;
+  background-color: rgba(12, 206, 107, 0.15);
+  color: #0cce6b;
+  border: none;
+  border-radius: 20rpx;
+}
+
+.control-buttons {
+  display: flex;
+  margin-top: 16rpx;
+}
+
+.control-btn {
+  flex: 1;
+  margin: 0 8rpx;
+  padding: 16rpx 0;
+  border: none;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+.btn-start {
+  background-color: #0cce6b;
+  color: #fff;
+}
+
+.btn-stop {
+  background-color: #ff4d4f;
+  color: #fff;
+}
+
+.btn-settings {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.status-stopped .control-btn.btn-stop {
+  background-color: #cccccc;
+  color: #999999;
+  cursor: not-allowed;
+}
+
+/* 市场追踪数据状态样式 */
+.market-tracking-status {
+  padding: 10rpx 20rpx;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 8rpx;
+  margin-bottom: 15rpx;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tracking-label {
+  font-size: 24rpx;
+  color: #666666;
+  margin-right: 10rpx;
+}
+
+.tracking-value {
+  font-size: 24rpx;
+  font-weight: bold;
+  color: #ff4d4f;
+  margin-right: 15rpx;
+}
+
+.tracking-value.connected {
+  color: #52c41a;
+}
+
+.tracking-updated {
+  font-size: 22rpx;
+  color: #999999;
+  margin-left: auto;
+}
+
+/* AI决策历史样式 */
+.decisions-card, .learning-card {
+  background-color: #222;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.card-title {
+  font-size: 30rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.refresh-btn {
+  font-size: 24rpx;
+  color: #409eff;
+}
+
+.decision-list {
+  max-height: 800rpx;
+  overflow-y: auto;
+}
+
+.decision-item {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+  padding: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.decision-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.decision-symbol {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+  margin-right: 8rpx;
+}
+
+.decision-name {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+.decision-action {
+  font-size: 26rpx;
+  font-weight: bold;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+}
+
+.buy-action {
+  color: #0cce6b;
+  background-color: rgba(12, 206, 107, 0.15);
+}
+
+.sell-action {
+  color: #ff4d4f;
+  background-color: rgba(255, 77, 79, 0.15);
+}
+
+.decision-details {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 12rpx;
+}
+
+.decision-detail-item {
+  width: 25%;
+  margin-bottom: 8rpx;
+}
+
+.detail-label {
+  font-size: 22rpx;
+  color: #ccc;
+  margin-bottom: 4rpx;
+}
+
+.detail-value {
+  font-size: 26rpx;
+  color: #fff;
+}
+
+.confidence {
+  color: #409eff;
+  font-weight: bold;
+}
+
+.decision-reason {
+  padding: 8rpx 0;
+  margin-bottom: 12rpx;
+}
+
+.reason-title {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-bottom: 4rpx;
+}
+
+.reason-content {
+  font-size: 26rpx;
+  color: #fff;
+  line-height: 1.4;
+}
+
+.decision-indicators {
+  margin-top: 10rpx;
+}
+
+.indicators-title {
+  font-size: 22rpx;
+  color: #ccc;
+  margin-bottom: 8rpx;
+}
+
+.indicator-tags {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.indicator-tag {
+  padding: 4rpx 12rpx;
+  border-radius: 20rpx;
+  margin-right: 8rpx;
+  margin-bottom: 8rpx;
+}
+
+.bullish-tag {
+  background-color: rgba(238, 10, 36, 0.1);
+}
+
+.bearish-tag {
+  background-color: rgba(7, 193, 96, 0.1);
+}
+
+.indicator-tag-text {
+  font-size: 22rpx;
+}
+
+.bullish-tag .indicator-tag-text {
+  color: #ee0a24;
+}
+
+.bearish-tag .indicator-tag-text {
+  color: #07c160;
+}
+
+.decision-actions {
+  display: flex;
+  margin-top: 12rpx;
+}
+
+.action-btn {
+  flex: 1;
+  margin: 0 8rpx;
+  padding: 12rpx 0;
+  border: none;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+}
+
+.execute-btn {
+  background-color: #0cce6b;
+  color: #fff;
+}
+
+.ignore-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.decision-status {
+  margin-top: 12rpx;
+  padding: 8rpx;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 4rpx;
+}
+
+.status-text {
+  font-size: 26rpx;
+  font-weight: bold;
+}
+
+.status-success {
+  color: #0cce6b;
+}
+
+.status-failed {
+  color: #ff4d4f;
+}
+
+.status-message {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-top: 4rpx;
+}
+
+.empty-decisions {
+  padding: 40rpx 0;
+  text-align: center;
+}
+
+.empty-text {
+  font-size: 26rpx;
+  color: #999;
+}
+
+/* AI学习进度样式 */
+.learning-progress {
+  margin: 20rpx 0;
+}
+
+.progress-bar-container {
+  height: 20rpx;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 10rpx;
+  overflow: hidden;
+  margin-bottom: 8rpx;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #0cce6b, #409eff);
+  border-radius: 10rpx;
+}
+
+.progress-bar.warning {
+  background: linear-gradient(90deg, #e6a23c, #f56c6c);
+}
+
+.progress-bar.danger {
+  background: linear-gradient(90deg, #f56c6c, #f56c6c);
+}
+
+.progress-text {
+  font-size: 24rpx;
+  color: #ccc;
+  text-align: right;
+}
+
+.learning-stats {
+  display: flex;
+  justify-content: space-between;
+  margin: 20rpx 0;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-bottom: 8rpx;
+}
+
+.stat-value {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.learning-metrics {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+  padding: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.metric-label {
+  font-size: 26rpx;
+  color: #ccc;
+}
+
+.metric-value {
+  font-size: 26rpx;
+  font-weight: bold;
+}
+
+.profit {
+  color: #ee0a24;
+}
+
+.loss {
+  color: #07c160;
+}
+
+.learning-actions {
+  display: flex;
+  justify-content: space-between;
+}
+
+.learning-btn {
+  width: 48%;
+  padding: 16rpx 0;
+  border: none;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+  background-color: #409eff;
+  color: #fff;
+}
+
+/* T+0 交易控制样式 */
+.t0-trading-controls {
+  margin-top: 16rpx;
+  padding: 16rpx;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+}
+
+.t0-header {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+  margin-bottom: 16rpx;
+}
+
+.t0-options {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 16rpx;
+}
+
+.t0-mode-selection {
+  width: 50%;
+  margin-bottom: 12rpx;
+}
+
+.t0-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+
+.mode-buttons {
+  display: flex;
+}
+
+.mode-button {
+  padding: 4rpx 16rpx;
+  border: none;
+  border-radius: 20rpx;
+  margin-right: 8rpx;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.mode-button.active {
+  background-color: rgba(12, 206, 107, 0.15);
+  color: #0cce6b;
+}
+
+.t0-toggle {
+  width: 50%;
+  margin-bottom: 12rpx;
+}
+
+.t0-toggle .t0-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+
+.t0-status {
+  font-size: 26rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.t0-info {
+  margin-top: 16rpx;
+  padding: 12rpx;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+}
+
+.t0-info-text {
+  font-size: 26rpx;
+  color: #fff;
+  margin-bottom: 8rpx;
+}
+
+.last-update {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.update-status {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+.eod-time {
+  color: #0cce6b;
+}
+
+.not-eod-time {
+  color: #ff4d4f;
+}
+
+/* T+0模式提示框样式 */
+.t0-toast {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.t0-toast-content {
+  background-color: #fff;
+  padding: 20rpx;
+  border-radius: 12rpx;
+  text-align: center;
+}
+
+/* T+0股票池样式 */
+.t0-stocks-pool {
+  background-color: #222;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
+}
+
+.pool-description {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-bottom: 16rpx;
+}
+
+.t0-stocks-table {
+  display: flex;
+  overflow-x: auto;
+}
+
+.stocks-table {
+  width: 100%;
+}
+
+.table-header {
+  display: flex;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 12rpx;
+  border-radius: 8rpx;
+  margin-bottom: 16rpx;
+}
+
+.table-cell {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+  padding: 8rpx;
+}
+
+.table-body {
+  display: flex;
+}
+
+.table-row {
+  display: flex;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 12rpx;
+  border-radius: 8rpx;
+  margin-bottom: 16rpx;
+}
+
+.table-cell {
+  font-size: 28rpx;
+  color: #fff;
+  padding: 8rpx;
+}
+
+.positive {
+  color: #ee0a24;
+}
+
+.negative {
+  color: #07c160;
+}
+
+.t0-signal {
+  font-size: 26rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.actions {
+  display: flex;
+  margin-left: auto;
+}
+
+.action-btn {
+  padding: 8rpx 16rpx;
+  border: none;
+  border-radius: 8rpx;
+  margin-left: 8rpx;
+  font-size: 26rpx;
+}
+
+.buy {
+  background-color: rgba(12, 206, 107, 0.15);
+  color: #0cce6b;
+}
+
+.sell {
+  background-color: rgba(255, 77, 79, 0.15);
+  color: #ff4d4f;
+}
+
+.pool-note {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-top: 16rpx;
+}
+
+/* AI可操作资金设置样式 */
+.ai-fund-control {
+  margin-top: 16rpx;
+  padding: 16rpx;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+}
+
+.fund-control-header {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+  margin-bottom: 16rpx;
+}
+
+.fund-control-input {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.fund-input {
+  width: 50%;
+  padding: 8rpx;
+  border: none;
+  border-radius: 4rpx;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.fund-unit {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-left: 8rpx;
+}
+
+.fund-control-slider {
+  margin-bottom: 12rpx;
+}
+
+.fund-control-slider .slider {
+  width: 100%;
+}
+
+.fund-percentage {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-top: 8rpx;
+}
+
+.fund-usage {
+  margin-top: 12rpx;
+  padding: 8rpx;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 4rpx;
+}
+
+.fund-usage-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+
+.fund-progress-container {
+  height: 20rpx;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 10rpx;
+  overflow: hidden;
+  margin-bottom: 8rpx;
+}
+
+.fund-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #0cce6b, #409eff);
+  border-radius: 10rpx;
+}
+
+.fund-progress-bar.warning {
+  background: linear-gradient(90deg, #e6a23c, #f56c6c);
+}
+
+.fund-progress-bar.danger {
+  background: linear-gradient(90deg, #f56c6c, #f56c6c);
+}
+
+.fund-usage-text {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-left: 8rpx;
+}
+
+.fund-description {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+/* 通知设置样式 */
+.notification-settings {
+  margin-top: 16rpx;
+  padding: 12rpx;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8rpx;
+}
+
+.notification-label {
+  font-size: 26rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+
+.notification-status {
+  font-size: 24rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+/* 成交量详情弹窗样式 */
+.volume-detail-popup {
+  width: 90%;
+  padding: 20rpx;
+  background-color: #fff;
+  border-radius: 12rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
+}
+
+.volume-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.volume-detail-title {
+  font-size: 30rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.volume-detail-close {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+.volume-detail-content {
+  font-size: 26rpx;
+  color: #fff;
+  margin-bottom: 16rpx;
+}
+
+.volume-detail-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.volume-detail-item {
+  text-align: center;
+}
+
+.volume-detail-label {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-bottom: 4rpx;
+}
+
+.volume-detail-value {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.volume-detail-note {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+.volume-detail-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16rpx;
+}
+
+.volume-detail-btn {
+  flex: 1;
+  padding: 12rpx 0;
+  border: none;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+  color: #fff;
+}
+
+.volume-detail-btn.confirm {
+  background-color: #0cce6b;
+}
+
+.volume-detail-btn.cancel {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.volume-pattern {
+  font-size: 24rpx;
+  color: #ccc;
+  margin-top: 8rpx;
+}
+
+.volume-pattern-tag {
+  padding: 4rpx 12rpx;
+  border-radius: 20rpx;
+  margin-right: 8rpx;
+  margin-bottom: 8rpx;
+}
+
+.bullish-pattern {
+  background-color: rgba(238, 10, 36, 0.1);
+}
+
+.bearish-pattern {
+  background-color: rgba(7, 193, 96, 0.1);
+}
+
+.bullish-pattern .volume-pattern-tag {
+  color: #ee0a24;
+}
+
+.bearish-pattern .volume-pattern-tag {
+  color: #07c160;
+}
+
+.volume-high {
+  color: #ee0a24;
+}
+
+.volume-medium {
+  color: #ff9900;
+}
+
+.volume-normal {
+  color: #ffffff;
+}
+
+.volume-low {
+  color: #07c160;
+}
+
+.details {
+  background-color: rgba(64, 158, 255, 0.15);
+  color: #409eff;
+}
+
+/* 数据源延迟显示样式 */
+.data-source-delay {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12rpx;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 8rpx;
+  padding: 8rpx 12rpx;
+}
+
+.delay-item {
+  display: flex;
+  align-items: center;
+  margin-right: 20rpx;
+}
+
+.delay-label {
+  font-size: 24rpx;
+  color: #aaa;
+  margin-right: 8rpx;
+}
+
+.delay-value {
+  font-size: 24rpx;
+  font-weight: bold;
+  padding: 2rpx 8rpx;
+  border-radius: 4rpx;
+}
+
+.delay-value.normal {
+  color: #07c160;
+}
+
+.delay-value.warning {
+  color: #ff9900;
+}
+
+.delay-value.critical {
+  color: #ee0a24;
+}
+
+/* AI头像和状态样式 */
+.ai-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.ai-avatar {
+  position: relative;
+  margin-right: 16rpx;
+}
+
+.ai-avatar image {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+}
+
+.ai-status-indicator {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+}
+
+.ai-status-indicator.active {
+  background-color: #0cce6b;
+}
+
+.ai-info {
+  flex: 1;
+}
+
+.ai-name {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.ai-status {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+.ai-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-toggle-btn {
+  font-size: 24rpx;
+  padding: 4rpx 16rpx;
+  background-color: rgba(12, 206, 107, 0.15);
+  color: #0cce6b;
+  border: none;
+  border-radius: 20rpx;
+}
+
+.ai-toggle-btn.active {
+  background-color: #0cce6b;
+  color: #fff;
+}
+</style>

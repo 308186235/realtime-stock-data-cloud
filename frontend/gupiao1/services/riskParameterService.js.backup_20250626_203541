@@ -1,0 +1,311 @@
+import { isDevelopment, API_BASE_URL, delay } from './apiConfig.js';
+
+/**
+ * 获取风险参数学习统计
+ * @returns {Promise<Object>} 风险参数学习统计
+ */
+export async function getRiskLearningStats() {
+  try {
+    // 开发环境模拟数据
+    if (isDevelopment) {
+      await delay(500);
+      
+      return {
+        success: true,
+        message: "获取风险参数学习统计成功",
+        data: {
+          learning_enabled: true,
+          records_count: 156,
+          successful_trades_count: 87,
+          overall_success_rate: 0.56,
+          current_risk_level: 'medium',
+          current_thresholds: {
+            confidence_threshold: 0.67,
+            volatility_limit: 0.05,
+            position_factor: 0.75,
+            profit_target_multiplier: 1.2,
+            stop_loss_multiplier: 0.8,
+            volume_requirement: 1.0,
+            max_trades_per_day: 5,
+            price_reversal_threshold: 0.015
+          },
+          historical_thresholds: [
+            { confidence_threshold: 0.65 },
+            { confidence_threshold: 0.66 },
+            { confidence_threshold: 0.66 },
+            { confidence_threshold: 0.67 },
+            { confidence_threshold: 0.67 }
+          ],
+          position_sizing_method: 'confidence',
+          last_optimization_time: new Date().toISOString()
+        }
+      };
+    }
+    
+    // 实际环境API调用
+    const response = await uni.request({
+      url: `${API_BASE_URL}/risk-learning-stats`,
+      method: 'GET'
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('获取风险参数学习统计失败:', error);
+    return {
+      success: false,
+      message: '获取风险参数学习统计失败: ' + error.message,
+      data: null
+    };
+  }
+}
+
+/**
+ * 获取风险参数学习历史
+ * @param {Number} limit 返回记录数量限制
+ * @param {Number} offset 记录偏移量
+ * @returns {Promise<Object>} 风险参数学习历史
+ */
+export async function getRiskLearningHistory(limit = 10, offset = 0) {
+  try {
+    // 开发环境模拟数据
+    if (isDevelopment) {
+      await delay(500);
+      
+      // 生成模拟历史记录
+      const history = [];
+      const total = 35;
+      const count = Math.min(limit, total - offset);
+      
+      for (let i = 0; i < count; i++) {
+        const idx = offset + i;
+        const isSuccess = Math.random() > 0.4;
+        const action = Math.random() > 0.5 ? 'buy' : 'sell';
+        const confidence = 0.5 + Math.random() * 0.4;
+        const riskLevels = ['low', 'medium', 'high'];
+        const risk_level = riskLevels[Math.floor(Math.random() * 3)];
+        const profit_loss = isSuccess ? 
+          100 + Math.floor(Math.random() * 500) : 
+          -100 - Math.floor(Math.random() * 300);
+          
+        history.push({
+          timestamp: new Date(Date.now() - (idx * 3600000)).toISOString(),
+          action,
+          confidence,
+          risk_level,
+          result: isSuccess ? 'success' : 'failure',
+          profit_loss
+        });
+      }
+      
+      return {
+        success: true,
+        message: "获取风险参数学习历史成功",
+        data: {
+          total,
+          records: history
+        }
+      };
+    }
+    
+    // 实际环境API调用
+    const response = await uni.request({
+      url: `${API_BASE_URL}/risk-learning-history`,
+      method: 'GET',
+      data: { limit, offset }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('获取风险参数学习历史失败:', error);
+    return {
+      success: false,
+      message: '获取风险参数学习历史失败: ' + error.message,
+      data: { total: 0, records: [] }
+    };
+  }
+}
+
+/**
+ * 记录交易结果
+ * @param {Object} tradeResult 交易结果数据
+ * @returns {Promise<Object>} 记录结果
+ */
+export async function recordTradeResult(tradeResult) {
+  try {
+    // 验证必要参数
+    if (!tradeResult.trade_id || !tradeResult.result) {
+      return {
+        success: false,
+        message: '缺少必要参数: trade_id, result',
+        data: null
+      };
+    }
+    
+    // 开发环境模拟数据
+    if (isDevelopment) {
+      await delay(500);
+      
+      return {
+        success: true,
+        message: "交易结果记录成功",
+        data: {
+          trade_id: tradeResult.trade_id,
+          recorded: true
+        }
+      };
+    }
+    
+    // 实际环境API调用
+    const response = await uni.request({
+      url: `${API_BASE_URL}/record-trade-result`,
+      method: 'POST',
+      data: tradeResult
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('记录交易结果失败:', error);
+    return {
+      success: false,
+      message: '记录交易结果失败: ' + error.message,
+      data: null
+    };
+  }
+}
+
+/**
+ * 生成风险参数优化建议（仅开发环境模拟）
+ * @returns {Promise<Object>} 优化建议
+ */
+export async function generateRiskOptimizationInsights() {
+  try {
+    // 实际项目中，此功能应由后端AI服务提供
+    if (isDevelopment) {
+      await delay(800);
+      
+      const insights = {
+        timestamp: new Date().toISOString(),
+        message: "系统分析了最近的交易结果，发现在以下条件下交易成功率显著提高：",
+        recommendations: [
+          "置信度阈值可以适当调低至0.63，发现更多交易机会",
+          "成交量要求参数过高，可以降低至0.9",
+          "Kelly公式在连续获利时表现更好，建议切换到Kelly仓位策略",
+          "低波动率环境下，当前风险参数设置表现良好",
+          "止损距离倍数可以适当提高，避免过早触发止损"
+        ]
+      };
+      
+      return {
+        success: true,
+        message: "生成风险参数优化建议成功",
+        data: insights
+      };
+    }
+    
+    // 实际环境API调用
+    const response = await uni.request({
+      url: `${API_BASE_URL}/generate-risk-insights`,
+      method: 'GET'
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('生成风险参数优化建议失败:', error);
+    return {
+      success: false,
+      message: '生成优化建议失败: ' + error.message,
+      data: null
+    };
+  }
+}
+
+/**
+ * 配置风险控制参数
+ * @param {Object} riskSettings 风险控制参数
+ * @returns {Promise<Object>} 配置结果
+ */
+export async function configureRiskControl(riskSettings) {
+  try {
+    // 开发环境模拟数据
+    if (isDevelopment) {
+      await delay(700);
+      
+      return {
+        success: true,
+        message: "风险控制参数已更新",
+        data: {
+          settings: {
+            ...riskSettings,
+            active_thresholds: getThresholdsForRiskLevel(riskSettings.risk_level)
+          }
+        }
+      };
+    }
+    
+    // 实际环境API调用
+    const response = await uni.request({
+      url: `${API_BASE_URL}/configure-risk-control`,
+      method: 'POST',
+      data: riskSettings
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('配置风险控制参数失败:', error);
+    return {
+      success: false,
+      message: '配置风险控制参数失败: ' + error.message,
+      data: null
+    };
+  }
+}
+
+/**
+ * 获取指定风险级别的阈值配置（仅开发环境使用）
+ * @param {String} riskLevel 风险级别
+ * @returns {Object} 阈值配置
+ */
+function getThresholdsForRiskLevel(riskLevel) {
+  const thresholds = {
+    low: {
+      confidence_threshold: 0.75,
+      volatility_limit: 0.03,
+      position_factor: 0.5,
+      profit_target_multiplier: 1.5,
+      stop_loss_multiplier: 0.7,
+      volume_requirement: 1.2,
+      max_trades_per_day: 2,
+      price_reversal_threshold: 0.02
+    },
+    medium: {
+      confidence_threshold: 0.65,
+      volatility_limit: 0.05,
+      position_factor: 0.75,
+      profit_target_multiplier: 1.2,
+      stop_loss_multiplier: 0.8,
+      volume_requirement: 1.0,
+      max_trades_per_day: 5,
+      price_reversal_threshold: 0.015
+    },
+    high: {
+      confidence_threshold: 0.55,
+      volatility_limit: 0.08,
+      position_factor: 1.0,
+      profit_target_multiplier: 1.0,
+      stop_loss_multiplier: 1.0,
+      volume_requirement: 0.8,
+      max_trades_per_day: 10,
+      price_reversal_threshold: 0.01
+    }
+  };
+  
+  return thresholds[riskLevel] || thresholds.medium;
+}
+
+export default {
+  getRiskLearningStats,
+  getRiskLearningHistory,
+  recordTradeResult,
+  generateRiskOptimizationInsights,
+  configureRiskControl
+}; 

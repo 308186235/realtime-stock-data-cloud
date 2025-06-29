@@ -1,0 +1,795 @@
+<template>
+  <div class="williams-r-page">
+    <h1 class="page-title">威廉指标 (Williams %R)</h1>
+    
+    <div class="navigation-tabs">
+      <div 
+        v-for="(tab, index) in tabs" 
+        :key="index" 
+        :class="['tab', { active: activeTab === tab.id }]"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.name }}
+      </div>
+    </div>
+    
+    <div class="tab-content">
+      <!-- 概述标签内容 -->
+      <div v-if="activeTab === 'overview'" class="tab-pane">
+        <div class="indicator-overview">
+          <div class="info-card">
+            <h2>指标介绍</h2>
+            <p>{{ guide.introduction.text }}</p>
+            <div class="quote">
+              <p><i>{{ guide.introduction.creator }}</i></p>
+            </div>
+          </div>
+          
+          <div class="info-card">
+            <h2>工作原理</h2>
+            <div class="formula-box">
+              <h3>计算公式</h3>
+              <div class="formula">
+                %R = ((最高价 - 收盘价) / (最高价 - 最低价)) × -100
+              </div>
+              <p>其中,最高价和最低价通常是过去14个交易日的最高价和最低价。</p>
+            </div>
+            <p class="description">{{ guide.howItWorks.interpretation }}</p>
+          </div>
+          
+          <div class="info-card">
+            <h2>与其他指标的比较</h2>
+            <div class="comparison-table">
+              <div class="comparison-item">
+                <h3>威廉指标 vs RSI</h3>
+                <p>{{ guide.comparisonWithOtherIndicators.rsi }}</p>
+              </div>
+              <div class="comparison-item">
+                <h3>威廉指标 vs 随机指标</h3>
+                <p>{{ guide.comparisonWithOtherIndicators.stochastic }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 交易策略标签内容 -->
+      <div v-if="activeTab === 'strategies'" class="tab-pane">
+        <div class="strategies-list">
+          <div v-for="(strategy, index) in guide.tradingStrategies" :key="index" class="strategy-card">
+            <h2>{{ strategy.name }}</h2>
+            <p class="strategy-description">{{ strategy.description }}</p>
+            <div class="strategy-details">
+              <div class="suited-for">
+                <h3>适用场景</h3>
+                <p>{{ strategy.bestSuitedFor }}</p>
+              </div>
+              <div class="risk-management">
+                <h3>风险管理</h3>
+                <p>{{ strategy.riskManagement }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="best-practices">
+          <h2>最佳实践</h2>
+          <ul>
+            <li v-for="(practice, index) in guide.bestPractices" :key="index">
+              {{ practice }}
+            </li>
+          </ul>
+        </div>
+        
+        <div class="common-mistakes">
+          <h2>常见错误</h2>
+          <ul>
+            <li v-for="(mistake, index) in guide.commonMistakes" :key="index">
+              {{ mistake }}
+            </li>
+          </ul>
+        </div>
+      </div>
+      
+      <!-- 案例研究标签内容 -->
+      <div v-if="activeTab === 'case-studies'" class="tab-pane">
+        <div class="case-study-intro">
+          <h2>{{ caseStudy.title }}</h2>
+          <p>{{ caseStudy.marketContext }}</p>
+        </div>
+        
+        <div class="case-studies-list">
+          <div v-for="(study, index) in caseStudy.caseStudies" :key="index" class="case-study-card">
+            <h2>{{ study.title }}</h2>
+            <div class="case-scenario">
+              <h3>市场情况</h3>
+              <p>{{ study.scenario }}</p>
+            </div>
+            <div class="case-action">
+              <h3>行动策略</h3>
+              <p>{{ study.action }}</p>
+            </div>
+            <div class="case-result">
+              <h3>结果</h3>
+              <p>{{ study.result }}</p>
+            </div>
+            <div class="case-lesson">
+              <h3>经验教训</h3>
+              <p>{{ study.lessons }}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="strategic-recommendations">
+          <h2>策略建议</h2>
+          
+          <div class="recommendation-group">
+            <h3>短期策略</h3>
+            <ul>
+              <li v-for="(rec, index) in caseStudy.strategicRecommendations.shortTerm" :key="index">
+                {{ rec }}
+              </li>
+            </ul>
+          </div>
+          
+          <div class="recommendation-group">
+            <h3>中期策略</h3>
+            <ul>
+              <li v-for="(rec, index) in caseStudy.strategicRecommendations.mediumTerm" :key="index">
+                {{ rec }}
+              </li>
+            </ul>
+          </div>
+          
+          <div class="recommendation-group">
+            <h3>长期策略</h3>
+            <ul>
+              <li v-for="(rec, index) in caseStudy.strategicRecommendations.longTerm" :key="index">
+                {{ rec }}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 常见问题标签内容 -->
+      <div v-if="activeTab === 'faq'" class="tab-pane">
+        <div class="faq-list">
+          <div v-for="(item, index) in faqs" :key="index" class="faq-item">
+            <div class="faq-question" @click="toggleFAQ(index)">
+              <h3>{{ item.question }}</h3>
+              <span class="arrow" :class="{ 'arrow-down': openFaqs.includes(index) }">▶</span>
+            </div>
+            <div class="faq-answer" v-show="openFaqs.includes(index)">
+              <p>{{ item.answer }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 实践工具标签内容 -->
+      <div v-if="activeTab === 'tools'" class="tab-pane">
+        <div class="tools-section">
+          <h2>威廉指标计算器</h2>
+          <div class="calculator-container">
+            <div class="input-group">
+              <label>周期 (天)</label>
+              <input type="number" v-model.number="calculatorParams.period" min="1" max="100" />
+            </div>
+            <div class="input-group">
+              <label>最高价</label>
+              <input type="number" v-model.number="calculatorParams.highPrice" min="0" step="0.01" />
+            </div>
+            <div class="input-group">
+              <label>最低价</label>
+              <input type="number" v-model.number="calculatorParams.lowPrice" min="0" step="0.01" />
+            </div>
+            <div class="input-group">
+              <label>收盘价</label>
+              <input type="number" v-model.number="calculatorParams.closePrice" min="0" step="0.01" />
+            </div>
+            <button class="calculate-button" @click="calculateWilliamsR">计算</button>
+            
+            <div class="result-container" v-if="calculationResult !== null">
+              <h3>威廉指标值</h3>
+              <div class="result-value" :class="getResultClass()">
+                {{ calculationResult.toFixed(2) }}
+              </div>
+              <p class="result-interpretation">
+                {{ getResultInterpretation() }}
+              </p>
+            </div>
+          </div>
+          
+          <div class="resources-section">
+            <h2>推荐资源</h2>
+            <div class="resources-list">
+              <div class="resource-category">
+                <h3>软件工具</h3>
+                <ul>
+                  <li v-for="(software, index) in guide.toolsAndResources.software" :key="index">
+                    {{ software }}
+                  </li>
+                </ul>
+              </div>
+              <div class="resource-category">
+                <h3>推荐书籍</h3>
+                <ul>
+                  <li v-for="(book, index) in guide.toolsAndResources.books" :key="index">
+                    {{ book }}
+                  </li>
+                </ul>
+              </div>
+              <div class="resource-category">
+                <h3>网站资源</h3>
+                <ul>
+                  <li v-for="(website, index) in guide.toolsAndResources.websites" :key="index">
+                    {{ website }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { getWilliamsRGuide, getWilliamsRFAQs, getWilliamsRCaseStudy } from '../../utils/ai/williamsRGuide.js';
+
+export default {
+  data() {
+    return {
+      activeTab: 'overview',
+      guide: getWilliamsRGuide(),
+      faqs: getWilliamsRFAQs(),
+      caseStudy: getWilliamsRCaseStudy(),
+      openFaqs: [],
+      tabs: [
+        { id: 'overview', name: '概述' },
+        { id: 'strategies', name: '交易策略' },
+        { id: 'case-studies', name: '案例研究' },
+        { id: 'faq', name: '常见问题' },
+        { id: 'tools', name: '实践工具' }
+      ],
+      calculatorParams: {
+        period: 14,
+        highPrice: 100,
+        lowPrice: 90,
+        closePrice: 95
+      },
+      calculationResult: null
+    };
+  },
+  methods: {
+    toggleFAQ(index) {
+      if (this.openFaqs.includes(index)) {
+        this.openFaqs = this.openFaqs.filter(i => i !== index);
+      } else {
+        this.openFaqs.push(index);
+      }
+    },
+    calculateWilliamsR() {
+      const { highPrice, lowPrice, closePrice } = this.calculatorParams;
+      
+      // 验证输入
+      if (highPrice <= lowPrice) {
+        alert('最高价必须大于最低价');
+        return;
+      }
+      
+      if (closePrice > highPrice || closePrice < lowPrice) {
+        alert('收盘价必须在最高价和最低价之间');
+        return;
+      }
+      
+      // 计算威廉指标
+      this.calculationResult = ((highPrice - closePrice) / (highPrice - lowPrice)) * -100;
+    },
+    getResultClass() {
+      if (this.calculationResult === null) return '';
+      
+      if (this.calculationResult >= -20) {
+        return 'overbought';
+      } else if (this.calculationResult <= -80) {
+        return 'oversold';
+      } else {
+        return 'neutral';
+      }
+    },
+    getResultInterpretation() {
+      if (this.calculationResult === null) return '';
+      
+      if (this.calculationResult >= -20) {
+        return '当前处于超买区域,市场可能存在下跌风险。';
+      } else if (this.calculationResult <= -80) {
+        return '当前处于超卖区域,市场可能存在反弹机会。';
+      } else {
+        return '当前处于中性区域,无明显超买或超卖信号。';
+      }
+    }
+  }
+};
+</script>
+
+<style scoped>
+.williams-r-page {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-title {
+  font-size: 28px;
+  color: #333;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.navigation-tabs {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border-bottom: 3px solid transparent;
+  font-weight: 500;
+}
+
+.tab.active {
+  border-bottom: 3px solid #1976d2;
+  color: #1976d2;
+}
+
+.tab:hover {
+  background-color: #f5f5f5;
+}
+
+.tab-pane {
+  animation: fadeIn 0.5s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 概述标签样式 */
+.indicator-overview {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.info-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.info-card h2 {
+  color: #333;
+  font-size: 20px;
+  margin-top: 0;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.quote {
+  font-style: italic;
+  color: #666;
+  border-left: 3px solid #1976d2;
+  padding-left: 15px;
+  margin-top: 15px;
+}
+
+.formula-box {
+  background: #f9f9f9;
+  padding: 15px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.formula {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: bold;
+  margin: 10px 0;
+  text-align: center;
+}
+
+.comparison-table {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.comparison-item {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.comparison-item h3 {
+  margin-top: 0;
+  color: #333;
+  font-size: 16px;
+}
+
+/* 交易策略标签样式 */
+.strategies-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.strategy-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  transition: transform 0.3s;
+}
+
+.strategy-card:hover {
+  transform: translateY(-5px);
+}
+
+.strategy-card h2 {
+  color: #1976d2;
+  font-size: 18px;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.strategy-description {
+  color: #333;
+  margin-bottom: 15px;
+}
+
+.strategy-details {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.suited-for h3, .risk-management h3 {
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 5px;
+}
+
+.suited-for p, .risk-management p {
+  font-size: 14px;
+  color: #666;
+}
+
+.best-practices, .common-mistakes {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.best-practices h2, .common-mistakes h2 {
+  color: #333;
+  font-size: 20px;
+  margin-top: 0;
+  margin-bottom: 15px;
+}
+
+.best-practices ul, .common-mistakes ul {
+  padding-left: 20px;
+}
+
+.best-practices li, .common-mistakes li {
+  margin-bottom: 10px;
+  color: #444;
+}
+
+/* 案例研究标签样式 */
+.case-study-intro {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.case-study-intro h2 {
+  color: #333;
+  font-size: 22px;
+  margin-top: 0;
+  margin-bottom: 15px;
+}
+
+.case-studies-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.case-study-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.case-study-card h2 {
+  color: #1976d2;
+  font-size: 20px;
+  margin-top: 0;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.case-scenario, .case-action, .case-result, .case-lesson {
+  margin-bottom: 15px;
+}
+
+.case-scenario h3, .case-action h3, .case-result h3, .case-lesson h3 {
+  font-size: 16px;
+  color: #555;
+  margin-bottom: 5px;
+}
+
+.strategic-recommendations {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.strategic-recommendations h2 {
+  color: #333;
+  font-size: 22px;
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.recommendation-group {
+  margin-bottom: 20px;
+}
+
+.recommendation-group h3 {
+  font-size: 18px;
+  color: #1976d2;
+  margin-bottom: 10px;
+}
+
+.recommendation-group ul {
+  padding-left: 20px;
+}
+
+.recommendation-group li {
+  margin-bottom: 8px;
+  color: #444;
+}
+
+/* 常见问题标签样式 */
+.faq-list {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.faq-item {
+  border-bottom: 1px solid #eee;
+}
+
+.faq-item:last-child {
+  border-bottom: none;
+}
+
+.faq-question {
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.faq-question:hover {
+  background-color: #f5f5f5;
+}
+
+.faq-question h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.arrow {
+  transition: transform 0.3s;
+  font-size: 12px;
+  color: #666;
+}
+
+.arrow-down {
+  transform: rotate(90deg);
+}
+
+.faq-answer {
+  padding: 0 20px 15px 20px;
+  background-color: #f9f9f9;
+}
+
+.faq-answer p {
+  margin: 0;
+  color: #555;
+  line-height: 1.6;
+}
+
+/* 实践工具标签样式 */
+.tools-section {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+
+.tools-section h2 {
+  color: #333;
+  font-size: 22px;
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.calculator-container {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.input-group {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.input-group label {
+  font-weight: 500;
+  color: #555;
+}
+
+.input-group input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.calculate-button {
+  background-color: #1976d2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.3s;
+  margin-bottom: 20px;
+}
+
+.calculate-button:hover {
+  background-color: #1565c0;
+}
+
+.result-container {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.result-container h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 16px;
+  color: #333;
+}
+
+.result-value {
+  font-size: 24px;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 10px;
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.overbought {
+  color: #e53935;
+  background-color: rgba(229, 57, 53, 0.1);
+}
+
+.oversold {
+  color: #43a047;
+  background-color: rgba(67, 160, 71, 0.1);
+}
+
+.neutral {
+  color: #ff9800;
+  background-color: rgba(255, 152, 0, 0.1);
+}
+
+.result-interpretation {
+  color: #555;
+  font-style: italic;
+}
+
+.resources-section {
+  margin-top: 30px;
+}
+
+.resources-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.resource-category {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.resource-category h3 {
+  margin-top: 0;
+  color: #333;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.resource-category ul {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.resource-category li {
+  margin-bottom: 8px;
+  color: #555;
+}
+
+@media (max-width: 768px) {
+  .navigation-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .tab {
+    padding: 10px 15px;
+  }
+  
+  .comparison-table {
+    grid-template-columns: 1fr;
+  }
+  
+  .strategies-list {
+    grid-template-columns: 1fr;
+  }
+  
+  .resources-list {
+    grid-template-columns: 1fr;
+  }
+}
+</style> 

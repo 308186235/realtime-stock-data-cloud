@@ -1,0 +1,119 @@
+from fastapi import APIRouter, Depends, HTTPException, Body, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+
+from backend.models import get_db
+from backend.models.models import User
+from backend.services.user_service import (
+    authenticate_user, 
+    create_access_token, 
+    get_user_by_username,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
+
+# 创建路由器
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+# OAuth2密码流
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+# 获取当前用户
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    获取当前用户
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="无效的认证凭据",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # 解析令牌,获取用户名
+        from backend.services.user_service import jwt, SECRET_KEY, ALGORITHM
+        
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        
+        if username is None:
+            raise credentials_exception
+    except:
+        raise credentials_exception
+    
+    # 从数据库获取用户
+    user = get_user_by_username(db, username=username)
+    
+    if user is None:
+        raise credentials_exception
+    
+    # 转换为字典
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active
+    }
+
+# 测试端点
+@router.get("/test")
+async def auth_test():
+    """测试认证API是否可用"""
+    return {
+        "message": "认证API服务器正常工作",
+        "status": "ok",
+        "timestamp": datetime.now().isoformat()
+    }
+
+# 登录获取令牌
+@router.post("/token")
+async def login_for_access_token(form_data: Dict[str, Any] = Body(...), db: Session = Depends(get_db)):
+    """
+    用户登录获取访问令牌
+    """
+    username = form_data.get("username")
+    password = form_data.get("password")
+    
+    if not username or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请提供用户名和密码"
+        )
+    
+    # 认证用户
+    user = authenticate_user(db, username, password)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 创建访问令牌
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "username": user.username,
+        "expires_at": (datetime.now() + access_token_expires).isoformat()
+    }
+
+# 获取当前用户信息
+@router.get("/me")
+async def read_users_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    获取当前用户信息
+    """
+    return {
+        "username": current_user["username"],
+        "email": current_user["email"],
+        "role": current_user["role"],
+        "is_active": current_user["is_active"]
+    } 

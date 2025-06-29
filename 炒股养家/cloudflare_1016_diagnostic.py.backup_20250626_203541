@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Cloudflare 1016错误诊断工具
+自动检查DNS配置、服务器状态和网络连接
+"""
+
+import socket
+import subprocess
+import requests
+import time
+import json
+from datetime import datetime
+
+class CloudflareDiagnostic:
+    def __init__(self, domain="aigupiao.me"):
+        self.domain = domain
+        self.results = {}
+        
+    def log(self, message, level="INFO"):
+        """记录诊断日志"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] [{level}] {message}")
+        
+    def check_dns_resolution(self):
+        """检查DNS解析"""
+        self.log("检查DNS解析...")
+        try:
+            # 获取A记录
+            ip_address = socket.gethostbyname(self.domain)
+            self.results['dns_resolution'] = {
+                'status': 'SUCCESS',
+                'ip_address': ip_address,
+                'message': f'域名解析成功: {ip_address}'
+            }
+            self.log(f"DNS解析成功: {self.domain} -> {ip_address}", "SUCCESS")
+            return ip_address
+        except socket.gaierror as e:
+            self.results['dns_resolution'] = {
+                'status': 'FAILED',
+                'error': str(e),
+                'message': 'DNS解析失败'
+            }
+            self.log(f"DNS解析失败: {e}", "ERROR")
+            return None
+            
+    def check_ping(self, ip_address):
+        """检查服务器连通性"""
+        if not ip_address:
+            return False
+            
+        self.log(f"检查服务器连通性: {ip_address}")
+        try:
+            # Windows和Linux兼容的ping命令
+            import platform
+            param = '-n' if platform.system().lower() == 'windows' else '-c'
+            
+            result = subprocess.run(
+                ['ping', param, '4', ip_address],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                self.results['ping'] = {
+                    'status': 'SUCCESS',
+                    'message': '服务器可达'
+                }
+                self.log("服务器ping测试成功", "SUCCESS")
+                return True
+            else:
+                self.results['ping'] = {
+                    'status': 'FAILED',
+                    'message': '服务器不可达'
+                }
+                self.log("服务器ping测试失败", "ERROR")
+                return False
+        except Exception as e:
+            self.results['ping'] = {
+                'status': 'ERROR',
+                'error': str(e),
+                'message': 'ping测试出错'
+            }
+            self.log(f"ping测试出错: {e}", "ERROR")
+            return False
+            
+    def check_http_connection(self):
+        """检查HTTP/HTTPS连接"""
+        self.log("检查HTTP/HTTPS连接...")
+        
+        # 检查HTTP
+        try:
+            response = requests.get(f"http://{self.domain}", timeout=10)
+            self.results['http'] = {
+                'status': 'SUCCESS',
+                'status_code': response.status_code,
+                'headers': dict(response.headers),
+                'message': f'HTTP连接成功 (状态码: {response.status_code})'
+            }
+            self.log(f"HTTP连接成功: {response.status_code}", "SUCCESS")
+        except Exception as e:
+            self.results['http'] = {
+                'status': 'FAILED',
+                'error': str(e),
+                'message': 'HTTP连接失败'
+            }
+            self.log(f"HTTP连接失败: {e}", "ERROR")
+            
+        # 检查HTTPS
+        try:
+            response = requests.get(f"https://{self.domain}", timeout=10)
+            self.results['https'] = {
+                'status': 'SUCCESS',
+                'status_code': response.status_code,
+                'headers': dict(response.headers),
+                'message': f'HTTPS连接成功 (状态码: {response.status_code})'
+            }
+            self.log(f"HTTPS连接成功: {response.status_code}", "SUCCESS")
+            
+            # 检查是否通过Cloudflare
+            if 'cf-ray' in response.headers:
+                self.log("检测到Cloudflare代理", "INFO")
+                self.results['cloudflare_proxy'] = {
+                    'status': 'ACTIVE',
+                    'cf_ray': response.headers.get('cf-ray'),
+                    'server': response.headers.get('server', 'Unknown')
+                }
+            else:
+                self.log("未检测到Cloudflare代理", "WARNING")
+                self.results['cloudflare_proxy'] = {
+                    'status': 'INACTIVE',
+                    'message': '可能未启用Cloudflare代理'
+                }
+                
+        except Exception as e:
+            self.results['https'] = {
+                'status': 'FAILED',
+                'error': str(e),
+                'message': 'HTTPS连接失败'
+            }
+            self.log(f"HTTPS连接失败: {e}", "ERROR")
+            
+    def check_port_connectivity(self, ip_address):
+        """检查端口连通性"""
+        if not ip_address:
+            return
+            
+        self.log("检查端口连通性...")
+        ports = [80, 443]
+        
+        for port in ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                result = sock.connect_ex((ip_address, port))
+                sock.close()
+                
+                if result == 0:
+                    self.results[f'port_{port}'] = {
+                        'status': 'OPEN',
+                        'message': f'端口{port}开放'
+                    }
+                    self.log(f"端口{port}开放", "SUCCESS")
+                else:
+                    self.results[f'port_{port}'] = {
+                        'status': 'CLOSED',
+                        'message': f'端口{port}关闭'
+                    }
+                    self.log(f"端口{port}关闭", "ERROR")
+            except Exception as e:
+                self.results[f'port_{port}'] = {
+                    'status': 'ERROR',
+                    'error': str(e),
+                    'message': f'端口{port}检查出错'
+                }
+                self.log(f"端口{port}检查出错: {e}", "ERROR")
+                
+    def check_dns_propagation(self):
+        """检查DNS传播状态"""
+        self.log("检查DNS传播状态...")
+        
+        # 使用多个DNS服务器检查
+        dns_servers = [
+            ('8.8.8.8', 'Google DNS'),
+            ('1.1.1.1', 'Cloudflare DNS'),
+            ('208.67.222.222', 'OpenDNS'),
+            ('114.114.114.114', '114 DNS')
+        ]
+        
+        propagation_results = []
+        
+        for dns_ip, dns_name in dns_servers:
+            try:
+                import dns.resolver
+                resolver = dns.resolver.Resolver()
+                resolver.nameservers = [dns_ip]
+                
+                answers = resolver.resolve(self.domain, 'A')
+                ip_addresses = [str(answer) for answer in answers]
+                
+                propagation_results.append({
+                    'dns_server': dns_name,
+                    'dns_ip': dns_ip,
+                    'status': 'SUCCESS',
+                    'ip_addresses': ip_addresses
+                })
+                self.log(f"{dns_name} 解析结果: {ip_addresses}", "INFO")
+                
+            except Exception as e:
+                propagation_results.append({
+                    'dns_server': dns_name,
+                    'dns_ip': dns_ip,
+                    'status': 'FAILED',
+                    'error': str(e)
+                })
+                self.log(f"{dns_name} 解析失败: {e}", "WARNING")
+                
+        self.results['dns_propagation'] = propagation_results
+        
+    def generate_report(self):
+        """生成诊断报告"""
+        self.log("生成诊断报告...")
+        
+        report = {
+            'domain': self.domain,
+            'timestamp': datetime.now().isoformat(),
+            'results': self.results,
+            'summary': self.get_summary()
+        }
+        
+        # 保存到文件
+        filename = f"cloudflare_1016_diagnostic_{int(time.time())}.json"
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+            
+        self.log(f"诊断报告已保存: {filename}")
+        return report
+        
+    def get_summary(self):
+        """获取诊断摘要"""
+        summary = {
+            'total_checks': len(self.results),
+            'passed': 0,
+            'failed': 0,
+            'errors': 0,
+            'recommendations': []
+        }
+        
+        for check, result in self.results.items():
+            if isinstance(result, dict):
+                status = result.get('status', 'UNKNOWN')
+                if status in ['SUCCESS', 'OPEN', 'ACTIVE']:
+                    summary['passed'] += 1
+                elif status in ['FAILED', 'CLOSED', 'INACTIVE']:
+                    summary['failed'] += 1
+                else:
+                    summary['errors'] += 1
+                    
+        # 生成建议
+        if self.results.get('dns_resolution', {}).get('status') == 'FAILED':
+            summary['recommendations'].append("检查DNS A记录配置")
+            
+        if self.results.get('ping', {}).get('status') == 'FAILED':
+            summary['recommendations'].append("检查服务器状态和网络连接")
+            
+        if self.results.get('port_80', {}).get('status') == 'CLOSED':
+            summary['recommendations'].append("检查Web服务器是否运行")
+            
+        if self.results.get('port_443', {}).get('status') == 'CLOSED':
+            summary['recommendations'].append("检查SSL/HTTPS配置")
+            
+        if self.results.get('cloudflare_proxy', {}).get('status') == 'INACTIVE':
+            summary['recommendations'].append("检查Cloudflare代理设置")
+            
+        return summary
+        
+    def run_full_diagnostic(self):
+        """运行完整诊断"""
+        self.log("开始Cloudflare 1016错误诊断...")
+        self.log(f"目标域名: {self.domain}")
+        
+        # 1. DNS解析检查
+        ip_address = self.check_dns_resolution()
+        
+        # 2. 服务器连通性检查
+        if ip_address:
+            self.check_ping(ip_address)
+            self.check_port_connectivity(ip_address)
+        
+        # 3. HTTP/HTTPS连接检查
+        self.check_http_connection()
+        
+        # 4. DNS传播检查（需要dnspython库）
+        try:
+            self.check_dns_propagation()
+        except ImportError:
+            self.log("跳过DNS传播检查（需要安装dnspython库）", "WARNING")
+        
+        # 5. 生成报告
+        report = self.generate_report()
+        
+        self.log("诊断完成！")
+        return report
+
+def main():
+    """主函数"""
+    print("=" * 60)
+    print("Cloudflare 1016错误诊断工具")
+    print("=" * 60)
+    
+    domain = input("请输入域名 (默认: aigupiao.me): ").strip()
+    if not domain:
+        domain = "aigupiao.me"
+    
+    diagnostic = CloudflareDiagnostic(domain)
+    report = diagnostic.run_full_diagnostic()
+    
+    print("\n" + "=" * 60)
+    print("诊断摘要")
+    print("=" * 60)
+    
+    summary = report['summary']
+    print(f"总检查项: {summary['total_checks']}")
+    print(f"通过: {summary['passed']}")
+    print(f"失败: {summary['failed']}")
+    print(f"错误: {summary['errors']}")
+    
+    if summary['recommendations']:
+        print("\n建议:")
+        for i, rec in enumerate(summary['recommendations'], 1):
+            print(f"  {i}. {rec}")
+    
+    print(f"\n详细报告已保存到JSON文件")
+
+if __name__ == "__main__":
+    main()

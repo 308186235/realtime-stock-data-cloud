@@ -1,0 +1,77 @@
+<template>
+  <view class="performance-panel">
+    <uni-card title="内存监控" :is-shadow="true">
+      <view class="chart-container">
+        <canvas ref="memChart" canvas-id="memChart" class="chart"></canvas>
+      </view>
+      <view class="metrics">
+        <uni-badge text="堆内存" type="primary" :inverted="true" size="small" />
+        <text class="value">{{ heapUsed }}MB / {{ heapTotal }}MB</text>
+        
+        <uni-badge text="JS堆" type="success" :inverted="true" size="small" />
+        <text class="value">{{ jsHeapSize }}MB</text>
+      </view>
+    </uni-card>
+  </view>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
+import { onMemoryWarning } from '@dcloudio/uni-app'
+import uniCard from '@dcloudio/uni-ui/lib/uni-card/uni-card.vue';
+import uniBadge from '@dcloudio/uni-ui/lib/uni-badge/uni-badge.vue';
+
+const heapUsed = ref(0)
+const heapTotal = ref(0)
+const jsHeapSize = ref(0)
+let timer = null
+
+const checkMemory = () => {
+  if (typeof wx !== 'undefined' && wx.getPerformance) {
+    const memory = wx.getPerformance().memory
+    heapUsed.value = (memory.usedJSHeapSize / 1048576).toFixed(2)
+    heapTotal.value = (memory.totalJSHeapSize / 1048576).toFixed(2)
+    jsHeapSize.value = (memory.jsHeapSizeLimit / 1048576).toFixed(2)
+  }
+}
+
+onMounted(() => {
+  timer = setInterval(checkMemory, 5000)
+  
+  onMemoryWarning((res) => {
+    uni.showToast({
+      title: `内存告警:${res.level}`, 
+      icon: 'none',
+      duration: 3000
+    })
+  })
+})
+
+onUnmounted(() => {
+  clearInterval(timer)
+  timer = null
+})
+</script>
+
+<style lang="scss">
+.performance-panel {
+  padding: 20rpx;
+  .metrics {
+    margin-top: 20rpx;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20rpx;
+    .value {
+      color: #666;
+      font-size: 24rpx;
+    }
+  }
+  .chart-container {
+    height: 300rpx;
+    .chart {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+</style>

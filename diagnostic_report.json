@@ -1,0 +1,11 @@
+{
+  "local_server": true,
+  "local_port": true,
+  "dns_resolution": true,
+  "dns_ips": [
+    "104.21.83.126"
+  ],
+  "tunnel_status": true,
+  "http_access": false,
+  "https_access": false
+}

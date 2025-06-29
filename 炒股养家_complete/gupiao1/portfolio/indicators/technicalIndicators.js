@@ -1,0 +1,324 @@
+/**
+ * 技术指标计算工具
+ * 包含常用技术分析指标的计算函数
+ */
+
+/**
+ * 计算移动平均线
+ * @param {Array} prices 价格数组
+ * @param {Number} period 周期
+ * @returns {Array} 移动平均线数组
+ */
+export function calculateMA(prices, period) {
+  const result = [];
+  
+  for (let i = 0; i < prices.length; i++) {
+    if (i < period - 1) {
+      result.push(null);
+      continue;
+    }
+    
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += prices[i - j];
+    }
+    result.push(sum / period);
+  }
+  
+  return result;
+}
+
+/**
+ * 计算MACD指标
+ * @param {Array} prices 价格数组
+ * @param {Object} options 可选参数
+ * @returns {Object} MACD结果对象
+ */
+export function calculateMACD(prices, options = {}) {
+  const shortPeriod = options.shortPeriod || 12;
+  const longPeriod = options.longPeriod || 26;
+  const signalPeriod = options.signalPeriod || 9;
+  
+  // 计算EMA
+  const shortEMA = calculateEMA(prices, shortPeriod);
+  const longEMA = calculateEMA(prices, longPeriod);
+  
+  // 计算DIF (MACD Line)
+  const dif = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (i < longPeriod - 1) {
+      dif.push(null);
+      continue;
+    }
+    dif.push(shortEMA[i] - longEMA[i]);
+  }
+  
+  // 计算DEA (Signal Line)
+  const signal = calculateEMA(dif.filter(v => v !== null), signalPeriod);
+  
+  // 补全signal数组长度
+  const fullSignal = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (i < longPeriod + signalPeriod - 2) {
+      fullSignal.push(null);
+      continue;
+    }
+    fullSignal.push(signal[i - (longPeriod - 1)]);
+  }
+  
+  // 计算柱状图
+  const histogram = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (i < longPeriod + signalPeriod - 2) {
+      histogram.push(null);
+      continue;
+    }
+    histogram.push(dif[i] - fullSignal[i]);
+  }
+  
+  return {
+    dif: dif,
+    signal: fullSignal,
+    histogram: histogram
+  };
+}
+
+/**
+ * 计算指数移动平均线
+ * @param {Array} prices 价格数组
+ * @param {Number} period 周期
+ * @returns {Array} EMA数组
+ */
+export function calculateEMA(prices, period) {
+  const result = [];
+  const k = 2 / (period + 1);
+  
+  // 第一个EMA值使用SMA
+  let ema = prices.slice(0, period).reduce((sum, price) => sum + price, 0) / period;
+  result.push(ema);
+  
+  // 计算剩余的EMA值
+  for (let i = period; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+    result.push(ema);
+  }
+  
+  // 补全数组长度
+  const fullResult = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (i < period - 1) {
+      fullResult.push(null);
+    } else {
+      fullResult.push(result[i - (period - 1)]);
+    }
+  }
+  
+  return fullResult;
+}
+
+/**
+ * 计算KDJ指标
+ * @param {Array} prices 价格数组
+ * @param {Object} options 可选参数
+ * @returns {Object} KDJ结果对象
+ */
+export function calculateKDJ(prices, options = {}) {
+  const period = options.period || 9;
+  const kPeriod = options.kPeriod || 3;
+  const dPeriod = options.dPeriod || 3;
+  
+  // 获取最高价和最低价
+  const highs = prices.map((p, i, arr) => {
+    if (i < period - 1) return p;
+    return Math.max(...arr.slice(i - period + 1, i + 1));
+  });
+  
+  const lows = prices.map((p, i, arr) => {
+    if (i < period - 1) return p;
+    return Math.min(...arr.slice(i - period + 1, i + 1));
+  });
+  
+  // 计算RSV
+  const rsv = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (i < period - 1) {
+      rsv.push(50); // 默认值
+      continue;
+    }
+    
+    const high = highs[i];
+    const low = lows[i];
+    const close = prices[i];
+    
+    if (high === low) {
+      rsv.push(50);
+    } else {
+      rsv.push(100 * (close - low) / (high - low));
+    }
+  }
+  
+  // 计算K值
+  let k = 50;
+  const kValues = [];
+  for (let i = 0; i < rsv.length; i++) {
+    k = (kPeriod - 1) * k / kPeriod + rsv[i] / kPeriod;
+    kValues.push(k);
+  }
+  
+  // 计算D值
+  let d = 50;
+  const dValues = [];
+  for (let i = 0; i < kValues.length; i++) {
+    d = (dPeriod - 1) * d / dPeriod + kValues[i] / dPeriod;
+    dValues.push(d);
+  }
+  
+  // 计算J值
+  const jValues = kValues.map((k, i) => 3 * k - 2 * dValues[i]);
+  
+  return {
+    k: kValues,
+    d: dValues,
+    j: jValues
+  };
+}
+
+/**
+ * 计算RSI指标
+ * @param {Array} prices 价格数组
+ * @param {Number} period RSI周期,默认14
+ * @returns {Array} RSI数组
+ */
+export function calculateRSI(prices, period = 14) {
+  const result = [];
+  
+  // 计算价格变化
+  const changes = [];
+  for (let i = 1; i < prices.length; i++) {
+    changes.push(prices[i] - prices[i - 1]);
+  }
+  
+  // 初始化
+  for (let i = 0; i < period; i++) {
+    result.push(null);
+  }
+  
+  // 计算第一个RSI值
+  let sumGain = 0;
+  let sumLoss = 0;
+  
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) {
+      sumGain += changes[i];
+    } else {
+      sumLoss -= changes[i];
+    }
+  }
+  
+  let avgGain = sumGain / period;
+  let avgLoss = sumLoss / period;
+  
+  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  let rsi = 100 - (100 / (1 + rs));
+  result[period] = rsi;
+  
+  // 计算剩余的RSI值
+  for (let i = period + 1; i < prices.length; i++) {
+    const change = changes[i - 1];
+    let currentGain = 0;
+    let currentLoss = 0;
+    
+    if (change > 0) {
+      currentGain = change;
+    } else {
+      currentLoss = -change;
+    }
+    
+    avgGain = ((avgGain * (period - 1)) + currentGain) / period;
+    avgLoss = ((avgLoss * (period - 1)) + currentLoss) / period;
+    
+    rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    rsi = 100 - (100 / (1 + rs));
+    result.push(rsi);
+  }
+  
+  return result;
+}
+
+/**
+ * 计算威廉指标(Williams %R)
+ * @param {Array} prices 收盘价数组
+ * @param {Array} highPrices 最高价数组
+ * @param {Array} lowPrices 最低价数组
+ * @param {Number} period 周期,默认14
+ * @returns {Array} 威廉指标数组
+ */
+export function calculateWilliamsR(prices, highPrices, lowPrices, period = 14) {
+  const result = [];
+  
+  for (let i = 0; i < prices.length; i++) {
+    if (i < period - 1) {
+      result.push(null);
+      continue;
+    }
+    
+    // 找出过去N个周期的最高价和最低价
+    let highestHigh = -Infinity;
+    let lowestLow = Infinity;
+    
+    for (let j = 0; j < period; j++) {
+      highestHigh = Math.max(highestHigh, highPrices[i - j]);
+      lowestLow = Math.min(lowestLow, lowPrices[i - j]);
+    }
+    
+    // 如果最高价等于最低价,则返回-50(中性值)
+    if (highestHigh === lowestLow) {
+      result.push(-50);
+    } else {
+      // 计算威廉指标: ((最高价 - 收盘价) / (最高价 - 最低价)) * -100
+      const williamsR = ((highestHigh - prices[i]) / (highestHigh - lowestLow)) * -100;
+      result.push(williamsR);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * 计算布林带指标
+ * @param {Array} prices 价格数组
+ * @param {Object} options 可选参数
+ * @returns {Object} 布林带结果对象
+ */
+export function calculateBOLL(prices, options = {}) {
+  const period = options.period || 20;
+  const stdDev = options.stdDev || 2;
+  
+  const middle = calculateMA(prices, period);
+  const upper = [];
+  const lower = [];
+  
+  for (let i = 0; i < prices.length; i++) {
+    if (i < period - 1) {
+      upper.push(null);
+      lower.push(null);
+      continue;
+    }
+    
+    // 计算标准差
+    let sum = 0;
+    for (let j = 0; j < period; j++) {
+      sum += Math.pow(prices[i - j] - middle[i], 2);
+    }
+    const std = Math.sqrt(sum / period);
+    
+    upper.push(middle[i] + stdDev * std);
+    lower.push(middle[i] - stdDev * std);
+  }
+  
+  return {
+    upper: upper,
+    middle: middle,
+    lower: lower
+  };
+}

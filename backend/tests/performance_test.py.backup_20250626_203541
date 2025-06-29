@@ -1,0 +1,297 @@
+#!/usr/bin/env python
+import time
+import cProfile
+import pstats
+import io
+import os
+import sys
+import logging
+import pandas as pd
+from datetime import datetime, timedelta
+import numpy as np
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Add parent directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import components to test
+from backtesting.engine import BacktestEngine
+from backtesting.strategies.inverted_three_red_backtest import InvertedThreeRedBacktest
+from backtesting.strategies.red_three_soldiers_backtest import RedThreeSoldiersBacktest
+from backtesting.risk_management import RiskManager
+from backtesting.indicators.technical_indicators import TechnicalIndicators
+from backtesting.analysis.benchmark_comparison import BenchmarkComparison
+from backtesting.analysis.performance_analyzer import PerformanceAnalyzer
+
+def generate_large_dataset(symbols_count=10, days=365):
+    """Generate a large test dataset for performance testing"""
+    logger.info(f"Generating test data with {symbols_count} symbols over {days} days...")
+    
+    # Generate date range
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # Generate trading days
+    dates = []
+    current_date = start_date
+    while current_date <= end_date:
+        if current_date.weekday() < 5:  # Monday to Friday
+            dates.append(current_date)
+        current_date += timedelta(days=1)
+    
+    # Generate symbols
+    symbols = [f"SYM{i}" for i in range(1, symbols_count + 1)]
+    
+    # Generate data
+    data = []
+    
+    for symbol in symbols:
+        base_price = 100 + np.random.randint(0, 900)
+        price = base_price
+        
+        for date in dates:
+            # Add some random price movement
+            change = np.random.normal(0.0005, 0.015)
+            price *= (1 + change)
+            
+            # Generate daily OHLCV data
+            open_price = price * (1 + np.random.normal(0, 0.005))
+            high_price = max(open_price, price) * (1 + abs(np.random.normal(0, 0.008)))
+            low_price = min(open_price, price) * (1 - abs(np.random.normal(0, 0.008)))
+            volume = int(np.random.normal(1000000, 300000))
+            
+            data.append({
+                'date': date,
+                'symbol': symbol,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': price,
+                'volume': volume
+            })
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    logger.info(f"Generated dataset with {len(df)} rows")
+    
+    return df
+
+def profile_function(func, *args, **kwargs):
+    """Profile a function and return stats"""
+    profiler = cProfile.Profile()
+    profiler.enable()
+    
+    result = func(*args, **kwargs)
+    
+    profiler.disable()
+    
+    # Get stats
+    s = io.StringIO()
+    ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
+    ps.print_stats(20)  # Print top 20 functions by time
+    
+    return result, s.getvalue()
+
+def test_indicator_performance():
+    """Test the performance of technical indicators calculation"""
+    # Generate test data
+    df = generate_large_dataset(symbols_count=10, days=365)
+    
+    # Measure time for each indicator
+    indicators = [
+        ('Moving Average', lambda d: TechnicalIndicators.add_moving_average(d)),
+        ('Exponential Moving Average', lambda d: TechnicalIndicators.add_exponential_moving_average(d)),
+        ('MACD', lambda d: TechnicalIndicators.add_macd(d)),
+        ('RSI', lambda d: TechnicalIndicators.add_rsi(d)),
+        ('Bollinger Bands', lambda d: TechnicalIndicators.add_bollinger_bands(d)),
+        ('Stochastic Oscillator', lambda d: TechnicalIndicators.add_stochastic_oscillator(d)),
+        ('ATR', lambda d: TechnicalIndicators.add_atr(d)),
+        ('OBV', lambda d: TechnicalIndicators.add_obv(d)),
+        ('MFI', lambda d: TechnicalIndicators.add_money_flow_index(d)),
+        ('All Indicators', lambda d: TechnicalIndicators.add_all_indicators(d))
+    ]
+    
+    results = []
+    
+    for name, func in indicators:
+        logger.info(f"Testing performance of {name}...")
+        
+        # Prepare a fresh copy of data
+        test_df = df.copy()
+        
+        # Measure execution time
+        start_time = time.time()
+        try:
+            result_df = func(test_df)
+            duration = time.time() - start_time
+            success = True
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"Error testing {name}: {str(e)}")
+            success = False
+        
+        results.append({
+            'indicator': name,
+            'duration': duration,
+            'success': success,
+            'rows_processed': len(test_df),
+            'speed': len(test_df) / duration if duration > 0 else 0
+        })
+    
+    # Print results table
+    logger.info("\nPerformance Results (sorted by duration):")
+    logger.info("=" * 80)
+    logger.info(f"{'Indicator':<30} {'Duration (s)':<15} {'Rows/second':<15} {'Success':<10}")
+    logger.info("-" * 80)
+    
+    for result in sorted(results, key=lambda x: x['duration'], reverse=True):
+        logger.info(f"{result['indicator']:<30} {result['duration']:<15.3f} {result['speed']:<15.1f} {result['success']}")
+    
+    logger.info("=" * 80)
+    
+    return results
+
+def test_backtest_performance():
+    """Test the performance of the backtest engine"""
+    # Generate test data
+    df = generate_large_dataset(symbols_count=5, days=365)
+    
+    # Add technical indicators
+    df = TechnicalIndicators.add_all_indicators(df)
+    df = TechnicalIndicators.generate_signals(df)
+    
+    # Initialize components
+    initial_capital = 100000
+    risk_params = {
+        'max_position_size': 0.2,
+        'max_drawdown': 0.1,
+        'fixed_stop_loss': 0.05,
+        'trailing_stop_loss': 0.08,
+        'time_stop_loss': 10,
+        'position_sizing_method': 'risk',
+        'risk_per_trade': 0.02
+    }
+    
+    risk_manager = RiskManager(initial_capital, risk_params)
+    inverted_three_red_strategy = InvertedThreeRedBacktest()
+    red_three_soldiers_strategy = RedThreeSoldiersBacktest()
+    
+    # Create backtest engine
+    engine = BacktestEngine(
+        initial_capital=initial_capital,
+        commission=0.001
+    )
+    
+    # Add strategies
+    engine.add_strategy(inverted_three_red_strategy)
+    engine.add_strategy(red_three_soldiers_strategy)
+    
+    # Set risk manager
+    engine.set_risk_manager(risk_manager)
+    
+    # Profile the backtest run
+    logger.info("Running backtest with profiling...")
+    results, profile_stats = profile_function(engine.run, df)
+    
+    # Save profiling results
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_results')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    profile_file = os.path.join(output_dir, f'backtest_profile_{timestamp}.txt')
+    
+    with open(profile_file, 'w') as f:
+        f.write(profile_stats)
+    
+    logger.info(f"Backtest profiling results saved to: {profile_file}")
+    
+    return results
+
+def test_memory_usage():
+    """Test memory usage patterns"""
+    import psutil
+    import gc
+    
+    process = psutil.Process(os.getpid())
+    
+    # Function to measure memory usage
+    def get_memory_mb():
+        # Force garbage collection
+        gc.collect()
+        return process.memory_info().rss / (1024 * 1024)
+    
+    # Initial memory usage
+    base_memory = get_memory_mb()
+    logger.info(f"Initial memory usage: {base_memory:.2f} MB")
+    
+    # Generate test data and measure memory
+    logger.info("Generating test data...")
+    df = generate_large_dataset(symbols_count=10, days=365)
+    after_data_memory = get_memory_mb()
+    logger.info(f"Memory after data generation: {after_data_memory:.2f} MB (delta: {after_data_memory - base_memory:.2f} MB)")
+    
+    # Add indicators and measure memory
+    logger.info("Adding technical indicators...")
+    df = TechnicalIndicators.add_all_indicators(df)
+    after_indicators_memory = get_memory_mb()
+    logger.info(f"Memory after adding indicators: {after_indicators_memory:.2f} MB (delta: {after_indicators_memory - after_data_memory:.2f} MB)")
+    
+    # Run backtest and measure memory
+    logger.info("Running backtest...")
+    engine = BacktestEngine(initial_capital=100000)
+    engine.add_strategy(InvertedThreeRedBacktest())
+    results = engine.run(df)
+    after_backtest_memory = get_memory_mb()
+    logger.info(f"Memory after backtest: {after_backtest_memory:.2f} MB (delta: {after_backtest_memory - after_indicators_memory:.2f} MB)")
+    
+    # Generate report and measure memory
+    logger.info("Generating performance report...")
+    report = PerformanceAnalyzer.generate_report(results['equity_curve'], results['trades'])
+    after_report_memory = get_memory_mb()
+    logger.info(f"Memory after report generation: {after_report_memory:.2f} MB (delta: {after_report_memory - after_backtest_memory:.2f} MB)")
+    
+    # Clean up
+    del df, results, report
+    gc.collect()
+    final_memory = get_memory_mb()
+    logger.info(f"Final memory after cleanup: {final_memory:.2f} MB (delta from start: {final_memory - base_memory:.2f} MB)")
+    
+    return {
+        'initial_memory': base_memory,
+        'after_data_generation': after_data_memory,
+        'after_indicators': after_indicators_memory,
+        'after_backtest': after_backtest_memory,
+        'after_report': after_report_memory,
+        'final_memory': final_memory
+    }
+
+if __name__ == '__main__':
+    logger.info("Starting performance tests")
+    
+    if len(sys.argv) > 1:
+        test_type = sys.argv[1]
+        
+        if test_type == 'indicators':
+            test_indicator_performance()
+        elif test_type == 'backtest':
+            test_backtest_performance()
+        elif test_type == 'memory':
+            test_memory_usage()
+        else:
+            logger.error(f"Unknown test type: {test_type}")
+            logger.info("Available test types: indicators, backtest, memory")
+    else:
+        # Run all tests
+        logger.info("Running all performance tests")
+        
+        logger.info("\n--- INDICATOR PERFORMANCE ---")
+        test_indicator_performance()
+        
+        logger.info("\n--- BACKTEST PERFORMANCE ---")
+        test_backtest_performance()
+        
+        logger.info("\n--- MEMORY USAGE ---")
+        test_memory_usage() 

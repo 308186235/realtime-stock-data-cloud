@@ -1,0 +1,955 @@
+<template>
+  <view class="trade-recommendation-container">
+    <view class="recommendation-header">
+      <text class="header-title">AI 交易建议</text>
+      <text class="header-subtitle">基于多策略分析的智能决策</text>
+    </view>
+    
+    <view class="recommendation-card">
+      <view class="decision-summary">
+        <view class="decision-action" :class="getActionClass(decision.action)">
+          <text class="action-icon">{{ getActionIcon(decision.action) }}</text>
+          <text class="action-text">{{ getActionText(decision.action) }}</text>
+        </view>
+        
+        <view class="decision-confidence">
+          <text class="confidence-label">可信度:</text>
+          <view class="confidence-meter">
+            <view 
+              v-for="i in 5" 
+              :key="i" 
+              class="confidence-bar" 
+              :class="{ 'active': getConfidenceLevel(decision.confidence) >= i }"
+            ></view>
+          </view>
+          <text class="confidence-text">{{ getConfidenceText(decision.confidence) }}</text>
+        </view>
+      </view>
+      
+      <view class="decision-description">
+        <text>{{ decision.description }}</text>
+      </view>
+      
+      <!-- 详细决策依据 -->
+      <view class="decision-evidence" v-if="decision.detailedReasons">
+        <view class="evidence-header">
+          <text class="evidence-title">决策依据详情</text>
+          <view class="evidence-toggle" @click="toggleEvidenceDetails">
+            <text class="toggle-text">{{ showEvidenceDetails ? '收起' : '展开' }}</text>
+            <text class="toggle-icon">{{ showEvidenceDetails ? '▲' : '▼' }}</text>
+          </view>
+        </view>
+        
+        <view class="evidence-content" v-if="showEvidenceDetails">
+          <text class="evidence-text">{{ decision.detailedReasons }}</text>
+          
+          <!-- 信号指标可视化 -->
+          <view class="signal-visualization" v-if="decision.signalDetails && hasSignals">
+            <!-- 技术指标 -->
+            <view class="signal-section" v-if="decision.signalDetails.technical && decision.signalDetails.technical.length > 0">
+              <view class="signal-section-header">
+                <text class="section-title">技术指标信号</text>
+                <text class="signal-count">{{ decision.signalDetails.technical.length }}个</text>
+              </view>
+              
+              <view class="signal-items">
+                <view 
+                  v-for="(signal, index) in decision.signalDetails.technical" 
+                  :key="'tech-'+index" 
+                  class="signal-item"
+                  :class="signal.type === 'bullish' ? 'bullish-signal' : 'bearish-signal'"
+                >
+                  <text class="signal-icon">{{ signal.type === 'bullish' ? '↑' : '↓' }}</text>
+                  <text class="signal-name">{{ signal.name }}</text>
+                </view>
+              </view>
+            </view>
+            
+            <!-- 形态信号 -->
+            <view class="signal-section" v-if="decision.signalDetails.pattern && decision.signalDetails.pattern.length > 0">
+              <view class="signal-section-header">
+                <text class="section-title">价格形态</text>
+                <text class="signal-count">{{ decision.signalDetails.pattern.length }}个</text>
+              </view>
+              
+              <view class="signal-items">
+                <view 
+                  v-for="(signal, index) in decision.signalDetails.pattern" 
+                  :key="'pattern-'+index" 
+                  class="signal-item"
+                  :class="signal.type === 'bullish' ? 'bullish-signal' : 'bearish-signal'"
+                >
+                  <text class="signal-icon">{{ signal.type === 'bullish' ? '↑' : '↓' }}</text>
+                  <text class="signal-name">{{ signal.name }}</text>
+                </view>
+              </view>
+            </view>
+            
+            <!-- 量价信号 -->
+            <view class="signal-section" v-if="decision.signalDetails.volume && decision.signalDetails.volume.length > 0">
+              <view class="signal-section-header">
+                <text class="section-title">量价关系</text>
+                <text class="signal-count">{{ decision.signalDetails.volume.length }}个</text>
+              </view>
+              
+              <view class="signal-items">
+                <view 
+                  v-for="(signal, index) in decision.signalDetails.volume" 
+                  :key="'volume-'+index" 
+                  class="signal-item"
+                  :class="signal.type === 'bullish' ? 'bullish-signal' : 'bearish-signal'"
+                >
+                  <text class="signal-icon">{{ signal.type === 'bullish' ? '↑' : '↓' }}</text>
+                  <text class="signal-name">{{ signal.name }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <view class="allocation-slider">
+        <view class="slider-label">
+          <text>建议仓位: {{ Math.round(decision.allocation * 100) }}%</text>
+        </view>
+        <view class="slider-track">
+          <view 
+            class="slider-fill" 
+            :style="{ width: `${decision.allocation * 100}%`, backgroundColor: getAllocationColor(decision.allocation) }"
+          ></view>
+        </view>
+        <view class="slider-markers">
+          <text>0%</text>
+          <text>25%</text>
+          <text>50%</text>
+          <text>75%</text>
+          <text>100%</text>
+        </view>
+      </view>
+    </view>
+    
+    <view class="strategy-weights">
+      <text class="section-title">策略权重分析</text>
+      <view class="weight-bars">
+        <view class="weight-item" v-for="(weight, strategy) in weights" :key="strategy">
+          <view class="weight-label-container">
+            <text class="weight-label">{{ getStrategyName(strategy) }}</text>
+            <text class="weight-value">{{ Math.round(weight * 100) }}%</text>
+          </view>
+          <view class="weight-bar-container">
+            <view class="weight-bar" :style="{ width: `${weight * 100}%`, backgroundColor: getStrategyColor(strategy) }"></view>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <view class="strategy-results">
+      <text class="section-title">各策略独立分析</text>
+      <scroll-view scroll-x="true" class="strategy-scroll">
+        <view 
+          v-for="(result, strategy) in strategyResults" 
+          :key="strategy"
+          class="strategy-card"
+          :class="{ 'active': isActiveStrategy(strategy) }"
+          @click="selectStrategy(strategy)"
+        >
+          <view class="strategy-header">
+            <text class="strategy-name">{{ getStrategyName(strategy) }}</text>
+            <view class="strategy-score" :style="{ backgroundColor: getScoreColor(result.overallScore) }">
+              <text>{{ Math.round(result.overallScore) }}</text>
+            </view>
+          </view>
+          <text class="strategy-action">{{ getStrategyAction(result.recommendation?.action) }}</text>
+          <view class="strategy-bar">
+            <view class="bar-fill" :style="{ width: `${result.overallScore}%`, backgroundColor: getScoreColor(result.overallScore) }"></view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+    
+    <view class="key-indicators">
+      <text class="section-title">关键技术指标</text>
+      <view class="indicators-grid">
+        <view class="indicator-item" v-for="(indicator, index) in keyIndicators" :key="index">
+          <text class="indicator-name">{{ indicator.name }}</text>
+          <text class="indicator-value" :class="getIndicatorClass(indicator)">{{ indicator.value }}</text>
+          <view class="indicator-trend" :class="getTrendClass(indicator.trend)">
+            <text class="trend-icon">{{ getTrendIcon(indicator.trend) }}</text>
+            <text class="trend-text">{{ indicator.trendValue }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <view class="action-buttons">
+      <button class="execute-btn" @click="executeTrade">执行建议</button>
+      <button class="details-btn" @click="showDetails">查看详情</button>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  props: {
+    decision: {
+      type: Object,
+      default: () => ({
+        action: 'hold',
+        confidence: 'medium',
+        allocation: 0.5,
+        description: '市场状况中性,建议持有观望,关注大盘动向。'
+      })
+    },
+    strategyResults: {
+      type: Object,
+      default: () => ({})
+    },
+    weights: {
+      type: Object,
+      default: () => ({
+        sixSword: 0.3,
+        compass: 0.3,
+        jiuFang: 0.3,
+        limitUpDoubleNegative: 0.1
+      })
+    }
+  },
+  
+  data() {
+    return {
+      selectedStrategy: null,
+      keyIndicators: [
+        {
+          name: 'MACD',
+          value: '金叉',
+          trend: 'up',
+          trendValue: '转强',
+          significance: 'positive'
+        },
+        {
+          name: 'KDJ',
+          value: '80.5',
+          trend: 'up',
+          trendValue: '超买',
+          significance: 'neutral'
+        },
+        {
+          name: 'RSI',
+          value: '65.2',
+          trend: 'up',
+          trendValue: '强势',
+          significance: 'positive'
+        },
+        {
+          name: '布林带',
+          value: '上轨',
+          trend: 'up',
+          trendValue: '突破',
+          significance: 'positive'
+        },
+        {
+          name: '均线系统',
+          value: '多头排列',
+          trend: 'up',
+          trendValue: '上升',
+          significance: 'positive'
+        },
+        {
+          name: '成交量',
+          value: '1.2倍',
+          trend: 'up',
+          trendValue: '放量',
+          significance: 'positive'
+        }
+      ],
+      showEvidenceDetails: false
+    };
+  },
+  
+  computed: {
+    getConfidenceLevel(confidence) {
+      switch (confidence) {
+        case 'high':
+          return 5;
+        case 'medium':
+          return 3;
+        case 'low':
+          return 1;
+        default:
+          return 3;
+      }
+    },
+    
+    getActionDirection() {
+      if (this.decision.action === 'strong_buy' || this.decision.action === 'buy') {
+        return 'buy';
+      } else if (this.decision.action === 'strong_sell' || this.decision.action === 'sell') {
+        return 'sell';
+      } else {
+        return 'hold';
+      }
+    },
+    
+    hasSignals() {
+      if (!this.decision.signalDetails) return false;
+      
+      const { technical, pattern, volume, trend } = this.decision.signalDetails;
+      
+      return (
+        (technical && technical.length > 0) || 
+        (pattern && pattern.length > 0) || 
+        (volume && volume.length > 0) || 
+        (trend && trend.length > 0)
+      );
+    }
+  },
+  
+  methods: {
+    getActionClass(action) {
+      if (action === 'strong_buy' || action === 'buy') return 'action-buy';
+      if (action === 'strong_sell' || action === 'sell') return 'action-sell';
+      return 'action-hold';
+    },
+    
+    getActionIcon(action) {
+      if (action === 'strong_buy') return '↑↑';
+      if (action === 'buy') return '↑';
+      if (action === 'hold') return '→';
+      if (action === 'sell') return '↓';
+      if (action === 'strong_sell') return '↓↓';
+      return '→';
+    },
+    
+    getActionText(action) {
+      const actionTexts = {
+        'strong_buy': '强烈买入',
+        'buy': '建议买入',
+        'hold': '持有观望',
+        'sell': '建议卖出',
+        'strong_sell': '强烈卖出'
+      };
+      
+      return actionTexts[action] || '持有观望';
+    },
+    
+    getConfidenceText(confidence) {
+      const texts = {
+        'very_low': '很低',
+        'low': '较低',
+        'medium': '中等',
+        'high': '较高',
+        'very_high': '很高'
+      };
+      
+      return texts[confidence] || '中等';
+    },
+    
+    getAllocationColor(allocation) {
+      if (allocation >= 0.7) return '#f5222d';
+      if (allocation >= 0.4) return '#1989fa';
+      return '#52c41a';
+    },
+    
+    getStrategyName(strategy) {
+      const names = {
+        'sixSword': '六脉神剑',
+        'compass': '指南针',
+        'jiuFang': '九方形态',
+        'limitUpDoubleNegative': '涨停双阴'
+      };
+      
+      return names[strategy] || strategy;
+    },
+    
+    getStrategyColor(strategy) {
+      const colors = {
+        'sixSword': '#1989fa',
+        'compass': '#52c41a',
+        'jiuFang': '#fa8c16',
+        'limitUpDoubleNegative': '#722ed1'
+      };
+      
+      return colors[strategy] || '#1989fa';
+    },
+    
+    getScoreColor(score) {
+      if (score >= 80) return '#ee0a24';
+      if (score >= 60) return '#fa8c16';
+      if (score >= 40) return '#1989fa';
+      return '#07c160';
+    },
+    
+    getStrategyAction(action) {
+      if (!action) return '无建议';
+      
+      const actionTexts = {
+        'strong_buy': '强烈买入',
+        'buy': '建议买入',
+        'hold': '持有观望',
+        'sell': '建议卖出',
+        'strong_sell': '强烈卖出'
+      };
+      
+      return actionTexts[action] || '持有观望';
+    },
+    
+    getIndicatorClass(indicator) {
+      if (indicator.significance === 'positive') return 'indicator-positive';
+      if (indicator.significance === 'negative') return 'indicator-negative';
+      return 'indicator-neutral';
+    },
+    
+    getTrendClass(trend) {
+      if (trend === 'up') return 'trend-up';
+      if (trend === 'down') return 'trend-down';
+      return 'trend-neutral';
+    },
+    
+    getTrendIcon(trend) {
+      if (trend === 'up') return '↑';
+      if (trend === 'down') return '↓';
+      return '→';
+    },
+    
+    isActiveStrategy(strategy) {
+      return this.selectedStrategy === strategy;
+    },
+    
+    selectStrategy(strategy) {
+      this.selectedStrategy = strategy;
+    },
+    
+    executeTrade() {
+      this.$emit('execute', this.decision);
+    },
+    
+    showDetails() {
+      this.$emit('showDetails');
+    },
+    
+    toggleEvidenceDetails() {
+      this.showEvidenceDetails = !this.showEvidenceDetails;
+    }
+  }
+};
+</script>
+
+<style>
+.trade-recommendation-container {
+  margin-bottom: 30rpx;
+}
+
+.recommendation-header {
+  margin-bottom: 20rpx;
+}
+
+.header-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+  display: block;
+}
+
+.header-subtitle {
+  font-size: 24rpx;
+  color: #666;
+  display: block;
+}
+
+.recommendation-card {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.decision-summary {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.decision-action {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 10rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+.action-buy {
+  background-color: rgba(7, 193, 96, 0.1);
+}
+
+.action-sell {
+  background-color: rgba(238, 10, 36, 0.1);
+}
+
+.action-hold {
+  background-color: rgba(25, 137, 250, 0.1);
+}
+
+.action-icon {
+  font-size: 28rpx;
+  margin-right: 10rpx;
+}
+
+.action-text {
+  font-size: 30rpx;
+  font-weight: bold;
+}
+
+.action-buy .action-icon, .action-buy .action-text {
+  color: #07c160;
+}
+
+.action-sell .action-icon, .action-sell .action-text {
+  color: #ee0a24;
+}
+
+.action-hold .action-icon, .action-hold .action-text {
+  color: #1989fa;
+}
+
+.decision-confidence {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.confidence-label {
+  font-size: 24rpx;
+  color: #666;
+  margin-right: 10rpx;
+}
+
+.confidence-meter {
+  display: flex;
+  flex-direction: row;
+  margin-right: 10rpx;
+}
+
+.confidence-bar {
+  width: 16rpx;
+  height: 30rpx;
+  background-color: #f0f0f0;
+  margin-right: 4rpx;
+  border-radius: 2rpx;
+}
+
+.confidence-bar.active {
+  background-color: #1989fa;
+}
+
+.confidence-text {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.decision-description {
+  background-color: #f9f9f9;
+  padding: 16rpx;
+  border-radius: 8rpx;
+  margin-bottom: 20rpx;
+}
+
+.decision-description text {
+  font-size: 26rpx;
+  color: #333;
+  line-height: 1.5;
+}
+
+.decision-evidence {
+  background-color: #f9f9f9;
+  padding: 16rpx;
+  border-radius: 8rpx;
+  margin-bottom: 20rpx;
+}
+
+.evidence-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10rpx;
+}
+
+.evidence-title {
+  font-size: 26rpx;
+  color: #333;
+  font-weight: bold;
+}
+
+.evidence-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.toggle-text {
+  font-size: 24rpx;
+  color: #666;
+  margin-right: 4rpx;
+}
+
+.toggle-icon {
+  font-size: 22rpx;
+}
+
+.evidence-content {
+  margin-bottom: 10rpx;
+}
+
+.evidence-text {
+  font-size: 26rpx;
+  color: #333;
+  line-height: 1.5;
+}
+
+.signal-visualization {
+  margin-top: 10rpx;
+}
+
+.signal-section {
+  margin-bottom: 10rpx;
+}
+
+.signal-section-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6rpx;
+}
+
+.section-title {
+  font-size: 26rpx;
+  color: #333;
+  font-weight: bold;
+}
+
+.signal-count {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.signal-items {
+  margin-left: 20rpx;
+}
+
+.signal-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 4rpx;
+}
+
+.signal-icon {
+  font-size: 22rpx;
+  margin-right: 4rpx;
+}
+
+.signal-name {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.bullish-signal {
+  color: #ee0a24;
+}
+
+.bearish-signal {
+  color: #07c160;
+}
+
+.bullish-signal .signal-icon {
+  color: #ee0a24;
+}
+
+.bullish-signal .signal-name {
+  color: #ee0a24;
+}
+
+.bearish-signal .signal-icon {
+  color: #07c160;
+}
+
+.bearish-signal .signal-name {
+  color: #07c160;
+}
+
+.allocation-slider {
+  margin-top: 20rpx;
+}
+
+.slider-label {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 10rpx;
+}
+
+.slider-label text {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.slider-track {
+  height: 12rpx;
+  background-color: #f0f0f0;
+  border-radius: 6rpx;
+  overflow: hidden;
+  margin-bottom: 10rpx;
+}
+
+.slider-fill {
+  height: 100%;
+  border-radius: 6rpx;
+}
+
+.slider-markers {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.slider-markers text {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.section-title {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 16rpx;
+  display: block;
+}
+
+.strategy-weights {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.weight-bars {
+  margin-top: 16rpx;
+}
+
+.weight-item {
+  margin-bottom: 16rpx;
+}
+
+.weight-label-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 6rpx;
+}
+
+.weight-label {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.weight-value {
+  font-size: 24rpx;
+  color: #333;
+  font-weight: bold;
+}
+
+.weight-bar-container {
+  height: 12rpx;
+  background-color: #f0f0f0;
+  border-radius: 6rpx;
+  overflow: hidden;
+}
+
+.weight-bar {
+  height: 100%;
+  border-radius: 6rpx;
+}
+
+.strategy-results {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.strategy-scroll {
+  white-space: nowrap;
+}
+
+.strategy-card {
+  display: inline-block;
+  width: 250rpx;
+  background-color: #f9f9f9;
+  padding: 16rpx;
+  margin-right: 16rpx;
+  border-radius: 8rpx;
+  border: 2rpx solid transparent;
+}
+
+.strategy-card.active {
+  border-color: #1989fa;
+}
+
+.strategy-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10rpx;
+}
+
+.strategy-name {
+  font-size: 26rpx;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.strategy-score {
+  width: 50rpx;
+  height: 50rpx;
+  border-radius: 25rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.strategy-score text {
+  font-size: 24rpx;
+  color: #fff;
+  font-weight: bold;
+}
+
+.strategy-action {
+  font-size: 24rpx;
+  color: #666;
+  margin-bottom: 10rpx;
+  display: block;
+}
+
+.strategy-bar {
+  height: 8rpx;
+  background-color: #f0f0f0;
+  border-radius: 4rpx;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4rpx;
+}
+
+.key-indicators {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.indicators-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.indicator-item {
+  width: 33.33%;
+  padding: 10rpx;
+  box-sizing: border-box;
+}
+
+.indicator-name {
+  font-size: 24rpx;
+  color: #999;
+  margin-bottom: 6rpx;
+  display: block;
+}
+
+.indicator-value {
+  font-size: 28rpx;
+  font-weight: bold;
+  margin-bottom: 6rpx;
+  display: block;
+}
+
+.indicator-positive {
+  color: #ee0a24;
+}
+
+.indicator-negative {
+  color: #07c160;
+}
+
+.indicator-neutral {
+  color: #1989fa;
+}
+
+.indicator-trend {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.trend-icon {
+  font-size: 22rpx;
+  margin-right: 4rpx;
+}
+
+.trend-text {
+  font-size: 22rpx;
+}
+
+.trend-up {
+  color: #ee0a24;
+}
+
+.trend-down {
+  color: #07c160;
+}
+
+.trend-neutral {
+  color: #8c8c8c;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: row;
+  margin-top: 20rpx;
+}
+
+.execute-btn {
+  flex: 2;
+  height: 80rpx;
+  line-height: 80rpx;
+  background-color: #1989fa;
+  color: #fff;
+  font-size: 28rpx;
+  text-align: center;
+  border-radius: 40rpx;
+  margin-right: 15rpx;
+}
+
+.details-btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  background-color: #f0f0f0;
+  color: #666;
+  font-size: 28rpx;
+  text-align: center;
+  border-radius: 40rpx;
+}
+</style> 

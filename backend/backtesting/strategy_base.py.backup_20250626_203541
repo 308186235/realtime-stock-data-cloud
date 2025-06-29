@@ -1,0 +1,29 @@
+class StrategyBase:
+    def __init__(self, params=None):
+        self.params = params or {}
+        self.name = "BaseStrategy"
+        
+    def generate_signals(self, data):
+        """
+        根据提供的数据生成交易信号
+        返回格式为 {'symbol': {'action': 'BUY/SELL', 'price': price, 'size': size}} 的信号
+        
+        参数:
+        - data: DataFrame 包含OHLCV数据
+        
+        返回:
+        - 字典，包含股票代码和对应的交易信号
+        """
+        raise NotImplementedError("每个策略必须实现此方法")
+        
+    def set_params(self, params):
+        """
+        更新策略参数
+        
+        参数:
+        - params: 字典，包含要更新的参数
+        """
+        self.params.update(params)
+        
+    def __str__(self):
+        return f"{self.name} (Params: {self.params})" 

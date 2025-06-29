@@ -1,0 +1,25 @@
+{
+  "name": "stock-trading-system",
+  "version": "1.0.0",
+  "description": "AI驱动的股票交易系统",
+  "scripts": {
+    "dev": "cd 炒股养家 && npx uni",
+    "build": "cd 炒股养家 && npx uni build",
+    "clean": "rimraf 炒股养家/node_modules 炒股养家/unpackage/dist",
+    "dev:stock5": "cd frontend/stock5 && npx uni",
+    "build:stock5": "cd frontend/stock5 && npx uni build",
+    "test": "node ./backend/tests/run-tests.js",
+    "start": "node ./backend/app.js"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "^3.0.0-3060720220922001",
+    "@dcloudio/uni-ui": "^1.5.7",
+    "axios": "^0.24.0",
+    "express": "^4.17.1",
+    "mongoose": "^6.0.12"
+  },
+  "devDependencies": {
+    "jest": "^27.3.1",
+    "rimraf": "^3.0.2"
+  }
+}

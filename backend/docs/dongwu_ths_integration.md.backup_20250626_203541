@@ -1,0 +1,108 @@
+# 东吴证券同花顺集成文档
+
+本文档说明如何使用同花顺接口进行东吴证券的交易集成。
+
+## 概述
+
+本系统通过同花顺的API接口，实现了对东吴证券的交易功能，包括账户登录、持仓查询、下单交易等操作。相比QMT和PTRADE，同花顺接口具有以下优势：
+
+- 更稳定且广泛支持的接口
+- 更简单的认证流程
+- 更好的兼容性和可靠性
+
+## 配置说明
+
+### 环境变量配置
+
+在`.env`文件中设置以下环境变量：
+
+```
+# 同花顺安装路径
+THS_PATH=C:/同花顺
+
+# 账号信息
+DONGWU_ACCOUNT_ID=your_dongwu_account_id
+DONGWU_ACCOUNT_PWD=your_dongwu_account_password
+
+# 验证码（如果需要）
+DONGWU_VERIFICATION_CODE=
+
+# 默认使用的券商API类型
+DONGWU_DEFAULT_BROKER=THS_DONGWU
+```
+
+### 配置项说明
+
+| 配置项 | 说明 |
+|-----|-----|
+| THS_PATH | 同花顺软件安装路径 |
+| DONGWU_ACCOUNT_ID | 东吴证券账号 |
+| DONGWU_ACCOUNT_PWD | 东吴证券账号密码 |
+| DONGWU_VERIFICATION_CODE | 验证码（部分功能可能需要） |
+| DONGWU_DEFAULT_BROKER | 设置为`THS_DONGWU`表示使用同花顺接口 |
+
+## API说明
+
+同花顺API接口通过HTTP请求与同花顺本地服务通信，以下是主要API功能：
+
+### 1. 登录/登出
+
+```
+POST /ths/login - 登录同花顺
+POST /ths/logout - 登出同花顺
+```
+
+### 2. 账户与持仓
+
+```
+GET /ths/account_info - 获取账户资金信息
+GET /ths/positions - 获取持仓列表
+```
+
+### 3. 交易操作
+
+```
+POST /ths/place_order - 下单
+POST /ths/cancel_order - 撤单
+GET /ths/orders - 获取委托列表
+GET /ths/trades - 获取成交列表
+```
+
+### 4. 行情数据
+
+```
+GET /ths/quotes - 获取实时行情
+```
+
+## 使用方法
+
+1. 确保同花顺软件已安装并配置好东吴证券账号
+2. 设置正确的环境变量
+3. 启动后端服务
+4. 使用前端交易页面进行操作
+
+## 常见问题与故障排除
+
+### 无法连接到同花顺
+
+- 确认同花顺软件是否已经正确安装
+- 检查THS_PATH路径是否正确
+- 确认同花顺本地服务是否已启动
+
+### 登录失败
+
+- 确认账号密码是否正确
+- 检查是否需要验证码
+- 查看同花顺日志以获取详细错误信息
+
+### 交易操作失败
+
+- 检查账户资金是否充足
+- 确认交易时间是否在交易时段内
+- 检查股票代码是否正确
+- 检查交易规则（如T+1，涨跌停限制等）
+
+## 参考资源
+
+- [同花顺官方网站](http://www.10jqka.com.cn/)
+- [东吴证券官方网站](http://www.dwjq.com.cn/) 

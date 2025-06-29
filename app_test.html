@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APP API测试 - Agent智能分析控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .status-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+        
+        .status-content {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .button {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .button:hover {
+            background: #45a049;
+        }
+        
+        .button.stop {
+            background: #f44336;
+        }
+        
+        .button.stop:hover {
+            background: #da190b;
+        }
+        
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .spinner {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 2px solid white;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 Agent智能分析控制台</h1>
+            <p>APP API连接测试</p>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">🔗 连接状态</div>
+            <div class="status-content" id="connectionStatus">正在检查连接...</div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">🤖 Agent状态</div>
+            <div class="status-content" id="agentStatus">等待获取状态...</div>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-title">💰 交易摘要</div>
+            <div class="status-content" id="tradingSummary">等待获取数据...</div>
+        </div>
+        
+        <button class="button" onclick="startAgent()">🚀 启动Agent</button>
+        <button class="button stop" onclick="stopAgent()">🛑 停止Agent</button>
+        <button class="button" onclick="refreshData()">🔄 刷新数据</button>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <span>处理中...</span>
+        </div>
+        
+        <div class="log" id="log">
+            <div>📋 操作日志:</div>
+        </div>
+    </div>
+
+    <script>
+        // API基础URL - 根据环境自动选择
+        const API_BASE = window.location.hostname === 'localhost'
+            ? 'http://localhost:8080'  // 使用代理端口
+            : 'https://aigupiao.me';
+        
+        // 日志函数
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div>[${time}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // 显示加载状态
+        function showLoading(show = true) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+        
+        // API请求函数
+        async function apiRequest(endpoint, method = 'GET', data = null) {
+            showLoading(true);
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'uni-app/APP-Test'  // 模拟APP请求
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const result = await response.json();
+                
+                log(`✅ ${method} ${endpoint} - 成功`);
+                return result;
+            } catch (error) {
+                log(`❌ ${method} ${endpoint} - 失败: ${error.message}`);
+                throw error;
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // 检查连接状态
+        async function checkConnection() {
+            try {
+                const result = await apiRequest('/api/health');
+                document.getElementById('connectionStatus').innerHTML = `
+                    ✅ 连接正常<br>
+                    域名: ${result.domain}<br>
+                    端口: ${result.port}<br>
+                    设备: ${result.client_info.device_type}
+                `;
+            } catch (error) {
+                document.getElementById('connectionStatus').innerHTML = `
+                    ❌ 连接失败<br>
+                    错误: ${error.message}
+                `;
+            }
+        }
+        
+        // 获取Agent状态
+        async function getAgentStatus() {
+            try {
+                const result = await apiRequest('/api/agent/status');
+                document.getElementById('agentStatus').innerHTML = `
+                    状态: ${result.agent_status}<br>
+                    策略: ${result.strategy}<br>
+                    运行时间: ${result.runtime}<br>
+                    交易次数: ${result.trades_count}
+                `;
+            } catch (error) {
+                document.getElementById('agentStatus').innerHTML = `
+                    ❌ 获取失败: ${error.message}
+                `;
+            }
+        }
+        
+        // 获取交易摘要
+        async function getTradingSummary() {
+            try {
+                const result = await apiRequest('/api/trading/summary');
+                document.getElementById('tradingSummary').innerHTML = `
+                    总交易: ${result.total_trades}<br>
+                    成功率: ${result.success_rate}<br>
+                    今日收益: ¥${result.today_profit}<br>
+                    账户余额: ¥${result.account_balance}
+                `;
+            } catch (error) {
+                document.getElementById('tradingSummary').innerHTML = `
+                    ❌ 获取失败: ${error.message}
+                `;
+            }
+        }
+        
+        // 启动Agent
+        async function startAgent() {
+            try {
+                const result = await apiRequest('/api/agent/start');
+                log(`🚀 Agent启动成功: ${result.message}`);
+                await getAgentStatus();
+            } catch (error) {
+                log(`❌ Agent启动失败: ${error.message}`);
+            }
+        }
+        
+        // 停止Agent
+        async function stopAgent() {
+            try {
+                const result = await apiRequest('/api/agent/stop');
+                log(`🛑 Agent停止成功: ${result.message}`);
+                await getAgentStatus();
+            } catch (error) {
+                log(`❌ Agent停止失败: ${error.message}`);
+            }
+        }
+        
+        // 刷新所有数据
+        async function refreshData() {
+            log('🔄 刷新数据...');
+            await checkConnection();
+            await getAgentStatus();
+            await getTradingSummary();
+            log('✅ 数据刷新完成');
+        }
+        
+        // 页面加载时初始化
+        window.onload = function() {
+            log('📱 APP API测试页面加载完成');
+            log(`🔗 API地址: ${API_BASE}`);
+            refreshData();
+        };
+        
+        // 定时刷新状态
+        setInterval(async () => {
+            await getAgentStatus();
+            await getTradingSummary();
+        }, 10000); // 每10秒刷新一次
+    </script>
+</body>
+</html>

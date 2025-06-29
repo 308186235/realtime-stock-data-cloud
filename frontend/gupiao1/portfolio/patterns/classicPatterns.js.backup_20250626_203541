@@ -1,0 +1,630 @@
+/**
+ * 经典形态识别模块
+ * 包含头肩顶/底、双顶/双底、三角形、旗形等经典形态识别
+ */
+
+// 头肩顶/底形态识别
+export function detectHeadAndShoulders(prices) {
+  if (prices.length < 30) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'head_and_shoulders',
+      direction: 'neutral'
+    };
+  }
+  
+  // 寻找局部高点和低点
+  const peaks = findPeaks(prices, 5);
+  const troughs = findTroughs(prices, 5);
+  
+  if (peaks.length < 3 || troughs.length < 2) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'head_and_shoulders',
+      direction: 'neutral'
+    };
+  }
+  
+  // 检查头肩顶形态
+  const topFormation = checkHeadAndShouldersTop(prices, peaks, troughs);
+  if (topFormation.detected) {
+    return {
+      detected: true,
+      confidence: topFormation.confidence,
+      pattern: 'head_and_shoulders_top',
+      direction: 'bearish',
+      leftShoulder: topFormation.leftShoulder,
+      head: topFormation.head,
+      rightShoulder: topFormation.rightShoulder,
+      neckline: topFormation.neckline,
+      target: topFormation.target
+    };
+  }
+  
+  // 检查头肩底形态
+  const bottomFormation = checkHeadAndShouldersBottom(prices, peaks, troughs);
+  if (bottomFormation.detected) {
+    return {
+      detected: true,
+      confidence: bottomFormation.confidence,
+      pattern: 'head_and_shoulders_bottom',
+      direction: 'bullish',
+      leftShoulder: bottomFormation.leftShoulder,
+      head: bottomFormation.head,
+      rightShoulder: bottomFormation.rightShoulder,
+      neckline: bottomFormation.neckline,
+      target: bottomFormation.target
+    };
+  }
+  
+  return {
+    detected: false,
+    confidence: 0,
+    pattern: 'head_and_shoulders',
+    direction: 'neutral'
+  };
+}
+
+// 双顶/双底形态识别
+export function detectDoubleTopBottom(prices) {
+  if (prices.length < 20) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'double_pattern',
+      direction: 'neutral'
+    };
+  }
+  
+  // 寻找局部高点和低点
+  const peaks = findPeaks(prices, 5);
+  const troughs = findTroughs(prices, 5);
+  
+  if (peaks.length < 2 || troughs.length < 1) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'double_pattern',
+      direction: 'neutral'
+    };
+  }
+  
+  // 检查双顶形态
+  const doubleTop = checkDoubleTop(prices, peaks);
+  if (doubleTop.detected) {
+    return {
+      detected: true,
+      confidence: doubleTop.confidence,
+      pattern: 'double_top',
+      direction: 'bearish',
+      firstPeak: doubleTop.firstPeak,
+      secondPeak: doubleTop.secondPeak,
+      trough: doubleTop.trough,
+      neckline: doubleTop.neckline,
+      target: doubleTop.target
+    };
+  }
+  
+  // 检查双底形态
+  const doubleBottom = checkDoubleBottom(prices, troughs);
+  if (doubleBottom.detected) {
+    return {
+      detected: true,
+      confidence: doubleBottom.confidence,
+      pattern: 'double_bottom',
+      direction: 'bullish',
+      firstTrough: doubleBottom.firstTrough,
+      secondTrough: doubleBottom.secondTrough,
+      peak: doubleBottom.peak,
+      neckline: doubleBottom.neckline,
+      target: doubleBottom.target
+    };
+  }
+  
+  return {
+    detected: false,
+    confidence: 0,
+    pattern: 'double_pattern',
+    direction: 'neutral'
+  };
+}
+
+// 三角形形态识别
+export function detectTriangle(prices) {
+  if (prices.length < 20) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'triangle',
+      direction: 'neutral'
+    };
+  }
+  
+  // 检查上升三角形
+  const ascendingTriangle = checkAscendingTriangle(prices);
+  if (ascendingTriangle.detected) {
+    return {
+      detected: true,
+      confidence: ascendingTriangle.confidence,
+      pattern: 'ascending_triangle',
+      direction: 'bullish',
+      resistance: ascendingTriangle.resistance,
+      support: ascendingTriangle.support,
+      breakoutPoint: ascendingTriangle.breakoutPoint,
+      target: ascendingTriangle.target
+    };
+  }
+  
+  // 检查下降三角形
+  const descendingTriangle = checkDescendingTriangle(prices);
+  if (descendingTriangle.detected) {
+    return {
+      detected: true,
+      confidence: descendingTriangle.confidence,
+      pattern: 'descending_triangle',
+      direction: 'bearish',
+      resistance: descendingTriangle.resistance,
+      support: descendingTriangle.support,
+      breakoutPoint: descendingTriangle.breakoutPoint,
+      target: descendingTriangle.target
+    };
+  }
+  
+  // 检查对称三角形
+  const symmetricalTriangle = checkSymmetricalTriangle(prices);
+  if (symmetricalTriangle.detected) {
+    return {
+      detected: true,
+      confidence: symmetricalTriangle.confidence,
+      pattern: 'symmetrical_triangle',
+      direction: symmetricalTriangle.direction,
+      upperTrendline: symmetricalTriangle.upperTrendline,
+      lowerTrendline: symmetricalTriangle.lowerTrendline,
+      breakoutPoint: symmetricalTriangle.breakoutPoint,
+      target: symmetricalTriangle.target
+    };
+  }
+  
+  return {
+    detected: false,
+    confidence: 0,
+    pattern: 'triangle',
+    direction: 'neutral'
+  };
+}
+
+// 旗形和三角旗形态识别
+export function detectFlagPattern(prices) {
+  if (prices.length < 20) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'flag',
+      direction: 'neutral'
+    };
+  }
+  
+  // 检查向上旗形
+  const bullishFlag = checkBullishFlag(prices);
+  if (bullishFlag.detected) {
+    return {
+      detected: true,
+      confidence: bullishFlag.confidence,
+      pattern: 'bullish_flag',
+      direction: 'bullish',
+      flagpole: bullishFlag.flagpole,
+      flag: bullishFlag.flag,
+      breakoutPoint: bullishFlag.breakoutPoint,
+      target: bullishFlag.target
+    };
+  }
+  
+  // 检查向下旗形
+  const bearishFlag = checkBearishFlag(prices);
+  if (bearishFlag.detected) {
+    return {
+      detected: true,
+      confidence: bearishFlag.confidence,
+      pattern: 'bearish_flag',
+      direction: 'bearish',
+      flagpole: bearishFlag.flagpole,
+      flag: bearishFlag.flag,
+      breakoutPoint: bearishFlag.breakoutPoint,
+      target: bearishFlag.target
+    };
+  }
+  
+  // 检查三角旗
+  const pennant = checkPennant(prices);
+  if (pennant.detected) {
+    return {
+      detected: true,
+      confidence: pennant.confidence,
+      pattern: 'pennant',
+      direction: pennant.direction,
+      flagpole: pennant.flagpole,
+      pennant: pennant.pennant,
+      breakoutPoint: pennant.breakoutPoint,
+      target: pennant.target
+    };
+  }
+  
+  return {
+    detected: false,
+    confidence: 0,
+    pattern: 'flag',
+    direction: 'neutral'
+  };
+}
+
+// 楔形形态识别
+export function detectWedgePattern(prices) {
+  if (prices.length < 20) {
+    return {
+      detected: false,
+      confidence: 0,
+      pattern: 'wedge',
+      direction: 'neutral'
+    };
+  }
+  
+  // 检查上升楔形
+  const risingWedge = checkRisingWedge(prices);
+  if (risingWedge.detected) {
+    return {
+      detected: true,
+      confidence: risingWedge.confidence,
+      pattern: 'rising_wedge',
+      direction: 'bearish',
+      upperTrendline: risingWedge.upperTrendline,
+      lowerTrendline: risingWedge.lowerTrendline,
+      breakoutPoint: risingWedge.breakoutPoint,
+      target: risingWedge.target
+    };
+  }
+  
+  // 检查下降楔形
+  const fallingWedge = checkFallingWedge(prices);
+  if (fallingWedge.detected) {
+    return {
+      detected: true,
+      confidence: fallingWedge.confidence,
+      pattern: 'falling_wedge',
+      direction: 'bullish',
+      upperTrendline: fallingWedge.upperTrendline,
+      lowerTrendline: fallingWedge.lowerTrendline,
+      breakoutPoint: fallingWedge.breakoutPoint,
+      target: fallingWedge.target
+    };
+  }
+  
+  return {
+    detected: false,
+    confidence: 0,
+    pattern: 'wedge',
+    direction: 'neutral'
+  };
+}
+
+// 辅助函数：寻找局部高点
+function findPeaks(prices, window) {
+  const peaks = [];
+  
+  for (let i = window; i < prices.length - window; i++) {
+    let isPeak = true;
+    
+    for (let j = i - window; j <= i + window; j++) {
+      if (j !== i && prices[j] >= prices[i]) {
+        isPeak = false;
+        break;
+      }
+    }
+    
+    if (isPeak) {
+      peaks.push(i);
+    }
+  }
+  
+  return peaks;
+}
+
+// 辅助函数：寻找局部低点
+function findTroughs(prices, window) {
+  const troughs = [];
+  
+  for (let i = window; i < prices.length - window; i++) {
+    let isTrough = true;
+    
+    for (let j = i - window; j <= i + window; j++) {
+      if (j !== i && prices[j] <= prices[i]) {
+        isTrough = false;
+        break;
+      }
+    }
+    
+    if (isTrough) {
+      troughs.push(i);
+    }
+  }
+  
+  return troughs;
+}
+
+// 辅助函数：检查头肩顶
+function checkHeadAndShouldersTop(prices, peaks, troughs) {
+  // 简化版本的头肩顶检测逻辑
+  if (peaks.length < 3) return { detected: false };
+  
+  // 尝试找到符合头肩顶模式的三个峰
+  for (let i = 0; i < peaks.length - 2; i++) {
+    const leftShoulder = peaks[i];
+    const head = peaks[i + 1];
+    const rightShoulder = peaks[i + 2];
+    
+    // 确保头部高于左右肩部
+    if (prices[head] > prices[leftShoulder] && 
+        prices[head] > prices[rightShoulder] &&
+        Math.abs(prices[leftShoulder] - prices[rightShoulder]) / prices[head] < 0.1) {
+      
+      // 尝试找到两个肩部之间的颈线
+      const leftTrough = findNearestTrough(troughs, leftShoulder, head);
+      const rightTrough = findNearestTrough(troughs, head, rightShoulder);
+      
+      if (leftTrough !== -1 && rightTrough !== -1) {
+        const neckline = {
+          left: { index: leftTrough, value: prices[leftTrough] },
+          right: { index: rightTrough, value: prices[rightTrough] }
+        };
+        
+        // 计算目标价格（颈线到头部的距离，从颈线向下投射）
+        const patternHeight = prices[head] - (neckline.left.value + neckline.right.value) / 2;
+        const target = neckline.right.value - patternHeight;
+        
+        // 计算可信度
+        const symmetry = 1 - Math.abs(prices[leftShoulder] - prices[rightShoulder]) / prices[head];
+        const necklineHorizontality = 1 - Math.abs(neckline.left.value - neckline.right.value) / ((neckline.left.value + neckline.right.value) / 2);
+        
+        const confidence = (symmetry * 0.4 + necklineHorizontality * 0.6) * 0.9;
+        
+        return {
+          detected: true,
+          confidence,
+          leftShoulder: { index: leftShoulder, value: prices[leftShoulder] },
+          head: { index: head, value: prices[head] },
+          rightShoulder: { index: rightShoulder, value: prices[rightShoulder] },
+          neckline,
+          target
+        };
+      }
+    }
+  }
+  
+  return { detected: false };
+}
+
+// 辅助函数：检查头肩底
+function checkHeadAndShouldersBottom(prices, peaks, troughs) {
+  // 简化版本的头肩底检测逻辑
+  if (troughs.length < 3) return { detected: false };
+  
+  // 尝试找到符合头肩底模式的三个谷
+  for (let i = 0; i < troughs.length - 2; i++) {
+    const leftShoulder = troughs[i];
+    const head = troughs[i + 1];
+    const rightShoulder = troughs[i + 2];
+    
+    // 确保头部低于左右肩部
+    if (prices[head] < prices[leftShoulder] && 
+        prices[head] < prices[rightShoulder] &&
+        Math.abs(prices[leftShoulder] - prices[rightShoulder]) / prices[head] < 0.1) {
+      
+      // 尝试找到两个肩部之间的颈线
+      const leftPeak = findNearestPeak(peaks, leftShoulder, head);
+      const rightPeak = findNearestPeak(peaks, head, rightShoulder);
+      
+      if (leftPeak !== -1 && rightPeak !== -1) {
+        const neckline = {
+          left: { index: leftPeak, value: prices[leftPeak] },
+          right: { index: rightPeak, value: prices[rightPeak] }
+        };
+        
+        // 计算目标价格（头部到颈线的距离，从颈线向上投射）
+        const patternHeight = (neckline.left.value + neckline.right.value) / 2 - prices[head];
+        const target = neckline.right.value + patternHeight;
+        
+        // 计算可信度
+        const symmetry = 1 - Math.abs(prices[leftShoulder] - prices[rightShoulder]) / prices[head];
+        const necklineHorizontality = 1 - Math.abs(neckline.left.value - neckline.right.value) / ((neckline.left.value + neckline.right.value) / 2);
+        
+        const confidence = (symmetry * 0.4 + necklineHorizontality * 0.6) * 0.9;
+        
+        return {
+          detected: true,
+          confidence,
+          leftShoulder: { index: leftShoulder, value: prices[leftShoulder] },
+          head: { index: head, value: prices[head] },
+          rightShoulder: { index: rightShoulder, value: prices[rightShoulder] },
+          neckline,
+          target
+        };
+      }
+    }
+  }
+  
+  return { detected: false };
+}
+
+// 其他形态检测函数实现
+function checkDoubleTop(prices, peaks) {
+  if (peaks.length < 2) return { detected: false };
+  
+  for (let i = 0; i < peaks.length - 1; i++) {
+    const firstPeak = peaks[i];
+    const secondPeak = peaks[i + 1];
+    
+    // 确保两个峰的高度相近
+    if (Math.abs(prices[firstPeak] - prices[secondPeak]) / prices[firstPeak] < 0.05) {
+      // 找到两峰之间的谷
+      let minIndex = -1;
+      let minValue = Infinity;
+      
+      for (let j = firstPeak + 1; j < secondPeak; j++) {
+        if (prices[j] < minValue) {
+          minIndex = j;
+          minValue = prices[j];
+        }
+      }
+      
+      if (minIndex !== -1) {
+        const trough = { index: minIndex, value: minValue };
+        const neckline = { value: minValue };
+        
+        // 计算目标价格
+        const patternHeight = (prices[firstPeak] + prices[secondPeak]) / 2 - minValue;
+        const target = minValue - patternHeight;
+        
+        // 计算可信度
+        const peakSimilarity = 1 - Math.abs(prices[firstPeak] - prices[secondPeak]) / prices[firstPeak];
+        const troughDepth = patternHeight / prices[firstPeak];
+        
+        const confidence = (peakSimilarity * 0.6 + troughDepth * 0.4) * 0.85;
+        
+        return {
+          detected: true,
+          confidence,
+          firstPeak: { index: firstPeak, value: prices[firstPeak] },
+          secondPeak: { index: secondPeak, value: prices[secondPeak] },
+          trough,
+          neckline,
+          target
+        };
+      }
+    }
+  }
+  
+  return { detected: false };
+}
+
+function checkDoubleBottom(prices, troughs) {
+  if (troughs.length < 2) return { detected: false };
+  
+  for (let i = 0; i < troughs.length - 1; i++) {
+    const firstTrough = troughs[i];
+    const secondTrough = troughs[i + 1];
+    
+    // 确保两个谷的深度相近
+    if (Math.abs(prices[firstTrough] - prices[secondTrough]) / prices[firstTrough] < 0.05) {
+      // 找到两谷之间的峰
+      let maxIndex = -1;
+      let maxValue = -Infinity;
+      
+      for (let j = firstTrough + 1; j < secondTrough; j++) {
+        if (prices[j] > maxValue) {
+          maxIndex = j;
+          maxValue = prices[j];
+        }
+      }
+      
+      if (maxIndex !== -1) {
+        const peak = { index: maxIndex, value: maxValue };
+        const neckline = { value: maxValue };
+        
+        // 计算目标价格
+        const patternHeight = maxValue - (prices[firstTrough] + prices[secondTrough]) / 2;
+        const target = maxValue + patternHeight;
+        
+        // 计算可信度
+        const troughSimilarity = 1 - Math.abs(prices[firstTrough] - prices[secondTrough]) / prices[firstTrough];
+        const peakHeight = patternHeight / prices[firstTrough];
+        
+        const confidence = (troughSimilarity * 0.6 + peakHeight * 0.4) * 0.85;
+        
+        return {
+          detected: true,
+          confidence,
+          firstTrough: { index: firstTrough, value: prices[firstTrough] },
+          secondTrough: { index: secondTrough, value: prices[secondTrough] },
+          peak,
+          neckline,
+          target
+        };
+      }
+    }
+  }
+  
+  return { detected: false };
+}
+
+// 三角形形态检测函数
+function checkAscendingTriangle(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+function checkDescendingTriangle(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+function checkSymmetricalTriangle(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+// 旗形和三角旗检测函数
+function checkBullishFlag(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+function checkBearishFlag(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+function checkPennant(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+// 楔形检测函数
+function checkRisingWedge(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+function checkFallingWedge(prices) {
+  // 简化实现，实际应用中应考虑更多因素
+  return { detected: false };
+}
+
+// 辅助函数：在两点之间找最近的谷
+function findNearestTrough(troughs, start, end) {
+  for (const trough of troughs) {
+    if (trough > start && trough < end) {
+      return trough;
+    }
+  }
+  return -1;
+}
+
+// 辅助函数：在两点之间找最近的峰
+function findNearestPeak(peaks, start, end) {
+  for (const peak of peaks) {
+    if (peak > start && peak < end) {
+      return peak;
+    }
+  }
+  return -1;
+}
+
+// 导出所有经典形态识别功能
+export default {
+  detectHeadAndShoulders,
+  detectDoubleTopBottom,
+  detectTriangle,
+  detectFlagPattern,
+  detectWedgePattern
+}; 

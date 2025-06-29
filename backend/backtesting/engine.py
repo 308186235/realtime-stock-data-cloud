@@ -1,0 +1,366 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import logging
+from typing import Optional, Dict, List, Any
+
+logger = logging.getLogger(__name__)
+
+class BacktestEngine:
+    """
+    回测引擎核心类,负责执行回测流程和生成结果
+    """
+    def __init__(self, initial_capital=100000, commission=0.0003, slippage=0.0):
+        self.initial_capital = initial_capital
+        self.capital = initial_capital  # 当前资金
+        self.positions = {}  # 当前持仓 {symbol: {'amount': 数量, 'cost': 成本价}}
+        self.trades = []  # 交易记录
+        self.equity_curve = []  # 权益曲线
+        self.commission = commission  # 佣金率
+        self.slippage = slippage  # 滑点
+        self.strategies = []  # 策略列表
+        self.risk_manager = None  # 风险管理器
+        
+    def add_strategy(self, strategy):
+        """
+        添加回测策略
+        
+        参数:
+        - strategy: 策略对象,必须实现generate_signals方法
+        """
+        self.strategies.append(strategy)
+        logger.info(f"添加策略: {strategy}")
+    
+    def set_risk_manager(self, risk_manager):
+        """
+        设置风险管理器
+        
+        参数:
+        - risk_manager: 风险管理器对象
+        """
+        self.risk_manager = risk_manager
+        logger.info("设置风险管理器")
+        
+    def reset(self):
+        """重置回测状态"""
+        self.capital = self.initial_capital
+        self.positions = {}
+        self.trades = []
+        self.equity_curve = []
+        
+    def _filter_data_by_date(self, data, start_date=None, end_date=None):
+        """根据日期过滤数据"""
+        if 'date' not in data.columns:
+            raise ValueError("数据必须包含'date'列")
+            
+        filtered_data = data.copy()
+        
+        if start_date:
+            if isinstance(start_date, str):
+                start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            filtered_data = filtered_data[filtered_data['date'] >= start_date]
+            
+        if end_date:
+            if isinstance(end_date, str):
+                end_date = datetime.strptime(end_date, "%Y-%m-%d")
+            filtered_data = filtered_data[filtered_data['date'] <= end_date]
+            
+        return filtered_data
+        
+    def _process_signals(self, signals, daily_data, date):
+        """
+        处理交易信号
+        
+        参数:
+        - signals: 字典,格式为 {'symbol': {'action': 'BUY/SELL', 'price': price, 'size': size}}
+        - daily_data: 当日数据
+        - date: 当前日期
+        """
+        for symbol, signal in signals.items():
+            # 获取当前股票数据
+            symbol_data = daily_data[daily_data['symbol'] == symbol]
+            if symbol_data.empty:
+                continue
+                
+            current_price = signal.get('price', symbol_data.iloc[-1]['close'])
+            action = signal['action'].upper()
+            
+            # 更新风险管理器的市场数据
+            if self.risk_manager:
+                self.risk_manager.update_market_data(symbol, current_price)
+                
+                # 检查是否触发止损
+                stop_triggered, stop_reason = self.risk_manager.check_stop_loss(
+                    symbol, 
+                    current_price, 
+                    pd.Timestamp(date)
+                )
+                
+                if stop_triggered:
+                    logger.info(f"{symbol} 触发止损: {stop_reason}")
+                    
+                    # 强制卖出全部持仓
+                    if symbol in self.positions:
+                        action = 'SELL'
+                        signal['size'] = self.positions[symbol]['amount']
+                        signal['price'] = current_price
+                    else:
+                        continue
+            
+            # 计算交易数量
+            if action == 'BUY':
+                # 如果使用风险管理器计算仓位
+                if self.risk_manager and not 'size' in signal:
+                    position_sizing = self.risk_manager.calculate_position_size(symbol, current_price)
+                    shares = position_sizing['shares']
+                # 如果是按比例买入
+                elif 'size' in signal and 0 < signal['size'] <= 1:
+                    size_ratio = signal['size']
+                    # 计算可用资金
+                    available_capital = self.capital * size_ratio
+                    # 考虑佣金,计算实际可买数量
+                    shares = int(available_capital / (current_price * (1 + self.commission)))
+                else:
+                    # 如果直接指定数量
+                    shares = signal.get('size', 100)
+                    
+                # 检查是否有足够资金
+                cost = shares * current_price * (1 + self.commission)
+                if cost > self.capital:
+                    shares = int(self.capital / (current_price * (1 + self.commission)))
+                    logger.warning(f"资金不足,调整买入数量为: {shares}")
+                
+                if shares <= 0:
+                    continue
+                    
+                # 执行买入
+                cost = shares * current_price * (1 + self.commission)
+                self.capital -= cost
+                
+                # 更新持仓
+                if symbol in self.positions:
+                    old_amount = self.positions[symbol]['amount']
+                    old_cost = self.positions[symbol]['cost']
+                    new_amount = old_amount + shares
+                    # 计算新的平均成本
+                    new_cost = (old_amount * old_cost + shares * current_price) / new_amount
+                    self.positions[symbol] = {'amount': new_amount, 'cost': new_cost}
+                else:
+                    self.positions[symbol] = {'amount': shares, 'cost': current_price}
+                
+                # 记录交易
+                self.trades.append({
+                    'date': date,
+                    'symbol': symbol,
+                    'action': 'BUY',
+                    'price': current_price,
+                    'shares': shares,
+                    'cost': cost,
+                    'profit': 0
+                })
+                
+                # 更新风险管理器
+                if self.risk_manager:
+                    self.risk_manager.update_position(
+                        symbol, 
+                        current_price, 
+                        pd.Timestamp(date),
+                        shares, 
+                        True
+                    )
+                
+                logger.info(f"买入 {symbol}: {shares}股,价格: {current_price},总成本: {cost}")
+                
+            elif action == 'SELL':
+                # 检查是否持有该股票
+                if symbol not in self.positions or self.positions[symbol]['amount'] <= 0:
+                    logger.warning(f"未持有{symbol},无法卖出")
+                    continue
+                
+                # 确定卖出数量
+                if 'size' in signal and 0 < signal['size'] <= 1:
+                    # 按比例卖出
+                    shares = int(self.positions[symbol]['amount'] * signal['size'])
+                else:
+                    # 直接指定数量或全部卖出
+                    shares = signal.get('size', self.positions[symbol]['amount'])
+                
+                # 确保不超过持有数量
+                if shares > self.positions[symbol]['amount']:
+                    shares = self.positions[symbol]['amount']
+                
+                # 执行卖出
+                revenue = shares * current_price * (1 - self.commission)
+                profit = revenue - shares * self.positions[symbol]['cost']
+                self.capital += revenue
+                
+                # 更新持仓
+                self.positions[symbol]['amount'] -= shares
+                if self.positions[symbol]['amount'] <= 0:
+                    del self.positions[symbol]
+                
+                # 记录交易
+                self.trades.append({
+                    'date': date,
+                    'symbol': symbol,
+                    'action': 'SELL',
+                    'price': current_price,
+                    'shares': shares,
+                    'revenue': revenue,
+                    'profit': profit
+                })
+                
+                # 更新风险管理器
+                if self.risk_manager:
+                    self.risk_manager.update_position(
+                        symbol, 
+                        current_price, 
+                        pd.Timestamp(date),
+                        shares, 
+                        False
+                    )
+                
+                logger.info(f"卖出 {symbol}: {shares}股,价格: {current_price},收入: {revenue},盈利: {profit}")
+    
+    def _calculate_equity(self, daily_data):
+        """计算当前总资产"""
+        equity = self.capital
+        
+        for symbol, position in self.positions.items():
+            # 获取当前股票的最新价格
+            symbol_data = daily_data[daily_data['symbol'] == symbol]
+            if not symbol_data.empty:
+                current_price = symbol_data.iloc[-1]['close']
+                equity += position['amount'] * current_price
+        
+        return equity
+    
+    def _update_equity_curve(self, date, daily_data):
+        """更新权益曲线"""
+        equity = self._calculate_equity(daily_data)
+        self.equity_curve.append({
+            'date': date,
+            'capital': self.capital,
+            'positions_value': equity - self.capital,
+            'equity': equity
+        })
+        
+        # 更新风险管理器资金状态
+        if self.risk_manager:
+            self.risk_manager.update_capital(equity)
+            
+            # 获取风险调整建议
+            risk_action = self.risk_manager.get_risk_adjustment_action()
+            
+            # 如果需要降低风险敞口
+            if risk_action['action'] == 'reduce_exposure':
+                logger.warning(f"风险警告: {risk_action['reason']}")
+                logger.info(f"建议: {risk_action['suggestion']}")
+                
+                # 执行风险调整 - 减少仓位
+                reduction = risk_action.get('reduction', 0.5)  # 默认减仓50%
+                
+                for symbol, position in list(self.positions.items()):
+                    # 生成减仓信号
+                    symbol_data = daily_data[daily_data['symbol'] == symbol]
+                    if not symbol_data.empty:
+                        current_price = symbol_data.iloc[-1]['close']
+                        shares_to_sell = int(position['amount'] * reduction)
+                        
+                        if shares_to_sell > 0:
+                            sell_signal = {
+                                'action': 'SELL',
+                                'price': current_price,
+                                'size': shares_to_sell
+                            }
+                            
+                            self._process_signals({symbol: sell_signal}, daily_data, date)
+                            logger.info(f"风险调整: 减仓 {symbol} {shares_to_sell}股")
+    
+    def run(self, data, start_date=None, end_date=None):
+        """
+        运行回测
+        
+        参数:
+        - data: DataFrame,包含回测数据
+        - start_date: 开始日期,字符串格式 'YYYY-MM-DD' 或datetime对象
+        - end_date: 结束日期,字符串格式 'YYYY-MM-DD' 或datetime对象
+        
+        返回:
+        - 字典,包含回测结果
+        """
+        # 初始化回测
+        self.reset()
+        logger.info(f"开始回测,初始资金: {self.initial_capital}")
+        
+        # 确保数据包含必要的列
+        required_columns = ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col not in data.columns:
+                raise ValueError(f"数据缺少必要的列: {col}")
+        
+        # 过滤数据
+        filtered_data = self._filter_data_by_date(data, start_date, end_date)
+        if filtered_data.empty:
+            raise ValueError("过滤后的数据为空,请检查日期范围")
+        
+        # 按日期排序
+        filtered_data = filtered_data.sort_values('date')
+        
+        # 获取所有唯一日期
+        unique_dates = filtered_data['date'].unique()
+        
+        # 循环每个交易日
+        for date in unique_dates:
+            # 获取当日数据
+            daily_data = filtered_data[filtered_data['date'] == date]
+            
+            # 为每个策略生成信号
+            all_signals = {}
+            for strategy in self.strategies:
+                signals = strategy.generate_signals(daily_data)
+                # 合并各策略的信号,如有冲突,后面的策略会覆盖前面的
+                all_signals.update(signals)
+            
+            # 处理信号
+            self._process_signals(all_signals, daily_data, date)
+            
+            # 更新权益曲线
+            self._update_equity_curve(date, daily_data)
+        
+        # 生成回测结果
+        return self._generate_results()
+    
+    def _generate_results(self):
+        """生成回测结果"""
+        equity_curve_df = pd.DataFrame(self.equity_curve)
+        
+        # 计算日收益率
+        if len(equity_curve_df) > 1:
+            equity_curve_df['daily_return'] = equity_curve_df['equity'].pct_change()
+        else:
+            equity_curve_df['daily_return'] = 0
+        
+        # 添加风险管理指标
+        risk_metrics = {}
+        if self.risk_manager:
+            # 获取风险管理记录
+            risk_records = self.risk_manager.risk_records
+            
+            # 计算风险指标
+            if equity_curve_df.empty:
+                risk_metrics = {}
+            else:
+                risk_metrics = self.risk_manager.calculate_risk_metrics(equity_curve_df)
+        
+        result = {
+            'initial_capital': self.initial_capital,
+            'final_equity': equity_curve_df.iloc[-1]['equity'] if not equity_curve_df.empty else self.initial_capital,
+            'total_return': (equity_curve_df.iloc[-1]['equity'] / self.initial_capital - 1) if not equity_curve_df.empty else 0,
+            'trades': self.trades,
+            'equity_curve': equity_curve_df,
+            'positions': self.positions,
+            'risk_metrics': risk_metrics
+        }
+        
+        return result 

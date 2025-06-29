@@ -1,0 +1,197 @@
+/**
+ * 策略管理器
+ * 用于整合和管理不同的交易策略
+ */
+
+import StrategyAI from '../ai/strategyAI.js';
+import SixSwordStrategy from './sixSwordStrategy.js';
+import CompassStrategy from './compassStrategy.js';
+import JiuFangPatterns from '../patterns/jiuFangPatterns.js';
+import LimitUpDoubleNegativeStrategy from './limitUpDoubleNegativeStrategy.js';
+
+/**
+ * 策略管理器类
+ */
+class StrategyManager {
+  constructor(options = {}) {
+    // 初始化策略AI
+    this.strategyAI = new StrategyAI(options);
+    
+    // 初始化各个策略系统
+    this.strategies = {
+      sixSword: new SixSwordStrategy(),
+      compass: new CompassStrategy(),
+      jiuFang: new JiuFangPatterns(),
+      limitUpDoubleNegative: new LimitUpDoubleNegativeStrategy()
+    };
+    
+    // 用户配置
+    this.userConfig = options.userConfig || {
+      enabledStrategies: ['sixSword', 'compass', 'jiuFang', 'limitUpDoubleNegative'],
+      riskProfile: 'moderate',
+      customWeights: null,
+      notificationThreshold: 75
+    };
+  }
+
+  /**
+   * 分析股票数据
+   * @param {Object} stockData 股票数据
+   * @returns {Object} 分析结果
+   */
+  analyzeStock(stockData) {
+    // 使用策略AI进行综合分析
+    const result = this.strategyAI.analyze(stockData);
+    
+    // 添加单独的策略分析结果
+    const individualResults = {};
+    for (const [name, strategy] of Object.entries(this.strategies)) {
+      if (this.userConfig.enabledStrategies.includes(name)) {
+        individualResults[name] = strategy.analyze(stockData);
+      }
+    }
+    
+    return {
+      ...result,
+      individualResults
+    };
+  }
+
+  /**
+   * 获取策略推荐
+   * @param {Object} stockData 股票数据
+   * @returns {Object} 策略推荐
+   */
+  getRecommendation(stockData) {
+    const analysis = this.analyzeStock(stockData);
+    
+    // 检查是否达到通知阈值
+    const shouldNotify = analysis.overallScore >= this.userConfig.notificationThreshold ||
+                       analysis.overallScore <= (100 - this.userConfig.notificationThreshold);
+    
+    return {
+      ...analysis.decision,
+      shouldNotify,
+      score: analysis.overallScore,
+      timestamp: new Date()
+    };
+  }
+
+  /**
+   * 更新用户配置
+   * @param {Object} newConfig 新的配置
+   */
+  updateUserConfig(newConfig) {
+    this.userConfig = {
+      ...this.userConfig,
+      ...newConfig
+    };
+    
+    // 更新策略AI的设置
+    if (newConfig.riskProfile) {
+      this.strategyAI.setRiskProfile(newConfig.riskProfile);
+    }
+    
+    if (newConfig.customWeights) {
+      this.strategyAI.setWeights(newConfig.customWeights);
+    }
+  }
+
+  /**
+   * 获取可用的策略列表
+   * @returns {Array} 策略列表
+   */
+  getAvailableStrategies() {
+    return Object.keys(this.strategies).map(key => ({
+      id: key,
+      name: this.getStrategyName(key),
+      description: this.getStrategyDescription(key),
+      enabled: this.userConfig.enabledStrategies.includes(key)
+    }));
+  }
+
+  /**
+   * 获取策略名称
+   * @param {String} strategyId 策略ID
+   * @returns {String} 策略名称
+   */
+  getStrategyName(strategyId) {
+    const names = {
+      sixSword: '六脉神剑',
+      compass: '指南针',
+      jiuFang: '九方智投',
+      limitUpDoubleNegative: '涨停双阴买入法'
+    };
+    
+    return names[strategyId] || strategyId;
+  }
+
+  /**
+   * 获取策略描述
+   * @param {String} strategyId 策略ID
+   * @returns {String} 策略描述
+   */
+  getStrategyDescription(strategyId) {
+    const descriptions = {
+      sixSword: '六脉神剑策略包含六种主要策略:天字诀,地字诀,人字诀,和字诀,顺字诀,凌字诀,全面分析市场走势。',
+      compass: '指南针策略基于主力控盘,趋势跟踪,突破系统等多种指标,提供全面的市场分析。',
+      jiuFang: '九方智投形态识别系统能够识别103种经典K线形态,帮助判断市场走势。',
+      limitUpDoubleNegative: '涨停双阴买入法是一种适用于股票市场的交易策略,主要识别涨停后连续两个阴线的形态,这通常预示着主力机构在洗盘后可能有较大概率的上涨行情。'
+    };
+    
+    return descriptions[strategyId] || '未知策略';
+  }
+
+  /**
+   * 启用策略
+   * @param {String} strategyId 策略ID
+   */
+  enableStrategy(strategyId) {
+    if (!this.userConfig.enabledStrategies.includes(strategyId)) {
+      this.userConfig.enabledStrategies.push(strategyId);
+    }
+  }
+
+  /**
+   * 禁用策略
+   * @param {String} strategyId 策略ID
+   */
+  disableStrategy(strategyId) {
+    this.userConfig.enabledStrategies = this.userConfig.enabledStrategies.filter(id => id !== strategyId);
+  }
+
+  /**
+   * 获取策略历史决策
+   * @returns {Array} 决策历史
+   */
+  getDecisionHistory() {
+    return this.strategyAI.getDecisionHistory();
+  }
+
+  /**
+   * 获取当前用户配置
+   * @returns {Object} 用户配置
+   */
+  getUserConfig() {
+    return { ...this.userConfig };
+  }
+
+  /**
+   * 重置为默认配置
+   */
+  resetToDefaults() {
+    this.userConfig = {
+      enabledStrategies: ['sixSword', 'compass', 'jiuFang', 'limitUpDoubleNegative'],
+      riskProfile: 'moderate',
+      customWeights: null,
+      notificationThreshold: 75
+    };
+    
+    // 重置策略AI
+    this.strategyAI = new StrategyAI({
+      riskProfile: 'moderate'
+    });
+  }
+}
+
+export default StrategyManager; 

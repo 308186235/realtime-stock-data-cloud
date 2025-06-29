@@ -1,0 +1,151 @@
+{
+    "name": "MasterTradingAgent",
+    "version": "1.0.0",
+    "description": "智能交易代理系统",
+    "loop_interval": 60,
+    "monitor_interval": 30,
+    
+    "market_analyzer": {
+        "enabled": true,
+        "update_interval": 300,
+        "data_sources": ["market_data", "technical_indicators", "sentiment_analysis"],
+        "indicators": {
+            "rsi": {"enabled": true, "periods": [14, 21]},
+            "macd": {"enabled": true, "fast_period": 12, "slow_period": 26, "signal_period": 9},
+            "bollinger_bands": {"enabled": true, "periods": 20, "std_dev": 2.0},
+            "moving_averages": {"enabled": true, "periods": [5, 10, 20, 50, 100, 200]}
+        },
+        "market_states": ["bull", "bear", "volatile", "sideways", "uncertain"],
+        "analysis_timeframes": ["1m", "5m", "15m", "1h", "4h", "1d"]
+    },
+    
+    "risk_manager": {
+        "enabled": true,
+        "max_position_size": 0.2,
+        "max_positions": 10,
+        "max_daily_loss": 0.03,
+        "max_drawdown": 0.1,
+        "stop_loss_mode": "adaptive",
+        "take_profit_mode": "adaptive",
+        "risk_levels": ["low", "medium", "high"],
+        "volatility_adjustment": true,
+        "correlation_check": true
+    },
+    
+    "decision_engine": {
+        "confidence_threshold": 0.6,
+        "decision_mode": "weighted",
+        "decision_factors": {
+            "market_trend": 0.3,
+            "strategy_signals": 0.4,
+            "risk_assessment": 0.2,
+            "sentiment": 0.1
+        },
+        "decision_timeouts": {
+            "buy": 3600,
+            "sell": 1800
+        }
+    },
+    
+    "trade_executor": {
+        "enable_paper_trading": true,
+        "broker": {
+            "name": "default_broker",
+            "api_key": "",
+            "api_secret": "",
+            "base_url": "http://localhost:8080/api",
+            "account_id": ""
+        },
+        "max_position_size": 0.2,
+        "max_orders_per_day": 100,
+        "min_order_interval": 60,
+        "stop_loss_percentage": 0.05,
+        "take_profit_percentage": 0.15,
+        "max_slippage": 0.01
+    },
+    
+    "learning_manager": {
+        "enabled": true,
+        "learning_rate": 0.001,
+        "batch_size": 32,
+        "memory_size": 10000,
+        "update_interval": 86400,
+        "experience_sample_size": 100,
+        "reinforcement": {
+            "gamma": 0.95,
+            "epsilon": 0.1,
+            "epsilon_decay": 0.995,
+            "epsilon_min": 0.01
+        }
+    },
+    
+    "strategies": {
+        "trend_following": {
+            "enabled": true,
+            "weight": 0.3,
+            "parameters": {
+                "fast_ma": 10,
+                "slow_ma": 50
+            }
+        },
+        "mean_reversion": {
+            "enabled": true,
+            "weight": 0.3,
+            "parameters": {
+                "rsi_period": 14,
+                "overbought": 70,
+                "oversold": 30
+            }
+        },
+        "breakout": {
+            "enabled": true,
+            "weight": 0.2,
+            "parameters": {
+                "lookback_period": 20,
+                "atr_multiple": 2.0
+            }
+        },
+        "pattern_recognition": {
+            "enabled": true,
+            "weight": 0.2,
+            "parameters": {
+                "enabled_patterns": [
+                    "double_bottom",
+                    "double_top",
+                    "head_shoulders",
+                    "three_white_soldiers",
+                    "three_black_crows"
+                ]
+            }
+        }
+    },
+    
+    "api": {
+        "enabled": true,
+        "port": 8000,
+        "host": "0.0.0.0",
+        "rate_limit": 100,
+        "auth_required": true
+    },
+    
+    "logging": {
+        "level": "INFO",
+        "log_to_file": true,
+        "log_dir": "logs",
+        "max_log_files": 10,
+        "max_log_size_mb": 10
+    },
+    
+    "alerts": {
+        "enabled": true,
+        "channels": ["console", "email"],
+        "email": {
+            "server": "smtp.example.com",
+            "port": 587,
+            "username": "",
+            "password": "",
+            "to_address": ""
+        },
+        "alert_levels": ["critical", "error", "warning", "info"]
+    }
+} 

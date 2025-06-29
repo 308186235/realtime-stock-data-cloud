@@ -1,0 +1,64 @@
+import Vue from 'vue';
+import Router from 'vue-router';
+
+Vue.use(Router);
+
+export default new Router({
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('@/pages/index/index.vue')
+    },
+    // Agent分析相关路由
+    {
+      path: '/agent-analysis',
+      name: 'agent-analysis',
+      component: () => import('@/pages/agent-analysis/index.vue'),
+      meta: { title: 'AI智能分析控制台' }
+    },
+    {
+      path: '/agent-analysis/learning',
+      name: 'ai-learning',
+      component: () => import('@/pages/agent-analysis/learning/index.vue'),
+      meta: { title: 'Agent学习分析' }
+    },
+    {
+      path: '/agent-analysis/diagnosis',
+      name: 'ai-diagnosis',
+      component: () => import('@/pages/agent-analysis/diagnosis/index.vue'),
+      meta: { title: 'AI诊断分析' }
+    },
+    // 指标页面相关路由
+    {
+      path: '/indicators',
+      name: 'indicators',
+      component: () => import('@/pages/indicators/index.vue'),
+      meta: { title: '技术指标' }
+    },
+    {
+      path: '/indicators/macd',
+      name: 'macd',
+      component: () => import('@/pages/indicators/macd.vue'),
+      meta: { title: 'MACD指标' }
+    },
+    {
+      path: '/indicators/rsi',
+      name: 'rsi',
+      component: () => import('@/pages/indicators/rsi.vue'),
+      meta: { title: 'RSI指标' }
+    },
+    {
+      path: '/indicators/williams-r',
+      name: 'williams-r',
+      component: () => import('@/pages/indicators/williams-r.vue'),
+      meta: { title: '威廉指标' }
+    },
+    {
+      path: '/indicators/detail',
+      name: 'indicator-detail',
+      component: () => import('@/pages/indicators/detail.vue'),
+      meta: { title: '指标详情' }
+    }
+  ]
+}); 

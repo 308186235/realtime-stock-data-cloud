@@ -1,0 +1,740 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+import os
+import pickle
+import asyncio
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+import traceback
+import random
+from collections import deque
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model, load_model, save_model
+from tensorflow.keras.layers import Dense, Input, Concatenate, BatchNormalization, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+
+# 设置日志
+logger = logging.getLogger("ReinforcementLearning")
+
+class DeepQLearner:
+    """
+    深度Q学习模型 - 使用神经网络实现Q函数逼近
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化深度Q学习模型
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 学习参数
+        self.learning_rate = self.config.get("learning_rate", 0.001)
+        self.discount_factor = self.config.get("discount_factor", 0.95)
+        self.batch_size = self.config.get("batch_size", 64)
+        self.target_update_freq = self.config.get("target_update_freq", 100)
+        
+        # 探索参数
+        self.exploration_rate = self.config.get("exploration_rate", 0.1)
+        self.min_exploration_rate = self.config.get("min_exploration_rate", 0.01)
+        self.exploration_decay = self.config.get("exploration_decay", 0.995)
+        
+        # 状态和动作空间
+        self.state_dim = self.config.get("state_dim", 20)  # 状态特征维度
+        self.action_dim = self.config.get("action_dim", 3)  # 动作维度（买、卖、持有）
+        
+        # 模型存储路径
+        self.models_dir = self.config.get("models_dir", "models")
+        os.makedirs(self.models_dir, exist_ok=True)
+        
+        # 经验回放缓冲区
+        self.buffer_size = self.config.get("buffer_size", 10000)
+        self.experience_buffer = deque(maxlen=self.buffer_size)
+        
+        # 训练计数器
+        self.train_count = 0
+        
+        # 创建模型
+        self.model = self._build_model()
+        self.target_model = self._build_model()
+        self._update_target_model()
+        
+        # 加载已有模型（如果存在）
+        self._load_model()
+        
+        logger.info("Deep Q-Learning model initialized")
+    
+    def _build_model(self) -> Model:
+        """
+        构建神经网络模型
+        
+        Returns:
+            Keras模型
+        """
+        # 检查TensorFlow是否可用
+        try:
+            tf.config.list_physical_devices('GPU')
+            logger.info("TensorFlow GPU support available")
+        except:
+            logger.info("TensorFlow running on CPU")
+        
+        # 构建模型
+        model = Sequential([
+            Dense(64, activation='relu', input_shape=(self.state_dim,)),
+            BatchNormalization(),
+            Dense(128, activation='relu'),
+            Dropout(0.3),
+            Dense(64, activation='relu'),
+            Dense(self.action_dim, activation='linear')
+        ])
+        
+        # 编译模型
+        model.compile(
+            loss='mse',
+            optimizer=Adam(learning_rate=self.learning_rate)
+        )
+        
+        return model
+    
+    def _update_target_model(self):
+        """更新目标网络"""
+        self.target_model.set_weights(self.model.get_weights())
+        logger.debug("Target model updated")
+    
+    def add_experience(self, 
+                      state: np.ndarray, 
+                      action: int, 
+                      reward: float, 
+                      next_state: np.ndarray, 
+                      done: bool):
+        """
+        添加经验到回放缓冲区
+        
+        Args:
+            state: 状态向量
+            action: 动作索引
+            reward: 奖励
+            next_state: 下一个状态向量
+            done: 是否结束
+        """
+        self.experience_buffer.append((state, action, reward, next_state, done))
+    
+    def select_action(self, state: np.ndarray, evaluate: bool = False) -> Tuple[int, float]:
+        """
+        选择动作
+        
+        Args:
+            state: 状态向量
+            evaluate: 是否处于评估模式
+            
+        Returns:
+            动作索引和置信度
+        """
+        # 评估模式或随机数大于探索率时利用模型选择动作
+        if evaluate or random.random() > self.exploration_rate:
+            # 获取Q值
+            q_values = self.model.predict(state.reshape(1, -1), verbose=0)[0]
+            
+            # 选择最大Q值的动作
+            action = np.argmax(q_values)
+            
+            # 计算置信度（归一化Q值）
+            q_min = np.min(q_values)
+            q_max = np.max(q_values)
+            if q_max > q_min:
+                confidence = (q_values[action] - q_min) / (q_max - q_min)
+            else:
+                confidence = 0.5
+        # 探索：随机选择动作
+        else:
+            action = random.randint(0, self.action_dim - 1)
+            confidence = 0.5  # 探索时的默认置信度
+        
+        return action, float(confidence)
+    
+    def train(self) -> Dict[str, Any]:
+        """
+        训练模型
+        
+        Returns:
+            训练结果
+        """
+        # 如果经验不足，跳过训练
+        if len(self.experience_buffer) < self.batch_size:
+            return {"status": "skipped", "reason": "insufficient_experiences"}
+        
+        # 随机抽取批次
+        batch = random.sample(self.experience_buffer, self.batch_size)
+        states, actions, rewards, next_states, dones = zip(*batch)
+        
+        # 转换为numpy数组
+        states = np.array(states)
+        next_states = np.array(next_states)
+        
+        # 获取当前Q值
+        current_q = self.model.predict(states, verbose=0)
+        
+        # 获取下一个状态的目标Q值
+        target_q = self.target_model.predict(next_states, verbose=0)
+        
+        # 更新Q值
+        for i in range(self.batch_size):
+            if dones[i]:
+                current_q[i, actions[i]] = rewards[i]
+            else:
+                current_q[i, actions[i]] = rewards[i] + self.discount_factor * np.max(target_q[i])
+        
+        # 训练模型
+        history = self.model.fit(
+            states, current_q, 
+            epochs=1, 
+            batch_size=self.batch_size,
+            verbose=0
+        )
+        
+        # 更新训练计数器
+        self.train_count += 1
+        
+        # 定期更新目标模型
+        if self.train_count % self.target_update_freq == 0:
+            self._update_target_model()
+        
+        # 衰减探索率
+        self.exploration_rate = max(
+            self.min_exploration_rate, 
+            self.exploration_rate * self.exploration_decay
+        )
+        
+        # 返回训练结果
+        return {
+            "status": "success",
+            "loss": float(history.history["loss"][0]),
+            "exploration_rate": float(self.exploration_rate),
+            "buffer_size": len(self.experience_buffer)
+        }
+    
+    def save_model(self, filename: str = "dqn_model"):
+        """
+        保存模型
+        
+        Args:
+            filename: 文件名前缀
+        """
+        try:
+            # 保存模型
+            model_path = os.path.join(self.models_dir, f"{filename}.h5")
+            self.model.save(model_path)
+            
+            # 保存模型参数
+            params_path = os.path.join(self.models_dir, f"{filename}_params.json")
+            with open(params_path, 'w') as f:
+                json.dump({
+                    "exploration_rate": self.exploration_rate,
+                    "train_count": self.train_count,
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+            
+            logger.info(f"Model saved to {model_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving model: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def _load_model(self, filename: str = "dqn_model"):
+        """
+        加载模型
+        
+        Args:
+            filename: 文件名前缀
+        """
+        model_path = os.path.join(self.models_dir, f"{filename}.h5")
+        params_path = os.path.join(self.models_dir, f"{filename}_params.json")
+        
+        try:
+            # 加载模型
+            if os.path.exists(model_path):
+                self.model = load_model(model_path)
+                self.target_model = load_model(model_path)
+                
+                # 加载参数
+                if os.path.exists(params_path):
+                    with open(params_path, 'r') as f:
+                        params = json.load(f)
+                        self.exploration_rate = params.get("exploration_rate", self.exploration_rate)
+                        self.train_count = params.get("train_count", 0)
+                
+                logger.info(f"Model loaded from {model_path}")
+                return True
+            else:
+                logger.info("No existing model found, using new model")
+                return False
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            traceback.print_exc()
+            return False
+
+
+class A2CLearner:
+    """
+    Advantage Actor-Critic (A2C) 学习模型 - 同时学习策略和价值函数
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化A2C学习模型
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 学习参数
+        self.actor_lr = self.config.get("actor_lr", 0.001)
+        self.critic_lr = self.config.get("critic_lr", 0.002)
+        self.gamma = self.config.get("gamma", 0.99)
+        self.entropy_beta = self.config.get("entropy_beta", 0.01)
+        
+        # 状态和动作空间
+        self.state_dim = self.config.get("state_dim", 20)
+        self.action_dim = self.config.get("action_dim", 3)
+        
+        # 模型存储路径
+        self.models_dir = self.config.get("models_dir", "models")
+        os.makedirs(self.models_dir, exist_ok=True)
+        
+        # 经验缓冲区
+        self.experiences = []
+        
+        # 创建Actor和Critic网络
+        self.actor = self._build_actor()
+        self.critic = self._build_critic()
+        
+        # 加载已有模型（如果存在）
+        self._load_models()
+        
+        logger.info("A2C model initialized")
+    
+    def _build_actor(self) -> Model:
+        """
+        构建Actor网络
+        
+        Returns:
+            Keras模型
+        """
+        inputs = Input(shape=(self.state_dim,))
+        x = Dense(64, activation='relu')(inputs)
+        x = BatchNormalization()(x)
+        x = Dense(64, activation='relu')(x)
+        outputs = Dense(self.action_dim, activation='softmax')(x)
+        
+        model = Model(inputs=inputs, outputs=outputs)
+        model.compile(
+            loss='categorical_crossentropy',
+            optimizer=Adam(learning_rate=self.actor_lr)
+        )
+        
+        return model
+    
+    def _build_critic(self) -> Model:
+        """
+        构建Critic网络
+        
+        Returns:
+            Keras模型
+        """
+        inputs = Input(shape=(self.state_dim,))
+        x = Dense(64, activation='relu')(inputs)
+        x = BatchNormalization()(x)
+        x = Dense(64, activation='relu')(x)
+        outputs = Dense(1, activation='linear')(x)
+        
+        model = Model(inputs=inputs, outputs=outputs)
+        model.compile(
+            loss='mse',
+            optimizer=Adam(learning_rate=self.critic_lr)
+        )
+        
+        return model
+    
+    def select_action(self, state: np.ndarray, evaluate: bool = False) -> Tuple[int, float]:
+        """
+        选择动作
+        
+        Args:
+            state: 状态向量
+            evaluate: 是否处于评估模式
+            
+        Returns:
+            动作索引和置信度
+        """
+        # 获取动作概率
+        action_probs = self.actor.predict(state.reshape(1, -1), verbose=0)[0]
+        
+        # 评估模式：选择概率最高的动作
+        if evaluate:
+            action = np.argmax(action_probs)
+            confidence = float(action_probs[action])
+        # 训练模式：根据概率分布采样动作
+        else:
+            action = np.random.choice(self.action_dim, p=action_probs)
+            confidence = float(action_probs[action])
+        
+        return action, confidence
+    
+    def add_experience(self, 
+                      state: np.ndarray, 
+                      action: int, 
+                      reward: float, 
+                      next_state: np.ndarray, 
+                      done: bool):
+        """
+        添加经验
+        
+        Args:
+            state: 状态向量
+            action: 动作索引
+            reward: 奖励
+            next_state: 下一个状态向量
+            done: 是否结束
+        """
+        self.experiences.append((state, action, reward, next_state, done))
+    
+    def train(self) -> Dict[str, Any]:
+        """
+        训练模型
+        
+        Returns:
+            训练结果
+        """
+        # 如果没有经验，跳过训练
+        if not self.experiences:
+            return {"status": "skipped", "reason": "no_experiences"}
+        
+        # 提取经验数据
+        states, actions, rewards, next_states, dones = zip(*self.experiences)
+        
+        # 转换为numpy数组
+        states = np.array(states)
+        next_states = np.array(next_states)
+        rewards = np.array(rewards)
+        dones = np.array(dones)
+        
+        # 创建动作的one-hot编码
+        actions_one_hot = np.zeros((len(actions), self.action_dim))
+        for i, action in enumerate(actions):
+            actions_one_hot[i, action] = 1
+        
+        # 计算下一个状态的值
+        next_values = self.critic.predict(next_states, verbose=0).flatten()
+        
+        # 计算目标值（TD目标）
+        targets = rewards + self.gamma * next_values * (1 - dones)
+        
+        # 获取当前状态的值
+        values = self.critic.predict(states, verbose=0).flatten()
+        
+        # 计算优势（Advantage）
+        advantages = targets - values
+        
+        # 训练Critic网络
+        critic_loss = self.critic.fit(
+            states, targets.reshape(-1, 1),
+            epochs=1,
+            verbose=0
+        ).history['loss'][0]
+        
+        # 训练Actor网络
+        # 对优势进行标准化
+        advantages = (advantages - np.mean(advantages)) / (np.std(advantages) + 1e-8)
+        
+        # 获取动作概率
+        action_probs = self.actor.predict(states, verbose=0)
+        
+        # 计算策略梯度损失
+        actor_loss = 0
+        for i in range(len(states)):
+            # 使用自定义损失函数（策略梯度）
+            # 损失 = -log(policy) * advantage
+            log_prob = np.log(action_probs[i, actions[i]] + 1e-8)
+            actor_loss -= log_prob * advantages[i]
+            
+            # 添加熵正则化（鼓励探索）
+            entropy = -np.sum(action_probs[i] * np.log(action_probs[i] + 1e-8))
+            actor_loss -= self.entropy_beta * entropy
+        
+        actor_loss /= len(states)
+        
+        # 清空经验缓冲区
+        self.experiences = []
+        
+        # 返回训练结果
+        return {
+            "status": "success",
+            "actor_loss": float(actor_loss),
+            "critic_loss": float(critic_loss)
+        }
+    
+    def save_models(self, prefix: str = "a2c"):
+        """
+        保存模型
+        
+        Args:
+            prefix: 文件名前缀
+        """
+        try:
+            # 保存Actor模型
+            actor_path = os.path.join(self.models_dir, f"{prefix}_actor.h5")
+            self.actor.save(actor_path)
+            
+            # 保存Critic模型
+            critic_path = os.path.join(self.models_dir, f"{prefix}_critic.h5")
+            self.critic.save(critic_path)
+            
+            # 保存参数
+            params_path = os.path.join(self.models_dir, f"{prefix}_params.json")
+            with open(params_path, 'w') as f:
+                json.dump({
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+            
+            logger.info(f"A2C models saved to {self.models_dir}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving A2C models: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    def _load_models(self, prefix: str = "a2c"):
+        """
+        加载模型
+        
+        Args:
+            prefix: 文件名前缀
+        """
+        actor_path = os.path.join(self.models_dir, f"{prefix}_actor.h5")
+        critic_path = os.path.join(self.models_dir, f"{prefix}_critic.h5")
+        
+        try:
+            # 加载Actor模型
+            if os.path.exists(actor_path):
+                self.actor = load_model(actor_path)
+                
+                # 加载Critic模型
+                if os.path.exists(critic_path):
+                    self.critic = load_model(critic_path)
+                    
+                    logger.info(f"A2C models loaded from {self.models_dir}")
+                    return True
+            
+            logger.info("No existing A2C models found, using new models")
+            return False
+        except Exception as e:
+            logger.error(f"Error loading A2C models: {str(e)}")
+            traceback.print_exc()
+            return False
+
+
+class FeatureExtractor:
+    """
+    特征提取器 - 将原始市场数据和状态转换为RL模型可用的特征向量
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化特征提取器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 特征维度
+        self.feature_dim = self.config.get("feature_dim", 20)
+        
+        # 市场状态编码
+        self.market_regime_encoding = {
+            "bull_trending": [1, 0, 0, 0, 0, 0, 0, 0],
+            "bull_volatile": [0, 1, 0, 0, 0, 0, 0, 0],
+            "bear_trending": [0, 0, 1, 0, 0, 0, 0, 0],
+            "bear_volatile": [0, 0, 0, 1, 0, 0, 0, 0],
+            "neutral_low_vol": [0, 0, 0, 0, 1, 0, 0, 0],
+            "neutral_high_vol": [0, 0, 0, 0, 0, 1, 0, 0],
+            "transition_bullish": [0, 0, 0, 0, 0, 0, 1, 0],
+            "transition_bearish": [0, 0, 0, 0, 0, 0, 0, 1]
+        }
+        
+        # 风险级别编码
+        self.risk_level_encoding = {
+            "low": [1, 0, 0, 0],
+            "medium": [0, 1, 0, 0],
+            "high": [0, 0, 1, 0],
+            "extreme": [0, 0, 0, 1]
+        }
+        
+        # 标准化器
+        self.scaler = None
+        
+        logger.info("Feature extractor initialized")
+    
+    def extract_features(self, state: Dict[str, Any]) -> np.ndarray:
+        """
+        从状态中提取特征
+        
+        Args:
+            state: 原始状态
+            
+        Returns:
+            特征向量
+        """
+        # 提取市场状态
+        market_state = state.get("market_state", {})
+        market_regime = market_state.get("market_regime", "neutral_low_vol")
+        
+        # 提取趋势信息
+        trend = market_state.get("trend", {})
+        trend_direction = trend.get("direction", "unknown")
+        trend_strength = trend.get("strength", 0.5)
+        trend_duration = trend.get("duration", 0)
+        
+        # 提取风险状态
+        risk_state = state.get("risk_state", {})
+        risk_level = risk_state.get("level", "medium")
+        overall_risk = risk_state.get("score", 0.5)
+        
+        # 提取投资组合状态
+        portfolio_state = state.get("portfolio_state", {})
+        open_positions = portfolio_state.get("open_positions", 0)
+        cash_ratio = portfolio_state.get("cash_ratio", 0.5)
+        
+        # 提取价格信息
+        price_data = state.get("price_data", {})
+        recent_return = price_data.get("recent_return", 0.0)
+        volatility = price_data.get("volatility", 0.2)
+        volume_change = price_data.get("volume_change", 0.0)
+        
+        # 提取技术指标
+        indicators = state.get("indicators", {})
+        rsi = indicators.get("rsi", 50) / 100  # 归一化
+        macd = indicators.get("macd", 0.0)
+        bb_position = indicators.get("bb_position", 0.5)  # 价格在布林带中的位置
+        
+        # 编码市场状态
+        market_regime_vec = self.market_regime_encoding.get(
+            market_regime, [0, 0, 0, 0, 1, 0, 0, 0]  # 默认为neutral_low_vol
+        )
+        
+        # 编码风险级别
+        risk_level_vec = self.risk_level_encoding.get(
+            risk_level, [0, 1, 0, 0]  # 默认为medium
+        )
+        
+        # 编码趋势方向
+        trend_dir_vec = [1, 0] if trend_direction == "up" else [0, 1]
+        
+        # 构建特征向量
+        features = np.array([
+            *market_regime_vec,  # 市场状态编码 (8)
+            *risk_level_vec,     # 风险级别编码 (4)
+            *trend_dir_vec,      # 趋势方向编码 (2)
+            trend_strength,      # 趋势强度
+            min(1.0, trend_duration / 30),  # 归一化趋势持续时间
+            overall_risk,        # 整体风险分数
+            min(1.0, open_positions / 10),  # 归一化持仓数量
+            cash_ratio,          # 现金比例
+            recent_return,       # 近期收益率
+            min(1.0, volatility * 5),  # 归一化波动率
+            volume_change,       # 交易量变化
+            rsi,                 # RSI
+            macd / 0.1,          # 归一化MACD
+            bb_position          # 布林带位置
+        ])
+        
+        # 如果需要固定维度，进行填充或截断
+        if len(features) < self.feature_dim:
+            features = np.pad(features, (0, self.feature_dim - len(features)))
+        elif len(features) > self.feature_dim:
+            features = features[:self.feature_dim]
+        
+        return features
+    
+    def normalize_state(self, state_vector: np.ndarray) -> np.ndarray:
+        """
+        归一化状态向量
+        
+        Args:
+            state_vector: 原始状态向量
+            
+        Returns:
+            归一化后的状态向量
+        """
+        # 简单归一化，确保所有值在[-1, 1]范围内
+        return np.clip(state_vector, -1, 1)
+
+
+# 主函数（用于测试）
+async def main():
+    """测试强化学习模块功能"""
+    # 创建深度Q学习模型
+    config = {
+        "learning_rate": 0.001,
+        "state_dim": 20,
+        "action_dim": 3,
+        "exploration_rate": 0.2
+    }
+    dqn = DeepQLearner(config)
+    
+    # 创建特征提取器
+    feature_extractor = FeatureExtractor()
+    
+    # 生成模拟状态
+    state = {
+        "market_state": {
+            "market_regime": "bull_trending",
+            "trend": {"direction": "up", "strength": 0.8, "duration": 10}
+        },
+        "risk_state": {"level": "low", "score": 0.2},
+        "portfolio_state": {"open_positions": 3, "cash_ratio": 0.4},
+        "price_data": {"recent_return": 0.03, "volatility": 0.15},
+        "indicators": {"rsi": 65, "macd": 0.02, "bb_position": 0.7}
+    }
+    
+    # 提取特征
+    features = feature_extractor.extract_features(state)
+    print(f"Feature vector shape: {features.shape}")
+    
+    # 选择动作
+    action, confidence = dqn.select_action(features)
+    print(f"Selected action: {action}, confidence: {confidence:.4f}")
+    
+    # 添加一些模拟经验
+    for i in range(100):
+        next_state = {
+            "market_state": {
+                "market_regime": "bull_trending",
+                "trend": {"direction": "up", "strength": 0.85, "duration": 11}
+            },
+            "risk_state": {"level": "low", "score": 0.18},
+            "portfolio_state": {"open_positions": 3, "cash_ratio": 0.38},
+            "price_data": {"recent_return": 0.04, "volatility": 0.14},
+            "indicators": {"rsi": 68, "macd": 0.025, "bb_position": 0.72}
+        }
+        next_features = feature_extractor.extract_features(next_state)
+        
+        reward = 0.05 if i % 3 == 0 else -0.02
+        dqn.add_experience(features, action, reward, next_features, i % 10 == 0)
+    
+    # 训练模型
+    result = dqn.train()
+    print(f"Training result: {result}")
+    
+    # 保存模型
+    dqn.save_model()
+
+if __name__ == "__main__":
+    asyncio.run(main()) 

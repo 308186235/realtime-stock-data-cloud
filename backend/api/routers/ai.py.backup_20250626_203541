@@ -1,0 +1,316 @@
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from typing import Dict, Any, List, Optional, Bool
+from pydantic import BaseModel, Field
+import logging
+
+# Import services
+from services.ai_service import AIService
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Dependency to get AI service
+def get_ai_service():
+    return AIService()
+
+# Models for request/response
+class PredictionRequest(BaseModel):
+    stock_code: str
+    time_steps: int = Field(default=10, ge=1, le=30)
+
+class StrategyOptimizationRequest(BaseModel):
+    strategy_id: str
+    stock_code: str
+    include_charts: bool = Field(default=False)
+    
+class PortfolioData(BaseModel):
+    holdings: List[Dict[str, Any]]
+    cash: float
+    
+class LearningRequest(BaseModel):
+    data_source: str
+    parameters: Dict[str, Any] = {}
+
+# 新增模型类型
+class TrainingStartRequest(BaseModel):
+    model_type: str = Field(..., description="模型类型，如price_prediction, strategy_optimizer, risk_assessment")
+    parameters: Optional[Dict[str, Any]] = Field(default={}, description="训练参数")
+
+@router.post("/predict")
+async def predict_stock_price(
+    request: PredictionRequest,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    Predict future stock prices using AI models.
+    
+    Args:
+        request: Prediction request with stock code and time steps
+        
+    Returns:
+        Predicted prices with confidence intervals
+    """
+    logger.info(f"Stock price prediction request for {request.stock_code}")
+    
+    result = await ai_service.predict_stock_price(
+        request.stock_code, 
+        request.time_steps
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+        
+    return result
+
+@router.post("/optimize-strategy")
+async def optimize_strategy(
+    request: StrategyOptimizationRequest,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    Optimize trading strategy parameters using AI.
+    
+    Args:
+        request: Strategy optimization request
+        
+    Returns:
+        Optimized parameters with expected performance metrics and optional charts
+    """
+    logger.info(f"Strategy optimization request for {request.strategy_id} on {request.stock_code}")
+    
+    result = await ai_service.optimize_strategy_parameters(
+        request.strategy_id,
+        request.stock_code,
+        request.include_charts
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+        
+    return result
+
+@router.post("/assess-risk")
+async def assess_risk(
+    portfolio: PortfolioData,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    Assess investment risk using AI models.
+    
+    Args:
+        portfolio: Current portfolio data
+        
+    Returns:
+        Risk assessment with metrics
+    """
+    logger.info("Portfolio risk assessment request")
+    
+    result = await ai_service.assess_risk(portfolio.dict())
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+        
+    return result
+
+@router.post("/learn")
+async def trigger_learning(
+    request: LearningRequest,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    Trigger AI learning process manually.
+    
+    Args:
+        request: Learning request with data source and parameters
+        
+    Returns:
+        Status of learning process
+    """
+    logger.info(f"Manual learning request from {request.data_source}")
+    
+    try:
+        # Start training in background (this would be implemented properly in production)
+        # In a real implementation, this would start a background task
+        
+        return {
+            "status": "success",
+            "message": "Learning process started",
+            "details": {
+                "data_source": request.data_source,
+                "parameters": request.parameters
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error starting learning process: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 
+        
+# 以下是新增的API端点，用于支持AI可视化界面
+
+@router.get("/training/progress")
+async def get_training_progress(
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    获取所有AI模型的训练进度
+    
+    Returns:
+        各AI模型的训练状态和进度
+    """
+    logger.info("获取AI训练进度")
+    
+    try:
+        # 假设AIService有一个get_training_progress方法
+        progress = await ai_service.get_training_progress()
+        return progress
+    except Exception as e:
+        logger.error(f"获取训练进度出错: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/models/performance")
+async def get_model_performance(
+    type: str,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    获取指定类型模型的性能指标
+    
+    Args:
+        type: 模型类型 (price_prediction, strategy_optimizer, risk_assessment)
+        
+    Returns:
+        模型性能指标和训练历史
+    """
+    logger.info(f"获取模型性能指标: {type}")
+    
+    try:
+        # 假设AIService有一个get_model_performance方法
+        performance = await ai_service.get_model_performance(type)
+        return performance
+    except Exception as e:
+        logger.error(f"获取模型性能指标出错: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/predict/price")
+async def get_price_prediction(
+    stock_code: str,
+    time_steps: int = 10,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    获取股票价格预测结果
+    
+    Args:
+        stock_code: 股票代码
+        time_steps: 预测步数
+        
+    Returns:
+        价格预测结果和置信区间
+    """
+    logger.info(f"获取股票价格预测: {stock_code}, 步数: {time_steps}")
+    
+    result = await ai_service.predict_stock_price(stock_code, time_steps)
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+        
+    return result
+
+@router.get("/optimize/strategy")
+async def get_strategy_optimization(
+    strategy_id: str,
+    stock_code: str,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    获取策略优化结果
+    
+    Args:
+        strategy_id: 策略ID
+        stock_code: 股票代码
+        
+    Returns:
+        策略优化结果
+    """
+    logger.info(f"获取策略优化结果: {strategy_id}, 股票: {stock_code}")
+    
+    result = await ai_service.optimize_strategy_parameters(
+        strategy_id,
+        stock_code,
+        include_charts=True
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+        
+    return result
+
+@router.post("/training/start")
+async def start_model_training(
+    request: TrainingStartRequest,
+    ai_service: AIService = Depends(get_ai_service)
+):
+    """
+    手动启动AI模型训练
+    
+    Args:
+        request: 包含模型类型和训练参数的请求
+        
+    Returns:
+        训练任务状态
+    """
+    logger.info(f"手动启动模型训练: {request.model_type}")
+    
+    try:
+        # 假设AIService有一个start_model_training方法
+        result = await ai_service.start_model_training(
+            model_type=request.model_type,
+            parameters=request.parameters
+        )
+        return result
+    except Exception as e:
+        logger.error(f"启动模型训练出错: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.post("/research/strategies")
+async def research_external_strategies(
+    query: str,
+    language: str = "en",
+    max_results: int = 5
+):
+    """
+    Search for and analyze external trading strategies from the internet.
+    """
+    result = await ai_service.research_external_strategies(query, language, max_results)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["message"])
+    return result
+
+@router.get("/research/top-traders")
+async def get_top_trader_strategies(
+    market: str = "global",
+    trader_count: int = 5
+):
+    """
+    Get strategies from top performing traders in a specific market.
+    """
+    result = await ai_service.get_top_trader_strategies(market, trader_count)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["message"])
+    return result
+
+@router.get("/research/status")
+async def get_external_learning_status():
+    """
+    Get the status of external strategy learning.
+    """
+    return await ai_service.get_external_learning_status()
+
+@router.post("/research/schedule")
+async def schedule_automatic_research(
+    enabled: bool = True,
+    interval_hours: int = 24
+):
+    """
+    Schedule automatic research of external strategies.
+    """
+    return await ai_service.schedule_automatic_research(enabled, interval_hours) 

@@ -1,0 +1,161 @@
+<template>
+  <div class="backtest-page">
+    <div class="page-header">
+      <h1>策略回测</h1>
+      <div class="view-toggle">
+        <button 
+          :class="{ active: activeView === 'new' }" 
+          @click="activeView = 'new'"
+        >
+          新建回测
+        </button>
+        <button 
+          :class="{ active: activeView === 'history' }" 
+          @click="activeView = 'history'"
+        >
+          历史回测
+        </button>
+      </div>
+    </div>
+    
+    <div class="backtest-content">
+      <!-- 新建回测视图 -->
+      <div v-if="activeView === 'new'">
+        <BacktestForm @saved="handleBacktestSaved" />
+      </div>
+      
+      <!-- 历史回测视图 -->
+      <div v-if="activeView === 'history'">
+        <BacktestHistory @view-details="viewBacktestDetails" ref="historyComponent" />
+      </div>
+      
+      <!-- 回测详情视图 -->
+      <div v-if="activeView === 'details' && selectedBacktest">
+        <div class="details-header">
+          <button @click="goBackToHistory" class="back-btn">
+            <span class="back-arrow">←</span> 返回列表
+          </button>
+        </div>
+        <BacktestResults :results="selectedBacktest" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import BacktestForm from '../components/Backtest/BacktestForm.vue';
+import BacktestResults from '../components/Backtest/BacktestResults.vue';
+import BacktestHistory from '../components/Backtest/BacktestHistory.vue';
+import { backtestService } from '../services/backtest-service.js';
+
+export default {
+  components: {
+    BacktestForm,
+    BacktestResults,
+    BacktestHistory
+  },
+  data() {
+    return {
+      activeView: 'new',
+      selectedBacktest: null,
+      previousView: null,
+      error: null
+    };
+  },
+  methods: {
+    handleBacktestSaved() {
+      // 切换到历史视图并刷新
+      this.activeView = 'history';
+      if (this.$refs.historyComponent) {
+        this.$refs.historyComponent.loadHistory();
+      }
+    },
+    
+    async viewBacktestDetails(backtestId) {
+      try {
+        this.error = null;
+        this.previousView = this.activeView;
+        
+        // 获取回测详情
+        const details = await backtestService.getBacktestResults(backtestId);
+        this.selectedBacktest = details;
+        this.activeView = 'details';
+      } catch (error) {
+        console.error('获取回测详情失败:', error);
+        this.error = `加载失败: ${error.message}`;
+      }
+    },
+    
+    goBackToHistory() {
+      this.activeView = this.previousView || 'history';
+      this.selectedBacktest = null;
+    }
+  }
+};
+</script>
+
+<style scoped>
+.backtest-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin: 0;
+  color: #333;
+  font-size: 1.8rem;
+}
+
+.view-toggle {
+  display: flex;
+  background: #f5f5f5;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.view-toggle button {
+  background: none;
+  border: none;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.view-toggle button.active {
+  background: #2196F3;
+  color: white;
+}
+
+.backtest-content {
+  margin-top: 20px;
+}
+
+.details-header {
+  margin-bottom: 15px;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  color: #2196F3;
+  cursor: pointer;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.back-arrow {
+  margin-right: 5px;
+  font-size: 1.2rem;
+}
+</style> 

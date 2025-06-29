@@ -1,0 +1,516 @@
+// AgentService.js - 为AI训练,性能监控和预测结果提供API服务
+import request from '../utils/request';
+
+const USE_MOCK_DATA = true; // 开发环境中使用模拟数据
+
+/**
+ * Agent模型训练,监控和预测结果服务
+ */
+const agentService = {
+  /**
+   * 获取AI训练进度
+   * @returns {Promise} 训练进度数据
+   */
+  async getTrainingProgress() {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return [
+        {
+          name: 'price_prediction',
+          displayName: '价格预测模型',
+          status: 'training',
+          progress: 65,
+          startTime: Date.now() - 3600000,
+          estimatedCompletion: Date.now() + 1800000,
+          currentEpoch: 32,
+          totalEpochs: 50
+        },
+        {
+          name: 'strategy_optimizer',
+          displayName: '策略优化模型',
+          status: 'complete',
+          progress: 100,
+          startTime: Date.now() - 7200000,
+          estimatedCompletion: Date.now() - 3600000,
+          currentEpoch: 50,
+          totalEpochs: 50
+        },
+        {
+          name: 'risk_assessment',
+          displayName: '风险评估模型',
+          status: 'idle',
+          progress: 0,
+          startTime: null,
+          estimatedCompletion: null,
+          currentEpoch: 0,
+          totalEpochs: 40
+        }
+      ];
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/training/progress',
+      method: 'get',
+      force_refresh: true
+    });
+  },
+
+  /**
+   * 获取模型性能指标
+   * @param {String} modelType 模型类型 (price_prediction, strategy_optimizer, risk_assessment)
+   * @returns {Promise} 模型性能数据
+   */
+  async getModelPerformance(modelType) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        metrics: [
+          { name: 'mse', displayName: '均方误差', value: '0.0324', trend: 'down', changePercent: '5.2' },
+          { name: 'mae', displayName: '平均绝对误差', value: '0.1253', trend: 'down', changePercent: '3.7' },
+          { name: 'accuracy', displayName: '准确率', value: '87.6%', trend: 'up', changePercent: '2.1' },
+          { name: 'recall', displayName: '召回率', value: '0.825', trend: 'up', changePercent: '1.8' }
+        ],
+        history: {
+          epochs: Array.from({ length: 50 }, (_, i) => i + 1),
+          train_loss: Array.from({ length: 50 }, () => Math.random() * 0.5 + 0.1).sort((a, b) => b - a),
+          val_loss: Array.from({ length: 50 }, () => Math.random() * 0.7 + 0.2).sort((a, b) => b - a),
+          train_accuracy: Array.from({ length: 50 }, (_, i) => Math.min(0.95, 0.5 + i * 0.01)),
+          val_accuracy: Array.from({ length: 50 }, (_, i) => Math.min(0.9, 0.45 + i * 0.009))
+        }
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: `/api/ai/models/performance`,
+      method: 'get',
+      params: { type: modelType },
+      force_refresh: true
+    });
+  },
+
+  /**
+   * 获取价格预测结果
+   * @param {String} stockCode 股票代码
+   * @param {Number} timeSteps 预测时间步数
+   * @returns {Promise} 价格预测数据
+   */
+  async getPricePrediction(stockCode, timeSteps = 10) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      const basePrice = 15.72;
+      return {
+        stock_code: stockCode,
+        current_price: basePrice,
+        predictions: Array.from({ length: timeSteps }, (_, i) => {
+          const trend = Math.random() > 0.5 ? 1 : -1;
+          const randomFactor = Math.random() * 0.05;
+          const dayFactor = i * 0.02;
+          const price = basePrice * (1 + trend * (randomFactor + dayFactor));
+          return {
+            time_step: i + 1,
+            predicted_price: price,
+            lower_bound: price * 0.95,
+            upper_bound: price * 1.05,
+            confidence: 0.95
+          };
+        })
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: `/api/ai/predict/price`,
+      method: 'get',
+      params: { stock_code: stockCode, time_steps: timeSteps },
+      force_refresh: true
+    });
+  },
+
+  /**
+   * 获取策略优化结果
+   * @param {String} strategyId 策略ID
+   * @param {String} stockCode 股票代码
+   * @returns {Promise} 策略优化数据
+   */
+  async getStrategyOptimization(strategyId, stockCode) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        strategy_id: strategyId,
+        stock_code: stockCode,
+        optimization_results: {
+          parameters: {
+            entry_threshold: 0.75,
+            exit_threshold: 0.25,
+            stop_loss: 0.05,
+            take_profit: 0.15
+          },
+          performance: {
+            annualized_return: 18.5,
+            sharpe_ratio: 1.75,
+            max_drawdown: 12.3,
+            win_rate: 68.5
+          }
+        }
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: `/api/ai/optimize/strategy`,
+      method: 'get',
+      params: { strategy_id: strategyId, stock_code: stockCode },
+      force_refresh: true
+    });
+  },
+  
+  /**
+   * 启动模型训练
+   * @param {String} modelType 模型类型
+   * @param {Object} parameters 训练参数
+   * @param {Boolean} useGPU 是否使用GPU加速
+   * @returns {Promise} 训练启动结果
+   */
+  async startModelTraining(modelType, parameters = {}, useGPU = false) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      console.log(`启动${modelType}模型训练${useGPU ? '(GPU加速)' : '(CPU)'}`);
+      return {
+        status: 'success',
+        message: `训练已启动${useGPU ? ' (GPU加速)' : ''}`,
+        model_type: modelType,
+        job_id: 'job_' + Date.now(),
+        estimated_time: useGPU ? '35分钟' : '1小时30分钟',
+        use_gpu: useGPU
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/training/start',
+      method: 'post',
+      data: {
+        model_type: modelType,
+        parameters: parameters,
+        use_gpu: useGPU
+      }
+    });
+  },
+  
+  /**
+   * 停止模型训练
+   * @param {String} modelType 模型类型
+   * @returns {Promise} 训练停止结果
+   */
+  async stopModelTraining(modelType) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        status: 'success',
+        message: '训练已停止',
+        model_type: modelType
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/training/stop',
+      method: 'post',
+      data: { model_type: modelType }
+    });
+  },
+  
+  /**
+   * 导出训练好的模型
+   * @param {String} modelType 模型类型
+   * @returns {Promise} 模型导出结果
+   */
+  async exportModel(modelType) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        status: 'success',
+        message: '模型已导出',
+        model_type: modelType,
+        download_url: '/exports/model_' + modelType + '_' + Date.now() + '.zip'
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/models/export',
+      method: 'post',
+      data: { model_type: modelType }
+    });
+  },
+  
+  /**
+   * 获取风险评估
+   * @param {Object} portfolio 投资组合数据
+   * @returns {Promise} 风险评估结果
+   */
+  async assessRisk(portfolio) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        overall_risk: 'medium',
+        risk_score: 65,
+        metrics: {
+          volatility: 0.15,
+          var_95: 0.08,
+          max_drawdown: 0.12,
+          sharpe_ratio: 1.35
+        },
+        recommendations: [
+          '考虑减持高波动性股票如科技股',
+          '增加行业多样性降低集中风险',
+          '根据风险承受能力调整仓位'
+        ]
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/assess-risk',
+      method: 'post',
+      data: portfolio
+    });
+  },
+
+  /**
+   * 研究外部交易策略
+   * @param {String} query 搜索查询
+   * @param {String} language 语言代码 (zh, en)
+   * @param {Number} maxResults 最大结果数量
+   * @param {Array} filters 过滤条件
+   * @returns {Promise} 策略搜索结果
+   */
+  async researchExternalStrategies(query, language = 'zh', maxResults = 5, filters = []) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      // 创建搜索结果模拟数据
+      const strategies = [
+        {
+          name: '趋势跟踪双均线策略',
+          description: '结合短期和长期移动平均线的交叉信号,识别市场主要趋势并跟随。在上升趋势中持有多头,下降趋势中持有空头或离场。',
+          score: 8.7,
+          annual_return: 22.5,
+          sharpe_ratio: 1.82,
+          max_drawdown: 15.2,
+          tags: ['趋势跟踪', '技术分析', '中长线'],
+          source: 'QuantConnect社区'
+        },
+        {
+          name: '波动突破策略',
+          description: '基于市场波动性的突破交易系统,使用ATR指标设定动态阈值,在价格突破重要支撑/阻力位时入场。',
+          score: 7.5,
+          annual_return: 18.3,
+          sharpe_ratio: 1.45,
+          max_drawdown: 18.7,
+          tags: ['突破', '波动性', '短线'],
+          source: 'TradingView社区'
+        },
+        {
+          name: '价值均值回归策略',
+          description: '识别市场过度反应造成的临时偏离,当股票偏离其基本面价值时建立头寸,等待价格回归均值。',
+          score: 7.8,
+          annual_return: 16.2,
+          sharpe_ratio: 1.95,
+          max_drawdown: 10.3,
+          tags: ['均值回归', '价值投资', '中线'],
+          source: '学术研究论文'
+        },
+        {
+          name: '机构资金流向策略',
+          description: '追踪大型机构投资者的资金流向,当检测到明显的资金流入时买入,资金流出时卖出。',
+          score: 8.1,
+          annual_return: 24.7,
+          sharpe_ratio: 1.67,
+          max_drawdown: 19.5,
+          tags: ['资金流', '量化', '中长线'],
+          source: 'Hedge Fund报告'
+        },
+        {
+          name: '周期轮动策略',
+          description: '基于经济周期和行业轮动规律,在不同经济阶段配置表现最佳的行业板块,定期调整持仓。',
+          score: 8.4,
+          annual_return: 19.8,
+          sharpe_ratio: 1.73,
+          max_drawdown: 13.8,
+          tags: ['行业轮动', '宏观', '长线'],
+          source: 'Morgan Stanley研究部门'
+        }
+      ];
+
+      // 根据过滤条件筛选
+      let filtered = [...strategies];
+      if (filters.includes('trending')) {
+        filtered = filtered.filter(s => s.score >= 8.0);
+      }
+      if (filters.includes('high_profit')) {
+        filtered = filtered.filter(s => s.annual_return >= 20);
+      }
+      if (filters.includes('low_risk')) {
+        filtered = filtered.filter(s => s.max_drawdown <= 15);
+      }
+      if (filters.includes('easy')) {
+        filtered = filtered.filter(s => s.tags.some(t => ['技术分析', '趋势跟踪'].includes(t)));
+      }
+
+      // 限制返回数量
+      filtered = filtered.slice(0, maxResults);
+
+      return {
+        query: query,
+        language: language,
+        strategies: filtered
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/research/strategies',
+      method: 'post',
+      data: {
+        query: query,
+        language: language,
+        max_results: maxResults,
+        filters: filters
+      }
+    });
+  },
+
+  /**
+   * 获取顶级交易者策略
+   * @param {String} market 市场 (global, cn, us, eu, asia)
+   * @param {Number} traderCount 返回交易者数量
+   * @returns {Promise} 顶级交易者数据
+   */
+  async getTopTraderStrategies(market = 'global', traderCount = 5) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      const traders = [
+        {
+          name: 'Michael Platt',
+          description: '擅长全球宏观策略,特别是利率和外汇市场,着眼于系统性风险和市场异常定价。',
+          annual_return: 36.8,
+          consecutive_wins: 9,
+          trades_count: 287,
+          strategy_type: '全球宏观'
+        },
+        {
+          name: 'James Simons',
+          description: '纯定量策略的先驱,使用数学模型和机器学习识别市场规律,高频交易和统计套利。',
+          annual_return: 31.5,
+          consecutive_wins: 12,
+          trades_count: 1548,
+          strategy_type: '量化多策略'
+        },
+        {
+          name: 'Ray Dalio',
+          description: '基于经济周期和宏观分析的全天候策略,平衡风险敞口和资产配置。',
+          annual_return: 25.3,
+          consecutive_wins: 8,
+          trades_count: 354,
+          strategy_type: '平衡配置'
+        },
+        {
+          name: 'Ken Griffin',
+          description: '多策略交易,擅长市场做市和资本结构套利,结合高频交易和基本面分析。',
+          annual_return: 29.7,
+          consecutive_wins: 7,
+          trades_count: 985,
+          strategy_type: '套利'
+        },
+        {
+          name: 'Cathie Wood',
+          description: '以创新和颠覆性技术为主题的长线投资,深入研究产业变革趋势。',
+          annual_return: 33.2,
+          consecutive_wins: 6,
+          trades_count: 215,
+          strategy_type: '主题投资'
+        }
+      ];
+
+      return {
+        market: market,
+        traders: traders.slice(0, traderCount)
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/research/top-traders',
+      method: 'get',
+      params: {
+        market: market,
+        trader_count: traderCount
+      }
+    });
+  },
+
+  /**
+   * 获取外部学习状态
+   * @returns {Promise} 自动研究状态
+   */
+  async getExternalLearningStatus() {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        enabled: false,
+        interval_hours: 168, // 一周一次
+        themes: ['trend', 'quant'],
+        notifications_enabled: true,
+        last_run: Date.now() - 3 * 24 * 60 * 60 * 1000, // 3天前
+        next_run: Date.now() + 4 * 24 * 60 * 60 * 1000  // 4天后
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/research/status',
+      method: 'get'
+    });
+  },
+
+  /**
+   * 设置自动研究计划
+   * @param {Boolean} enabled 是否启用
+   * @param {Number} intervalHours 间隔小时数
+   * @param {Array} themes 研究主题
+   * @param {Boolean} notificationsEnabled 是否启用通知
+   * @returns {Promise} 设置结果
+   */
+  async scheduleAutomaticResearch(enabled = true, intervalHours = 24, themes = [], notificationsEnabled = true) {
+    // 开发环境直接返回模拟数据
+    if (USE_MOCK_DATA) {
+      return {
+        status: 'success',
+        message: '自动研究计划已设置',
+        details: {
+          enabled: enabled,
+          interval_hours: intervalHours,
+          themes: themes,
+          notifications_enabled: notificationsEnabled,
+          next_run: enabled ? Date.now() + intervalHours * 60 * 60 * 1000 : null
+        }
+      };
+    }
+
+    // 生产环境使用实际API
+    return request({
+      url: '/api/ai/research/schedule',
+      method: 'post',
+      data: {
+        enabled: enabled,
+        interval_hours: intervalHours,
+        themes: themes,
+        notifications_enabled: notificationsEnabled
+      }
+    });
+  }
+};
+
+export default agentService; 

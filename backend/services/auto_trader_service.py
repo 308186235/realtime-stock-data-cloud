@@ -1,0 +1,476 @@
+import logging
+import asyncio
+import time
+import json
+from datetime import datetime
+import os
+from typing import Dict, List, Any, Optional
+import threading
+
+logger = logging.getLogger(__name__)
+
+class AutoTraderService:
+    """
+    自动交易服务,根据市场信号和预设规则自动执行交易操作。
+    该服务允许用户为每个追踪器设置交易规则并自动执行相应的交易行为。
+    """
+    
+    def __init__(self):
+        """初始化自动交易服务"""
+        self.auto_trade_configs = {}  # 交易配置信息
+        self.trade_history = {}  # 交易历史
+        self.running = False  # 服务运行状态
+        self.trade_lock = threading.Lock()  # 交易锁,防止并发交易
+        self.data_path = 'data/auto_trades'
+        self.max_trade_attempts = 3  # 最大尝试交易次数
+        
+        # 创建数据目录
+        os.makedirs(self.data_path, exist_ok=True)
+        
+        # 默认交易模式
+        self.trade_modes = {
+            "CONSERVATIVE": {
+                "max_position_percent": 0.3,  # 最大仓位比例
+                "increase_step": 0.05,       # 加仓步长
+                "reduce_step": 0.1,          # 减仓步长
+                "stop_loss_percent": 0.08,   # 止损比例
+                "take_profit_percent": 0.15  # 止盈比例
+            },
+            "MODERATE": {
+                "max_position_percent": 0.5,
+                "increase_step": 0.1,
+                "reduce_step": 0.15,
+                "stop_loss_percent": 0.12,
+                "take_profit_percent": 0.2
+            },
+            "AGGRESSIVE": {
+                "max_position_percent": 0.8,
+                "increase_step": 0.2,
+                "reduce_step": 0.25,
+                "stop_loss_percent": 0.15,
+                "take_profit_percent": 0.3
+            }
+        }
+        
+        logger.info("自动交易服务已初始化")
+    
+    async def start(self):
+        """启动自动交易服务"""
+        if self.running:
+            return {"status": "already_running"}
+        
+        self.running = True
+        
+        # 加载保存的交易配置
+        await self._load_configs()
+        
+        # 启动服务轮询
+        asyncio.create_task(self._run_service_loop())
+        
+        logger.info("自动交易服务已启动")
+        return {"status": "started"}
+    
+    async def stop(self):
+        """停止自动交易服务"""
+        self.running = False
+        logger.info("自动交易服务已停止")
+        return {"status": "stopped"}
+    
+    async def set_auto_trade_config(self, tracker_id: str, config: Dict):
+        """
+        为特定的追踪器设置自动交易配置
+        
+        Args:
+            tracker_id: 追踪器ID
+            config: 交易配置,包括:
+                - enabled: 是否启用自动交易
+                - mode: 交易模式 (CONSERVATIVE, MODERATE, AGGRESSIVE)
+                - custom_rules: 自定义规则
+                - max_single_trade_amount: 单次最大交易金额
+                - max_daily_trades: 每日最大交易次数
+                - trading_hours: 交易时间窗口
+                
+        Returns:
+            设置结果
+        """
+        # 验证配置
+        if not self._validate_config(config):
+            return {"status": "error", "message": "配置无效"}
+        
+        # 设置默认值
+        if "mode" in config and config["mode"] in self.trade_modes:
+            # 根据选择的模式设置默认参数
+            mode_defaults = self.trade_modes[config["mode"]]
+            for key, value in mode_defaults.items():
+                if key not in config:
+                    config[key] = value
+        
+        # 防止并发修改
+        with self.trade_lock:
+            self.auto_trade_configs[tracker_id] = config
+            
+            # 保存配置
+            await self._save_configs()
+        
+        logger.info(f"已为追踪器 {tracker_id} 设置自动交易配置")
+        return {
+            "status": "success", 
+            "tracker_id": tracker_id,
+            "config": config
+        }
+    
+    async def get_auto_trade_config(self, tracker_id: str):
+        """
+        获取追踪器的自动交易配置
+        
+        Args:
+            tracker_id: 追踪器ID
+            
+        Returns:
+            交易配置
+        """
+        if tracker_id not in self.auto_trade_configs:
+            return {"status": "not_found"}
+        
+        return {
+            "status": "success",
+            "config": self.auto_trade_configs[tracker_id]
+        }
+    
+    async def get_trade_history(self, tracker_id: str = None, limit: int = 50):
+        """
+        获取交易历史
+        
+        Args:
+            tracker_id: 可选的追踪器ID筛选
+            limit: 返回的历史记录数量限制
+            
+        Returns:
+            交易历史记录
+        """
+        history = []
+        
+        if tracker_id:
+            # 返回特定追踪器的历史
+            if tracker_id in self.trade_history:
+                history = self.trade_history[tracker_id][-limit:]
+        else:
+            # 返回所有历史,按时间排序
+            all_trades = []
+            for tracker_trades in self.trade_history.values():
+                all_trades.extend(tracker_trades)
+            
+            # 按时间排序
+            all_trades.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            history = all_trades[:limit]
+        
+        return {
+            "status": "success",
+            "history": history
+        }
+    
+    async def handle_market_signal(self, tracker_id: str, signal_data: Dict):
+        """
+        处理市场信号并执行自动交易(如果启用)
+        
+        Args:
+            tracker_id: 追踪器ID
+            signal_data: 信号数据
+            
+        Returns:
+            处理结果
+        """
+        logger.info(f"收到市场信号: {signal_data.get('type')} 为追踪器 {tracker_id}")
+        
+        # 检查是否配置了自动交易
+        if tracker_id not in self.auto_trade_configs:
+            return {"status": "no_config", "message": "未配置自动交易"}
+        
+        config = self.auto_trade_configs[tracker_id]
+        
+        # 检查是否启用
+        if not config.get("enabled", False):
+            return {"status": "disabled", "message": "自动交易已禁用"}
+        
+        # 检查交易时间窗口
+        if not self._is_within_trading_hours(config.get("trading_hours")):
+            return {"status": "outside_hours", "message": "当前时间不在交易窗口内"}
+        
+        # 处理信号并决定交易行为
+        trade_decision = self._analyze_signal(signal_data, config)
+        
+        # 如果需要交易,执行交易
+        if trade_decision["should_trade"]:
+            trade_result = await self._execute_trade(
+                tracker_id,
+                trade_decision["action"],
+                trade_decision["amount"],
+                signal_data
+            )
+            return {
+                "status": "processed",
+                "trade_decision": trade_decision,
+                "trade_result": trade_result
+            }
+        
+        return {
+            "status": "no_action",
+            "message": trade_decision.get("reason", "当前信号不需要交易操作")
+        }
+    
+    async def _run_service_loop(self):
+        """运行服务主循环,定期检查需要处理的信号"""
+        while self.running:
+            try:
+                # 这里可以检查是否有待处理的信号或定期任务
+                # 如停损检查等
+                pass
+            except Exception as e:
+                logger.error(f"自动交易服务循环出错: {e}")
+            
+            # 等待一小段时间
+            await asyncio.sleep(5)
+    
+    def _validate_config(self, config: Dict) -> bool:
+        """验证交易配置是否有效"""
+        # 必须包含enabled字段
+        if "enabled" not in config:
+            return False
+        
+        # 如果指定了交易模式,必须是有效模式
+        if "mode" in config and config["mode"] not in self.trade_modes:
+            return False
+        
+        # 其他验证...
+        
+        return True
+    
+    def _is_within_trading_hours(self, trading_hours: Optional[Dict]) -> bool:
+        """检查当前时间是否在交易时间窗口内"""
+        if not trading_hours:
+            return True  # 默认总是在交易时间内
+        
+        now = datetime.now()
+        current_hour = now.hour
+        current_minute = now.minute
+        current_weekday = now.weekday()  # 0-6, 0是周一
+        
+        # 检查是否在允许的星期
+        allowed_days = trading_hours.get("days", [0, 1, 2, 3, 4])  # 默认工作日
+        if current_weekday not in allowed_days:
+            return False
+        
+        # 检查是否在允许的时间范围
+        start_time = trading_hours.get("start_time", "09:30")
+        end_time = trading_hours.get("end_time", "15:00")
+        
+        start_hour, start_minute = map(int, start_time.split(":"))
+        end_hour, end_minute = map(int, end_time.split(":"))
+        
+        start_minutes = start_hour * 60 + start_minute
+        end_minutes = end_hour * 60 + end_minute
+        current_minutes = current_hour * 60 + current_minute
+        
+        return start_minutes <= current_minutes <= end_minutes
+    
+    def _analyze_signal(self, signal_data: Dict, config: Dict) -> Dict:
+        """分析信号并决定交易行为"""
+        signal_type = signal_data.get("type")
+        
+        # 默认不交易
+        decision = {
+            "should_trade": False,
+            "reason": "默认无交易行为"
+        }
+        
+        # 处理交易信号
+        if signal_type == "trading_signal":
+            signal = signal_data.get("signal")
+            
+            if signal == "INCREASE_POSITION":
+                # 计算加仓金额
+                increase_step = config.get("increase_step", 0.1)
+                max_amount = config.get("max_single_trade_amount", 10000)
+                amount = min(max_amount, increase_step * max_amount)
+                
+                decision = {
+                    "should_trade": True,
+                    "action": "BUY",
+                    "amount": amount,
+                    "reason": "根据加仓信号执行买入"
+                }
+            
+            elif signal == "REDUCE_POSITION":
+                # 计算减仓金额
+                reduce_step = config.get("reduce_step", 0.15)
+                max_amount = config.get("max_single_trade_amount", 10000)
+                amount = min(max_amount, reduce_step * max_amount)
+                
+                decision = {
+                    "should_trade": True,
+                    "action": "SELL",
+                    "amount": amount,
+                    "reason": "根据减仓信号执行卖出"
+                }
+            
+            elif signal == "EXIT_POSITION":
+                decision = {
+                    "should_trade": True,
+                    "action": "SELL_ALL",
+                    "amount": 0,  # 全部卖出
+                    "reason": "根据离场信号执行全部卖出"
+                }
+        
+        # 处理价格变化信号
+        elif signal_type == "price_change":
+            price_change_pct = signal_data.get("price_change_pct", 0)
+            direction = signal_data.get("direction")
+            
+            # 检查止损
+            stop_loss = config.get("stop_loss_percent", 0.1)
+            if direction == "down" and abs(price_change_pct) >= stop_loss:
+                decision = {
+                    "should_trade": True,
+                    "action": "STOP_LOSS",
+                    "amount": 0,  # 全部卖出
+                    "reason": f"触发止损: 下跌{abs(price_change_pct):.2f}%"
+                }
+            
+            # 检查止盈
+            take_profit = config.get("take_profit_percent", 0.2)
+            if direction == "up" and price_change_pct >= take_profit:
+                decision = {
+                    "should_trade": True,
+                    "action": "TAKE_PROFIT",
+                    "amount": 0,  # 全部卖出
+                    "reason": f"触发止盈: 上涨{price_change_pct:.2f}%"
+                }
+        
+        # 其他自定义规则...
+        
+        return decision
+    
+    async def _execute_trade(self, tracker_id: str, action: str, amount: float, signal_data: Dict) -> Dict:
+        """
+        执行交易操作
+        
+        Args:
+            tracker_id: 追踪器ID
+            action: 交易行为 (BUY, SELL, SELL_ALL, STOP_LOSS, TAKE_PROFIT)
+            amount: 交易金额
+            signal_data: 触发交易的信号数据
+            
+        Returns:
+            交易结果
+        """
+        # 在真实场景中,这里会连接到实际的交易API
+        # 这里我们模拟交易过程
+        
+        logger.info(f"执行交易: {action} 为追踪器 {tracker_id}, 金额: {amount}")
+        
+        # 模拟交易延迟和结果
+        await asyncio.sleep(0.5)  # 模拟网络延迟
+        
+        # 创建交易记录
+        trade_record = {
+            "tracker_id": tracker_id,
+            "action": action,
+            "amount": amount,
+            "price": signal_data.get("current_price", 0),
+            "timestamp": datetime.now().isoformat(),
+            "signal_type": signal_data.get("type"),
+            "status": "completed",
+            "trade_id": f"trade_{int(time.time())}_{tracker_id}"
+        }
+        
+        # 添加到交易历史
+        with self.trade_lock:
+            if tracker_id not in self.trade_history:
+                self.trade_history[tracker_id] = []
+            
+            self.trade_history[tracker_id].append(trade_record)
+            
+            # 保持历史记录大小可控
+            if len(self.trade_history[tracker_id]) > 1000:
+                self.trade_history[tracker_id] = self.trade_history[tracker_id][-1000:]
+        
+        # 保存交易历史
+        await self._save_trade_history(tracker_id)
+        
+        return {
+            "status": "success",
+            "trade_id": trade_record["trade_id"],
+            "action": action,
+            "amount": amount,
+            "price": trade_record["price"],
+            "timestamp": trade_record["timestamp"]
+        }
+    
+    async def _load_configs(self):
+        """加载保存的交易配置"""
+        config_file = os.path.join(self.data_path, "auto_trade_configs.json")
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    self.auto_trade_configs = json.load(f)
+                    
+                logger.info(f"已加载 {len(self.auto_trade_configs)} 个交易配置")
+            except Exception as e:
+                logger.error(f"加载交易配置失败: {e}")
+    
+    async def _save_configs(self):
+        """保存交易配置"""
+        config_file = os.path.join(self.data_path, "auto_trade_configs.json")
+        
+        try:
+            with open(config_file, "w", encoding="utf-8") as f:
+                json.dump(self.auto_trade_configs, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存交易配置失败: {e}")
+    
+    async def _save_trade_history(self, tracker_id: str):
+        """保存交易历史"""
+        history_file = os.path.join(self.data_path, f"trade_history_{tracker_id}.json")
+        
+        try:
+            with open(history_file, "w", encoding="utf-8") as f:
+                json.dump(self.trade_history.get(tracker_id, []), f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存交易历史失败: {e}")
+    
+    async def _load_trade_history(self, tracker_id: str):
+        """加载交易历史"""
+        history_file = os.path.join(self.data_path, f"trade_history_{tracker_id}.json")
+        
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, "r", encoding="utf-8") as f:
+                    self.trade_history[tracker_id] = json.load(f)
+            except Exception as e:
+                logger.error(f"加载交易历史失败: {e}")
+                
+    # 用于测试的方法
+    async def test_trade(self, tracker_id: str, action: str, amount: float):
+        """
+        测试交易功能
+        
+        Args:
+            tracker_id: 追踪器ID
+            action: 交易行为
+            amount: 交易金额
+            
+        Returns:
+            测试结果
+        """
+        signal_data = {
+            "type": "test_signal",
+            "current_price": 100.0  # 模拟价格
+        }
+        
+        trade_result = await self._execute_trade(tracker_id, action, amount, signal_data)
+        
+        return {
+            "status": "test_complete",
+            "trade_result": trade_result
+        } 

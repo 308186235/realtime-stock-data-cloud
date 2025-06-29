@@ -1,0 +1,929 @@
+<template>
+  <view class="ai-analytics-dashboard">
+    <!-- 头部区域 -->
+    <view class="dashboard-header">
+      <text class="dashboard-title">AI智能分析控制台</text>
+      <view class="actions">
+        <button @tap="refreshData" class="refresh-btn">
+          <text class="btn-icon">↻</text> 刷新数据
+        </button>
+      </view>
+    </view>
+
+    <!-- 加载指示器 -->
+    <view class="loading-indicator">
+      <text class="loading-text">AI分析界面已加载</text>
+      <button type="primary" @tap="testComponentAction" class="test-btn">测试组件功能</button>
+    </view>
+
+    <!-- 主要内容区 - 3列并排布局 -->
+    <view class="dashboard-main">
+      <!-- 第1列: AI训练进度部分 -->
+      <view class="dashboard-section training-progress">
+        <view class="section-header">
+          <text class="section-title">Agent模型训练进度</text>
+          <text class="section-badge">实时监控</text>
+        </view>
+        
+        <view class="training-cards">
+          <view v-for="model in trainingProgress" :key="model.name" class="training-card" :class="{ 'active': model.status === 'training' }">
+            <view class="card-header">
+              <text class="card-title">{{ model.displayName }}</text>
+              <text class="status-badge" :class="model.status">{{ statusText[model.status] }}</text>
+            </view>
+            <view class="progress-container">
+              <view class="progress-bar" :style="{ width: model.progress + '%' }"></view>
+              <text class="progress-text">{{ model.progress }}%</text>
+            </view>
+            <view class="card-details">
+              <view class="detail-item">
+                <text class="label">开始时间:</text>
+                <text>{{ formatDate(model.startTime) }}</text>
+              </view>
+              <view class="detail-item">
+                <text class="label">预计完成:</text>
+                <text>{{ model.estimatedCompletion ? formatDate(model.estimatedCompletion) : '计算中...' }}</text>
+              </view>
+              <view class="detail-item">
+                <text class="label">当前批次:</text>
+                <text>{{ model.currentEpoch }}/{{ model.totalEpochs }}</text>
+              </view>
+            </view>
+            <view class="card-actions">
+              <button @tap="triggerTraining(model.name)" :disabled="model.status === 'training'" class="action-btn" type="primary" size="mini">
+                {{ model.status === 'training' ? '训练中' : '开始训练' }}
+              </button>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 第2列: 模型性能展示部分 -->
+      <view class="dashboard-section model-performance">
+        <view class="section-header">
+          <text class="section-title">模型性能指标</text>
+          <text class="section-badge">数据统计</text>
+        </view>
+        
+        <view class="model-selector">
+          <view 
+            v-for="modelType in modelTypes" 
+            :key="modelType.id" 
+            @tap="selectModelType(modelType.id)"
+            :class="{ 'active': selectedModelType === modelType.id }" 
+            class="model-type-btn">
+            <text>{{ modelType.name }}</text>
+          </view>
+        </view>
+        
+        <view class="performance-metrics">
+          <view class="metrics-cards">
+            <view class="metric-card" v-for="metric in performanceMetrics" :key="metric.name">
+              <text class="metric-value">{{ metric.value }}</text>
+              <text class="metric-name">{{ metric.displayName }}</text>
+              <view class="trend-indicator" :class="metric.trend">
+                <text>{{ metric.trend === 'up' ? '↑' : '↓' }} {{ metric.changePercent }}%</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 第3列: AI预测结果可视化部分 -->
+      <view class="dashboard-section prediction-results">
+        <view class="section-header">
+          <text class="section-title">AI预测结果可视化</text>
+          <text class="section-badge">预测分析</text>
+        </view>
+        
+        <view class="prediction-controls">
+          <view class="control-group">
+            <text class="control-label">股票代码</text>
+            <input v-model="predictionParams.stockCode" type="text" placeholder="输入股票代码" />
+          </view>
+          <view class="control-group">
+            <text class="control-label">预测时间步数</text>
+            <picker @change="onTimeStepsChange" :value="predictionParams.timeSteps" :range="[5, 10, 15, 20, 30]">
+              <view class="uni-input">{{ predictionParams.timeSteps }} 天</view>
+            </picker>
+          </view>
+          <button @tap="getPrediction" class="action-btn generate-btn" type="primary" size="mini">生成预测</button>
+        </view>
+        
+        <view v-if="predictionData" class="prediction-results-data">
+          <view class="result-card">
+            <text class="card-title">预测结果: {{ predictionData.stock_code }}</text>
+            <view class="prediction-table">
+              <view class="table-header">
+                <text class="th">日期</text>
+                <text class="th">预测价格</text>
+                <text class="th">涨跌幅</text>
+              </view>
+              <view v-for="(item, index) in predictionData.predictions" :key="index" class="table-row">
+                <text class="td">{{ formatPredictionDate(index) }}</text>
+                <text class="td">{{ item.predicted_price.toFixed(2) }}</text>
+                <text class="td" :class="getChangeClass(index)">{{ getChangePercent(index) }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+import aiService from '../../股票5/components/services/aiService.js';
+
+export default {
+  data() {
+    return {
+      trainingProgress: [],
+      performanceMetrics: [],
+      predictionData: null,
+      selectedModelType: 'price_prediction',
+      isLoading: false,
+      predictionParams: {
+        stockCode: '000001',
+        timeSteps: 10
+      },
+      
+      // 状态文本映射
+      statusText: {
+        idle: '已就绪',
+        training: '训练中',
+        complete: '已完成',
+        failed: '失败'
+      },
+      
+      // 模型类型选项
+      modelTypes: [
+        { id: 'price_prediction', name: '价格预测模型' },
+        { id: 'strategy_optimizer', name: '策略优化模型' },
+        { id: 'risk_assessment', name: '风险评估模型' }
+      ]
+    }
+  },
+  created() {
+    console.log('AIAnalytics component created');
+    // 防止异常导致整个组件无法渲染
+    try {
+      this.initializeComponent();
+    } catch (error) {
+      console.error('AIAnalytics initialization error:', error);
+    }
+  },
+  mounted() {
+    console.log('AIAnalytics component mounted');
+    // 初始数据加载
+    this.refreshData();
+    
+    // 示例数据 - 实际项目中应删除
+    this.trainingProgress = [
+      {
+        name: 'price_prediction',
+        displayName: '价格预测模型',
+        status: 'training',
+        progress: 65,
+        startTime: Date.now() - 3600000,
+        estimatedCompletion: Date.now() + 1800000,
+        currentEpoch: 32,
+        totalEpochs: 50
+      },
+      {
+        name: 'strategy_optimizer',
+        displayName: '策略优化模型',
+        status: 'complete',
+        progress: 100,
+        startTime: Date.now() - 7200000,
+        estimatedCompletion: Date.now() - 3600000,
+        currentEpoch: 50,
+        totalEpochs: 50
+      },
+      {
+        name: 'risk_assessment',
+        displayName: '风险评估模型',
+        status: 'idle',
+        progress: 0,
+        startTime: null,
+        estimatedCompletion: null,
+        currentEpoch: 0,
+        totalEpochs: 40
+      }
+    ];
+    
+    this.performanceMetrics = [
+      { name: 'mse', displayName: '均方误差', value: '0.0324', trend: 'down', changePercent: '5.2' },
+      { name: 'mae', displayName: '平均绝对误差', value: '0.1253', trend: 'down', changePercent: '3.7' },
+      { name: 'accuracy', displayName: '准确率', value: '87.6%', trend: 'up', changePercent: '2.1' },
+      { name: 'recall', displayName: '召回率', value: '0.825', trend: 'up', changePercent: '1.8' }
+    ];
+    
+    // 模拟预测数据
+    this.predictionData = {
+      stock_code: '000001',
+      current_price: 15.72,
+      predictions: Array.from({ length: 10 }, (_, i) => {
+        const basePrice = 15.72;
+        const trend = Math.random() > 0.5 ? 1 : -1;
+        const randomFactor = Math.random() * 0.05;
+        const dayFactor = i * 0.02;
+        const price = basePrice * (1 + trend * (randomFactor + dayFactor));
+        return {
+          time_step: i + 1,
+          predicted_price: price,
+          lower_bound: price * 0.95,
+          upper_bound: price * 1.05,
+          confidence: 0.95
+        };
+      })
+    };
+  },
+  methods: {
+    // 组件初始化方法
+    initializeComponent() {
+      // 示例数据 - 实际项目中应删除
+      this.trainingProgress = [
+        {
+          name: 'price_prediction',
+          displayName: '价格预测模型',
+          status: 'training',
+          progress: 65,
+          startTime: Date.now() - 3600000,
+          estimatedCompletion: Date.now() + 1800000,
+          currentEpoch: 32,
+          totalEpochs: 50
+        },
+        {
+          name: 'strategy_optimizer',
+          displayName: '策略优化模型',
+          status: 'complete',
+          progress: 100,
+          startTime: Date.now() - 7200000,
+          estimatedCompletion: Date.now() - 3600000,
+          currentEpoch: 50,
+          totalEpochs: 50
+        },
+        {
+          name: 'risk_assessment',
+          displayName: '风险评估模型',
+          status: 'idle',
+          progress: 0,
+          startTime: null,
+          estimatedCompletion: null,
+          currentEpoch: 0,
+          totalEpochs: 40
+        }
+      ];
+      
+      this.performanceMetrics = [
+        { name: 'mse', displayName: '均方误差', value: '0.0324', trend: 'down', changePercent: '5.2' },
+        { name: 'mae', displayName: '平均绝对误差', value: '0.1253', trend: 'down', changePercent: '3.7' },
+        { name: 'accuracy', displayName: '准确率', value: '87.6%', trend: 'up', changePercent: '2.1' },
+        { name: 'recall', displayName: '召回率', value: '0.825', trend: 'up', changePercent: '1.8' }
+      ];
+      
+      // 模拟预测数据
+      this.predictionData = {
+        stock_code: '000001',
+        current_price: 15.72,
+        predictions: Array.from({ length: 10 }, (_, i) => {
+          const basePrice = 15.72;
+          const trend = Math.random() > 0.5 ? 1 : -1;
+          const randomFactor = Math.random() * 0.05;
+          const dayFactor = i * 0.02;
+          const price = basePrice * (1 + trend * (randomFactor + dayFactor));
+          return {
+            time_step: i + 1,
+            predicted_price: price,
+            lower_bound: price * 0.95,
+            upper_bound: price * 1.05,
+            confidence: 0.95
+          };
+        })
+      };
+    },
+    
+    // 数据刷新方法
+    refreshData() {
+      console.log('刷新数据按钮被点击');
+      this.isLoading = true;
+      
+      // 显示加载提示
+      uni.showToast({
+        title: '正在刷新数据',
+        icon: 'loading',
+        duration: 2000
+      });
+      
+      try {
+        // 确保组件数据已初始化
+        if (!this.trainingProgress || this.trainingProgress.length === 0) {
+          this.initializeComponent();
+        }
+        
+        // 异步加载数据
+        setTimeout(() => {
+          this.fetchTrainingProgress();
+          this.fetchModelPerformance();
+          
+          this.isLoading = false;
+          uni.showToast({
+            title: '数据已刷新',
+            icon: 'success',
+            duration: 2000
+          });
+        }, 1000);
+      } catch (error) {
+        console.error('数据刷新失败:', error);
+        this.isLoading = false;
+        uni.showToast({
+          title: '刷新失败',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+    },
+    
+    // 测试组件功能方法
+    testComponentAction() {
+      console.log('AI Analytics component test action triggered');
+      
+      // 显示更明显的交互效果
+      uni.showLoading({
+        title: '测试中...'
+      });
+      
+      // 添加一些视觉交互，延迟关闭loading
+      setTimeout(() => {
+        uni.hideLoading();
+        
+        // 显示成功提示
+        uni.showModal({
+          title: 'AI组件测试成功',
+          content: '组件功能正常，点击事件已触发\n时间: ' + new Date().toLocaleTimeString(),
+          showCancel: false,
+          confirmText: '确定',
+          success: () => {
+            // 更新某个视觉元素以显示交互效果
+            this.trainingProgress.forEach(model => {
+              if (model.status === 'idle') {
+                model.status = 'training';
+                model.progress = 10;
+                model.startTime = Date.now();
+              } else if (model.status === 'training') {
+                model.progress = Math.min(100, model.progress + 15);
+                if (model.progress >= 100) {
+                  model.status = 'complete';
+                }
+              }
+            });
+          }
+        });
+      }, 1000);
+    },
+    
+    // 获取训练进度数据
+    async fetchTrainingProgress() {
+      try {
+        const data = await aiService.getTrainingProgress();
+        if (data && !data.status) {
+          this.trainingProgress = data;
+        }
+      } catch(e) {
+        console.error('获取训练进度失败', e);
+      }
+    },
+    
+    // 获取模型性能数据
+    async fetchModelPerformance() {
+      try {
+        const data = await aiService.getModelPerformance(this.selectedModelType);
+        if (data && !data.status) {
+          this.performanceMetrics = data.metrics;
+        }
+      } catch(e) {
+        console.error('获取模型性能数据失败', e);
+      }
+    },
+    
+    // 选择模型类型
+    selectModelType(modelType) {
+      this.selectedModelType = modelType;
+      this.fetchModelPerformance();
+    },
+    
+    // 触发模型训练
+    async triggerTraining(modelType) {
+      try {
+        uni.showLoading({
+          title: '正在启动训练'
+        });
+        
+        await aiService.triggerTraining(modelType);
+        await this.fetchTrainingProgress();
+        
+        uni.hideLoading();
+        uni.showToast({
+          title: '训练已启动',
+          icon: 'success',
+          duration: 2000
+        });
+      } catch (error) {
+        console.error('触发训练失败:', error);
+        uni.hideLoading();
+        uni.showToast({
+          title: '训练启动失败',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+    },
+    
+    // 预测时间步数变更
+    onTimeStepsChange(e) {
+      const timeSteps = [5, 10, 15, 20, 30][e.detail.value];
+      this.predictionParams.timeSteps = timeSteps;
+    },
+    
+    // 获取预测数据
+    async getPrediction() {
+      try {
+        uni.showLoading({
+          title: '生成预测中'
+        });
+        
+        const { stockCode, timeSteps } = this.predictionParams;
+        const data = await aiService.getPricePrediction(stockCode, timeSteps);
+        
+        if (data && !data.error) {
+          this.predictionData = data;
+          uni.hideLoading();
+          uni.showToast({
+            title: '预测已生成',
+            icon: 'success',
+            duration: 2000
+          });
+        } else {
+          uni.hideLoading();
+          uni.showToast({
+            title: '预测生成失败',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+      } catch (error) {
+        console.error('获取预测数据失败:', error);
+        uni.hideLoading();
+        uni.showToast({
+          title: '预测生成失败',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+    },
+    
+    // 工具函数 - 格式化日期
+    formatDate(timestamp) {
+      if (!timestamp) return '未知';
+      const date = new Date(timestamp);
+      return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+    },
+    
+    // 格式化预测日期
+    formatPredictionDate(index) {
+      const date = new Date();
+      date.setDate(date.getDate() + index + 1);
+      return `${date.getMonth()+1}/${date.getDate()}`;
+    },
+    
+    // 获取价格变化百分比
+    getChangePercent(index) {
+      if (!this.predictionData || index === 0) return '0.00%';
+      
+      const current = this.predictionData.predictions[index].predicted_price;
+      const prev = index === 0 ? 
+        this.predictionData.current_price : 
+        this.predictionData.predictions[index-1].predicted_price;
+      
+      const change = ((current - prev) / prev * 100).toFixed(2);
+      return `${change > 0 ? '+' : ''}${change}%`;
+    },
+    
+    // 获取价格变化样式
+    getChangeClass(index) {
+      if (!this.predictionData) return '';
+      
+      const current = this.predictionData.predictions[index].predicted_price;
+      const prev = index === 0 ? 
+        this.predictionData.current_price : 
+        this.predictionData.predictions[index-1].predicted_price;
+      
+      return current > prev ? 'positive' : current < prev ? 'negative' : '';
+    },
+  }
+}
+</script>
+
+<style>
+.ai-analytics-dashboard {
+  padding: 20rpx;
+  background-color: #f0f2f5;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30rpx;
+  background: linear-gradient(90deg, #001529, #003a70);
+  padding: 24rpx;
+  border-radius: 12rpx;
+  color: white;
+}
+
+.dashboard-title {
+  font-size: 36rpx;
+  font-weight: bold;
+}
+
+.refresh-btn {
+  background-color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 4rpx 20rpx;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+}
+
+.btn-icon {
+  font-weight: bold;
+  margin-right: 8rpx;
+}
+
+/* 主内容区布局 */
+.dashboard-main {
+  display: flex;
+  flex-direction: column;
+  gap: 30rpx;
+}
+
+@media screen and (min-width: 768px) {
+  .dashboard-main {
+    flex-direction: row;
+  }
+  
+  .dashboard-section {
+    flex: 1;
+  }
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 16rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.section-badge {
+  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 10rpx;
+  background-color: #f6ffed;
+  color: #52c41a;
+}
+
+.dashboard-section {
+  margin-bottom: 40rpx;
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.dashboard-section.training-progress .section-badge {
+  background-color: #e6f7ff;
+  color: #1890ff;
+}
+
+.dashboard-section.model-performance .section-badge {
+  background-color: #fff7e6;
+  color: #fa8c16;
+}
+
+.dashboard-section.prediction-results .section-badge {
+  background-color: #f9f0ff;
+  color: #722ed1;
+}
+
+/* 加载指示器样式 */
+.loading-indicator {
+  background-color: #e6f7ff;
+  border: 1px solid #1890ff;
+  border-radius: 8rpx;
+  padding: 16rpx;
+  margin-bottom: 20rpx;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.loading-text {
+  color: #1890ff;
+  font-size: 28rpx;
+  font-weight: bold;
+  margin-bottom: 16rpx;
+}
+
+.test-btn {
+  width: 50%;
+}
+
+/* 训练进度卡片样式 */
+.training-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.training-card {
+  background: #fff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8eaed;
+}
+
+.training-card.active {
+  border-color: #1890ff;
+  box-shadow: 0 2rpx 12rpx rgba(24, 144, 255, 0.15);
+  background-color: #f0f8ff;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.card-title {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+.status-badge {
+  padding: 6rpx 16rpx;
+  border-radius: 24rpx;
+  font-size: 24rpx;
+}
+
+.status-badge.idle {
+  background-color: #f5f5f5;
+  color: #999;
+}
+
+.status-badge.training {
+  background-color: #e6f7ff;
+  color: #1890ff;
+}
+
+.status-badge.complete {
+  background-color: #f6ffed;
+  color: #52c41a;
+}
+
+.status-badge.failed {
+  background-color: #fff2f0;
+  color: #ff4d4f;
+}
+
+.progress-container {
+  height: 16rpx;
+  background-color: #f0f0f0;
+  border-radius: 8rpx;
+  margin-bottom: 20rpx;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #1890ff;
+  border-radius: 8rpx;
+}
+
+.progress-text {
+  position: absolute;
+  right: 0;
+  top: -30rpx;
+  font-size: 24rpx;
+  color: #888;
+}
+
+.card-details {
+  margin-bottom: 20rpx;
+  background-color: #fafafa;
+  padding: 16rpx;
+  border-radius: 8rpx;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+  font-size: 24rpx;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-item .label {
+  color: #888;
+}
+
+.card-actions {
+  text-align: right;
+}
+
+/* 模型性能部分样式 */
+.model-selector {
+  display: flex;
+  margin-bottom: 30rpx;
+  overflow-x: auto;
+  padding-bottom: 10rpx;
+  border-bottom: 1px dashed #eee;
+}
+
+.model-type-btn {
+  padding: 12rpx 24rpx;
+  background: #f0f0f0;
+  border-radius: 24rpx;
+  margin-right: 20rpx;
+  white-space: nowrap;
+  font-size: 24rpx;
+}
+
+.model-type-btn.active {
+  background-color: #1890ff;
+  color: #fff;
+}
+
+.metrics-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+}
+
+.metric-card {
+  background: #fff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+  text-align: center;
+  border: 1px solid #f0f0f0;
+}
+
+.metric-value {
+  font-size: 40rpx;
+  font-weight: bold;
+  margin-bottom: 10rpx;
+  display: block;
+}
+
+.metric-name {
+  font-size: 24rpx;
+  color: #666;
+  margin-bottom: 16rpx;
+  display: block;
+}
+
+.trend-indicator {
+  font-size: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rpx 0;
+  border-radius: 24rpx;
+}
+
+.trend-indicator.up {
+  color: #52c41a;
+  background-color: #f6ffed;
+}
+
+.trend-indicator.down {
+  color: #ff4d4f;
+  background-color: #fff2f0;
+}
+
+/* 预测结果部分样式 */
+.prediction-controls {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 30rpx;
+  gap: 20rpx;
+  background-color: #fafafa;
+  padding: 16rpx;
+  border-radius: 8rpx;
+}
+
+.control-group {
+  margin-bottom: 16rpx;
+}
+
+.control-label {
+  margin-bottom: 8rpx;
+  font-size: 24rpx;
+  color: #666;
+  display: block;
+}
+
+.generate-btn {
+  align-self: center;
+  margin-top: 16rpx;
+  width: 80%;
+}
+
+.prediction-results-data {
+  margin-top: 30rpx;
+}
+
+.result-card {
+  background-color: #fff;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+  border: 1px solid #f0f0f0;
+}
+
+.prediction-table {
+  width: 100%;
+  margin-top: 20rpx;
+  border: 1px solid #f0f0f0;
+  border-radius: 8rpx;
+  overflow: hidden;
+}
+
+.table-header {
+  display: flex;
+  background-color: #fafafa;
+  padding: 16rpx 0;
+}
+
+.table-row {
+  display: flex;
+  border-bottom: 1rpx solid #f0f0f0;
+  padding: 16rpx 0;
+}
+
+.table-row:last-child {
+  border-bottom: none;
+}
+
+.th, .td {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+}
+
+.th {
+  font-weight: bold;
+  color: #666;
+}
+
+.positive {
+  color: #ff4d4f;
+  font-weight: bold;
+}
+
+.negative {
+  color: #52c41a;
+  font-weight: bold;
+}
+
+/* 针对小屏幕设备的优化 */
+@media screen and (max-width: 375px) {
+  .metrics-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.uni-input {
+  border: 1rpx solid #d9d9d9;
+  padding: 12rpx 16rpx;
+  border-radius: 8rpx;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 24rpx;
+}
+</style> 

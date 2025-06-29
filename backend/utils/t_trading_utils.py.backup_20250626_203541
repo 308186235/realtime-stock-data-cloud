@@ -1,0 +1,528 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import json
+import os
+
+class TTradingTracker:
+    """
+    T交易跟踪器：用于记录和分析T交易操作
+    """
+    
+    def __init__(self, log_dir="data/t_trading_logs"):
+        """
+        初始化T交易跟踪器
+        
+        Args:
+            log_dir (str): 日志存储目录
+        """
+        self.log_dir = log_dir
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # 交易记录
+        self.trades = []
+        
+        # T交易统计
+        self.stats = {
+            'total_positive_t': 0,  # 正T交易次数
+            'total_negative_t': 0,  # 反T交易次数
+            'successful_t': 0,      # 成功次数（获利）
+            'failed_t': 0,          # 失败次数（亏损）
+            'neutral_t': 0,         # 平盘次数
+            'total_profit': 0.0,    # 总收益
+            'total_cost_reduction': 0.0,  # 总成本降低
+            'max_profit_trade': 0.0,  # 最大单笔收益
+            'max_loss_trade': 0.0,    # 最大单笔亏损
+        }
+        
+        # 当日数据
+        self.today_date = None
+        self.daily_trades = []
+        
+        # 加载历史记录
+        self._load_history()
+    
+    def _load_history(self):
+        """加载历史交易记录"""
+        try:
+            history_file = os.path.join(self.log_dir, "t_trading_history.json")
+            if os.path.exists(history_file):
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.trades = data.get('trades', [])
+                    self.stats = data.get('stats', self.stats)
+                print(f"已加载 {len(self.trades)} 条历史T交易记录")
+        except Exception as e:
+            print(f"加载历史记录失败: {e}")
+    
+    def save_history(self):
+        """保存历史交易记录"""
+        try:
+            history_file = os.path.join(self.log_dir, "t_trading_history.json")
+            data = {
+                'trades': self.trades,
+                'stats': self.stats,
+                'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            with open(history_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            print(f"已保存交易历史记录到 {history_file}")
+        except Exception as e:
+            print(f"保存历史记录失败: {e}")
+    
+    def start_trading_day(self, date=None):
+        """
+        开始新的交易日
+        
+        Args:
+            date (str, optional): 交易日期，格式 "YYYY-MM-DD"
+        """
+        if date is None:
+            date = datetime.now().strftime("%Y-%m-%d")
+        
+        self.today_date = date
+        self.daily_trades = []
+        
+        print(f"开始T交易日: {date}")
+        
+        # 创建每日日志文件
+        daily_log = os.path.join(self.log_dir, f"t_trading_{date.replace('-', '')}.log")
+        with open(daily_log, 'a', encoding='utf-8') as f:
+            f.write(f"=== T交易日志: {date} ===\n")
+            f.write(f"开始时间: {datetime.now().strftime('%H:%M:%S')}\n")
+            f.write("-" * 50 + "\n")
+    
+    def record_trade(self, trade_type, stock_code, stock_name, buy_price, sell_price, 
+                    quantity, timestamp=None, mode='positive'):
+        """
+        记录一笔T交易
+        
+        Args:
+            trade_type (str): 交易类型，'complete'(完整T),'buy_only'(仅买入),'sell_only'(仅卖出)
+            stock_code (str): 股票代码
+            stock_name (str): 股票名称
+            buy_price (float): 买入价格
+            sell_price (float): 卖出价格（如果只买入，设为0）
+            quantity (int): 交易数量
+            timestamp (str, optional): 交易时间戳
+            mode (str): 交易模式，'positive'(正T) 或 'negative'(反T)
+        """
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+        if self.today_date is None:
+            self.start_trading_day()
+            
+        # 计算利润
+        if trade_type == 'complete':
+            if mode == 'positive':  # 正T: 先买后卖
+                profit = (sell_price - buy_price) * quantity
+            else:  # 反T: 先卖后买
+                profit = (sell_price - buy_price) * quantity
+        else:
+            profit = 0.0
+            
+        # 创建交易记录
+        trade = {
+            'date': self.today_date,
+            'timestamp': timestamp,
+            'trade_type': trade_type,
+            'mode': mode,
+            'stock_code': stock_code,
+            'stock_name': stock_name,
+            'buy_price': buy_price,
+            'sell_price': sell_price,
+            'quantity': quantity,
+            'profit': profit,
+            'status': self._get_trade_status(buy_price, sell_price, mode)
+        }
+        
+        # 添加到当日和历史记录
+        self.daily_trades.append(trade)
+        self.trades.append(trade)
+        
+        # 更新统计信息
+        self._update_stats(trade)
+        
+        # 记录到日志
+        self._log_trade(trade)
+        
+        print(f"记录T交易: {mode}模式 {stock_code} {stock_name}, "
+              f"数量: {quantity}, 利润: {profit:.2f}")
+              
+        return trade
+    
+    def _get_trade_status(self, buy_price, sell_price, mode):
+        """
+        获取交易状态
+        
+        Args:
+            buy_price (float): 买入价格
+            sell_price (float): 卖出价格
+            mode (str): 交易模式
+            
+        Returns:
+            str: 'success', 'failure' 或 'neutral'
+        """
+        if buy_price == 0 or sell_price == 0:
+            return 'pending'  # 未完成的交易
+            
+        if mode == 'positive':  # 正T: 先买后卖
+            if sell_price > buy_price:
+                return 'success'
+            elif sell_price < buy_price:
+                return 'failure'
+            else:
+                return 'neutral'
+        else:  # 反T: 先卖后买
+            if sell_price > buy_price:
+                return 'success'
+            elif sell_price < buy_price:
+                return 'failure'
+            else:
+                return 'neutral'
+    
+    def _update_stats(self, trade):
+        """
+        更新统计信息
+        
+        Args:
+            trade (dict): 交易记录
+        """
+        # 只统计完整的交易
+        if trade['trade_type'] != 'complete':
+            return
+            
+        # 更新交易模式统计
+        if trade['mode'] == 'positive':
+            self.stats['total_positive_t'] += 1
+        else:
+            self.stats['total_negative_t'] += 1
+            
+        # 更新成功/失败统计
+        if trade['status'] == 'success':
+            self.stats['successful_t'] += 1
+            self.stats['total_profit'] += trade['profit']
+            if trade['profit'] > self.stats['max_profit_trade']:
+                self.stats['max_profit_trade'] = trade['profit']
+        elif trade['status'] == 'failure':
+            self.stats['failed_t'] += 1
+            self.stats['total_profit'] += trade['profit']  # 亏损为负数
+            if trade['profit'] < self.stats['max_loss_trade']:
+                self.stats['max_loss_trade'] = trade['profit']
+        else:
+            self.stats['neutral_t'] += 1
+    
+    def _log_trade(self, trade):
+        """
+        记录交易到日志
+        
+        Args:
+            trade (dict): 交易记录
+        """
+        if self.today_date is None:
+            return
+            
+        try:
+            daily_log = os.path.join(self.log_dir, f"t_trading_{self.today_date.replace('-', '')}.log")
+            with open(daily_log, 'a', encoding='utf-8') as f:
+                time_str = datetime.now().strftime('%H:%M:%S')
+                
+                if trade['trade_type'] == 'buy_only':
+                    f.write(f"[{time_str}] 买入 {trade['stock_code']} {trade['stock_name']} "
+                            f"{trade['quantity']}股 @ ¥{trade['buy_price']:.2f}\n")
+                            
+                elif trade['trade_type'] == 'sell_only':
+                    f.write(f"[{time_str}] 卖出 {trade['stock_code']} {trade['stock_name']} "
+                            f"{trade['quantity']}股 @ ¥{trade['sell_price']:.2f}\n")
+                            
+                elif trade['trade_type'] == 'complete':
+                    mode_str = "正T" if trade['mode'] == 'positive' else "反T"
+                    status_str = "获利" if trade['status'] == 'success' else "亏损" if trade['status'] == 'failure' else "平"
+                    
+                    f.write(f"[{time_str}] 完成{mode_str} {trade['stock_code']} {trade['stock_name']} "
+                            f"{trade['quantity']}股, 买入@¥{trade['buy_price']:.2f} "
+                            f"卖出@¥{trade['sell_price']:.2f}, "
+                            f"结果: {status_str}, 利润: ¥{trade['profit']:.2f}\n")
+        except Exception as e:
+            print(f"记录交易日志失败: {e}")
+    
+    def end_trading_day(self):
+        """结束交易日并保存记录"""
+        if self.today_date is None:
+            return
+            
+        # 更新日志
+        try:
+            daily_log = os.path.join(self.log_dir, f"t_trading_{self.today_date.replace('-', '')}.log")
+            with open(daily_log, 'a', encoding='utf-8') as f:
+                f.write("-" * 50 + "\n")
+                f.write(f"结束时间: {datetime.now().strftime('%H:%M:%S')}\n")
+                
+                # 汇总当日成绩
+                total_trades = len(self.daily_trades)
+                completed_trades = sum(1 for t in self.daily_trades if t['trade_type'] == 'complete')
+                total_profit = sum(t['profit'] for t in self.daily_trades)
+                successful = sum(1 for t in self.daily_trades if t['status'] == 'success')
+                
+                f.write(f"当日统计: 交易 {total_trades} 笔, 完成 {completed_trades} 笔, "
+                        f"成功 {successful} 笔, 总利润: ¥{total_profit:.2f}\n")
+                f.write("=" * 50 + "\n")
+        except Exception as e:
+            print(f"更新交易日志失败: {e}")
+            
+        # 保存历史记录
+        self.save_history()
+        
+        print(f"结束T交易日: {self.today_date}, 总利润: ¥{sum(t['profit'] for t in self.daily_trades):.2f}")
+        
+        # 重置当日数据
+        self.today_date = None
+        self.daily_trades = []
+    
+    def get_summary(self, days=30):
+        """
+        获取最近交易的汇总统计
+        
+        Args:
+            days (int): 最近天数
+            
+        Returns:
+            dict: 汇总统计
+        """
+        if not self.trades:
+            return {
+                'period': f'最近{days}天',
+                'total_trades': 0,
+                'success_rate': 0,
+                'total_profit': 0,
+                'avg_profit_per_trade': 0,
+                'positive_t_count': 0,
+                'negative_t_count': 0
+            }
+            
+        # 计算日期范围
+        today = datetime.now().date()
+        start_date = (today - timedelta(days=days)).strftime("%Y-%m-%d")
+        
+        # 过滤最近交易
+        recent_trades = [t for t in self.trades if t['date'] >= start_date and t['trade_type'] == 'complete']
+        
+        if not recent_trades:
+            return {
+                'period': f'最近{days}天',
+                'total_trades': 0,
+                'success_rate': 0,
+                'total_profit': 0,
+                'avg_profit_per_trade': 0,
+                'positive_t_count': 0,
+                'negative_t_count': 0
+            }
+        
+        # 计算统计
+        total_trades = len(recent_trades)
+        successful = sum(1 for t in recent_trades if t['status'] == 'success')
+        success_rate = (successful / total_trades) * 100 if total_trades > 0 else 0
+        
+        total_profit = sum(t['profit'] for t in recent_trades)
+        avg_profit = total_profit / total_trades if total_trades > 0 else 0
+        
+        positive_t = sum(1 for t in recent_trades if t['mode'] == 'positive')
+        negative_t = sum(1 for t in recent_trades if t['mode'] == 'negative')
+        
+        # 计算最佳和最差股票
+        stock_performance = {}
+        for trade in recent_trades:
+            stock = trade['stock_code']
+            if stock not in stock_performance:
+                stock_performance[stock] = {
+                    'code': stock,
+                    'name': trade['stock_name'],
+                    'trades': 0,
+                    'profit': 0
+                }
+            stock_performance[stock]['trades'] += 1
+            stock_performance[stock]['profit'] += trade['profit']
+            
+        # 按利润排序
+        best_stocks = sorted(stock_performance.values(), key=lambda x: x['profit'], reverse=True)
+        worst_stocks = sorted(stock_performance.values(), key=lambda x: x['profit'])
+        
+        return {
+            'period': f'最近{days}天',
+            'total_trades': total_trades,
+            'success_rate': success_rate,
+            'total_profit': total_profit,
+            'avg_profit_per_trade': avg_profit,
+            'positive_t_count': positive_t,
+            'negative_t_count': negative_t,
+            'best_stock': best_stocks[0] if best_stocks else None,
+            'worst_stock': worst_stocks[0] if worst_stocks else None
+        }
+    
+    def get_t_opportunity(self, stock_code, current_price, intraday_high, intraday_low, 
+                       open_price, avg_volume, current_volume, base_position):
+        """
+        评估当前是否存在T交易机会
+        
+        Args:
+            stock_code (str): 股票代码
+            current_price (float): 当前价格
+            intraday_high (float): 日内最高价
+            intraday_low (float): 日内最低价
+            open_price (float): 开盘价
+            avg_volume (float): 平均成交量
+            current_volume (float): 当前成交量
+            base_position (int): 底仓数量
+            
+        Returns:
+            dict: T交易机会评估结果
+        """
+        if base_position <= 0:
+            return {
+                'has_opportunity': False,
+                'message': '无底仓，不可进行T交易',
+                'mode': None
+            }
+            
+        # 计算日内波动率
+        intraday_volatility = (intraday_high - intraday_low) / open_price
+        
+        # 计算当前位置
+        current_position = (current_price - intraday_low) / (intraday_high - intraday_low) if (intraday_high - intraday_low) > 0 else 0.5
+        
+        # 计算成交量活跃度
+        volume_activity = current_volume / avg_volume if avg_volume > 0 else 1.0
+        
+        # 确定最有可能的T交易模式
+        if intraday_volatility < 0.01:
+            return {
+                'has_opportunity': False,
+                'message': '日内波动太小，不适合做T',
+                'volatility': intraday_volatility
+            }
+            
+        # 判断正T机会：当前价格接近日内低点，且成交量放大
+        if current_position < 0.3 and volume_activity > 1.5:
+            return {
+                'has_opportunity': True,
+                'mode': 'positive',  # 正T：先买后卖
+                'message': '接近日内低点，可考虑正T(先买)',
+                'suggested_quantity': int(base_position * 0.2),  # 建议使用20%的底仓
+                'volatility': intraday_volatility,
+                'current_position': current_position
+            }
+            
+        # 判断反T机会：当前价格接近日内高点，且有一定上涨幅度
+        if current_position > 0.7 and (current_price / open_price) > 1.02:
+            return {
+                'has_opportunity': True,
+                'mode': 'negative',  # 反T：先卖后买
+                'message': '接近日内高点，可考虑反T(先卖)',
+                'suggested_quantity': int(base_position * 0.2),  # 建议使用20%的底仓
+                'volatility': intraday_volatility,
+                'current_position': current_position
+            }
+            
+        # 无明确机会
+        return {
+            'has_opportunity': False,
+            'message': '当前没有明确的T交易机会',
+            'volatility': intraday_volatility,
+            'current_position': current_position
+        }
+
+
+def calculate_t_trade_impact(base_position, base_cost, t_trades):
+    """
+    计算T交易对持仓成本的影响
+    
+    Args:
+        base_position (int): 底仓数量
+        base_cost (float): 底仓成本
+        t_trades (list): T交易记录列表，每项包含 quantity 和 profit
+        
+    Returns:
+        dict: 成本影响分析
+    """
+    if not t_trades or base_position <= 0:
+        return {
+            'original_cost': base_cost,
+            'new_cost': base_cost,
+            'cost_reduction': 0,
+            'reduction_percentage': 0
+        }
+    
+    # 计算总利润
+    total_profit = sum(trade['profit'] for trade in t_trades)
+    
+    # 计算新成本 = (原成本 * 底仓数量 - 总利润) / 底仓数量
+    new_cost = (base_cost * base_position - total_profit) / base_position
+    
+    # 计算成本降低幅度
+    cost_reduction = base_cost - new_cost
+    reduction_percentage = (cost_reduction / base_cost) * 100
+    
+    return {
+        'original_cost': base_cost,
+        'new_cost': new_cost,
+        'cost_reduction': cost_reduction,
+        'reduction_percentage': reduction_percentage
+    }
+
+
+def estimate_t_opportunity_probability(historical_data, current_data):
+    """
+    估计当前T交易机会的成功概率
+    
+    Args:
+        historical_data (pd.DataFrame): 历史数据
+        current_data (dict): 当前市场数据
+        
+    Returns:
+        dict: 成功概率估计
+    """
+    # 提取当前市场条件
+    current_price = current_data['current_price']
+    open_price = current_data['open_price']
+    intraday_high = current_data['intraday_high']
+    intraday_low = current_data['intraday_low']
+    current_volume = current_data['current_volume']
+    
+    # 计算当前特征
+    price_position = (current_price - intraday_low) / (intraday_high - intraday_low) if (intraday_high - intraday_low) > 0 else 0.5
+    price_change_from_open = (current_price - open_price) / open_price
+    
+    # 基于历史数据预测成功概率
+    positive_t_probability = 0.0  # 正T成功概率
+    negative_t_probability = 0.0  # 反T成功概率
+    
+    # 简单示例：基于价格位置的概率估计
+    if price_position < 0.3:  # 接近日内低点
+        positive_t_probability = 0.7  # 正T可能性高
+        negative_t_probability = 0.3
+    elif price_position > 0.7:  # 接近日内高点
+        positive_t_probability = 0.3
+        negative_t_probability = 0.7  # 反T可能性高
+    else:  # 中间位置
+        positive_t_probability = 0.5
+        negative_t_probability = 0.5
+    
+    # 基于价格变化调整概率
+    if price_change_from_open < -0.01:  # 已下跌
+        positive_t_probability += 0.1
+        negative_t_probability -= 0.1
+    elif price_change_from_open > 0.01:  # 已上涨
+        positive_t_probability -= 0.1
+        negative_t_probability += 0.1
+    
+    # 确保概率在[0,1]范围内
+    positive_t_probability = max(0.0, min(1.0, positive_t_probability))
+    negative_t_probability = max(0.0, min(1.0, negative_t_probability))
+    
+    return {
+        'positive_t_probability': positive_t_probability,
+        'negative_t_probability': negative_t_probability,
+        'recommended_mode': 'positive' if positive_t_probability > negative_t_probability else 'negative',
+        'confidence': max(positive_t_probability, negative_t_probability)
+    } 

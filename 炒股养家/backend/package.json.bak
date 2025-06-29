@@ -1,0 +1,15 @@
+{
+  "name": "ai-trading-backend",
+  "version": "1.0.0",
+  "description": "Backend for AI Trading App with GPU Acceleration",
+  "main": "api_handler.js",
+  "scripts": {
+    "start": "node api_handler.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.17.3",
+    "cors": "^2.8.5",
+    "body-parser": "^1.19.2"
+  }
+} 

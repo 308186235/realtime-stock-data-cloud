@@ -1,0 +1,63 @@
+import win32gui
+import win32api
+import win32con
+
+def enum_child_windows(hwnd, windows):
+    """枚举子窗口"""
+    def enum_child_proc(child_hwnd, param):
+        if win32gui.IsWindowVisible(child_hwnd):
+            class_name = win32gui.GetClassName(child_hwnd)
+            window_text = win32gui.GetWindowText(child_hwnd)
+            rect = win32gui.GetWindowRect(child_hwnd)
+            windows.append({
+                'hwnd': child_hwnd,
+                'class': class_name,
+                'text': window_text,
+                'rect': rect
+            })
+        return True
+    
+    win32gui.EnumChildWindows(hwnd, enum_child_proc, None)
+    return windows
+
+def analyze_trading_window():
+    print("分析交易软件窗口结构...")
+    
+    # 找主窗口
+    main_hwnd = win32gui.FindWindow(None, "网上股票交易系统5.0")
+    if not main_hwnd:
+        print("❌ 没找到主窗口")
+        return
+    
+    print(f"✅ 主窗口: {hex(main_hwnd)}")
+    print(f"主窗口类名: {win32gui.GetClassName(main_hwnd)}")
+    print(f"主窗口标题: {win32gui.GetWindowText(main_hwnd)}")
+    
+    # 获取子窗口
+    child_windows = []
+    enum_child_windows(main_hwnd, child_windows)
+    
+    print(f"\n找到 {len(child_windows)} 个子窗口:")
+    for i, window in enumerate(child_windows):
+        print(f"{i+1}. 句柄: {hex(window['hwnd'])}")
+        print(f"   类名: {window['class']}")
+        print(f"   文本: '{window['text']}'")
+        print(f"   位置: {window['rect']}")
+        print()
+    
+    # 测试发送W键到不同窗口
+    print("测试发送W键到不同窗口...")
+    
+    # 发送到主窗口
+    print(f"1. 发送到主窗口 {hex(main_hwnd)}")
+    win32api.PostMessage(main_hwnd, win32con.WM_CHAR, ord('W'), 0)
+    
+    # 发送到每个子窗口
+    for i, window in enumerate(child_windows[:5]):  # 只测试前5个
+        print(f"{i+2}. 发送到子窗口 {hex(window['hwnd'])} ({window['class']})")
+        win32api.PostMessage(window['hwnd'], win32con.WM_CHAR, ord('W'), 0)
+    
+    print("\n测试完成！观察交易软件是否有反应")
+
+if __name__ == "__main__":
+    analyze_trading_window()

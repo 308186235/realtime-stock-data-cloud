@@ -1,0 +1,290 @@
+/**
+ * PIN码功能测试辅助脚本
+ * 在控制台中运行此脚本来模拟不同的PIN码验证场景
+ */
+
+// 导入所需模块
+const secureStorage = require('../utils/secure-storage.js');
+const authService = require('../services/auth-service.js');
+
+// 测试设置
+const TEST_OLD_PIN = '123456';
+const TEST_NEW_PIN = '857758';
+
+/**
+ * 设置测试环境
+ */
+function setupTestEnvironment() {
+  console.log('-------------------------------------');
+  console.log('开始PIN码功能测试');
+  console.log('-------------------------------------');
+  
+  // 清理测试前的状态
+  cleanupStorage();
+}
+
+/**
+ * 清理存储
+ */
+function cleanupStorage() {
+  console.log('清理PIN码相关存储...');
+  uni.removeStorageSync('appPINCode');
+  uni.removeStorageSync('tradePINCode');
+  uni.removeStorageSync('direct_pin_code');
+  uni.removeStorageSync('securitySettings');
+  uni.removeStorageSync('appLockStatus');
+  
+  // 清除缓存
+  authService.default.clearSettingsCache();
+  console.log('存储清理完成');
+}
+
+/**
+ * 测试1: 设置初始PIN码
+ */
+function testSetPINCode() {
+  console.log('\n测试1: 设置初始PIN码');
+  console.log('-------------------------------------');
+  
+  const success = authService.default.setPINCode(TEST_OLD_PIN);
+  console.log('PIN码设置结果:', success ? '成功' : '失败');
+  
+  // 验证设置结果
+  const settings = authService.default.getSecuritySettings();
+  console.log('安全设置状态:', settings);
+  
+  return success;
+}
+
+/**
+ * 测试2: 验证PIN码
+ */
+function testVerifyPINCode() {
+  console.log('\n测试2: 验证PIN码');
+  console.log('-------------------------------------');
+  
+  console.log('测试正确的PIN码:');
+  const success = authService.default.verifyPINCode(TEST_OLD_PIN);
+  console.log('验证结果:', success ? '成功' : '失败');
+  
+  console.log('\n测试错误的PIN码:');
+  const failure = authService.default.verifyPINCode('000000');
+  console.log('验证结果:', !failure ? '成功(验证失败)' : '失败(验证意外通过)');
+  
+  return success;
+}
+
+/**
+ * 测试3: 修改PIN码
+ */
+function testChangePINCode() {
+  console.log('\n测试3: 修改PIN码');
+  console.log('-------------------------------------');
+  
+  // 先验证旧密码
+  const verified = authService.default.verifyPINCode(TEST_OLD_PIN);
+  if (!verified) {
+    console.log('旧密码验证失败，无法修改密码');
+    return false;
+  }
+  
+  console.log('旧密码验证成功，开始设置新密码');
+  const changed = authService.default.setPINCode(TEST_NEW_PIN);
+  console.log('新密码设置结果:', changed ? '成功' : '失败');
+  
+  // 验证新密码
+  const newVerified = authService.default.verifyPINCode(TEST_NEW_PIN);
+  console.log('新密码验证结果:', newVerified ? '成功' : '失败');
+  
+  return changed && newVerified;
+}
+
+/**
+ * 测试4: 切换PIN码开关
+ */
+function testTogglePINCodLock() {
+  console.log('\n测试4: 切换PIN码开关');
+  console.log('-------------------------------------');
+  
+  let settings = authService.default.getSecuritySettings();
+  const initialState = settings.usePINCode;
+  
+  console.log('初始PIN码解锁状态:', initialState);
+  
+  // 切换状态
+  settings.usePINCode = !initialState;
+  authService.default.saveSecuritySettings(settings);
+  
+  // 验证切换后的状态
+  const newSettings = authService.default.getSecuritySettings();
+  console.log('切换后PIN码解锁状态:', newSettings.usePINCode);
+  
+  // 恢复原始状态
+  newSettings.usePINCode = initialState;
+  authService.default.saveSecuritySettings(newSettings);
+  
+  // 最终确认
+  const finalSettings = authService.default.getSecuritySettings();
+  console.log('恢复后PIN码解锁状态:', finalSettings.usePINCode);
+  
+  return finalSettings.usePINCode === initialState;
+}
+
+/**
+ * 测试5: 模拟迁移旧PIN码
+ */
+function testMigration() {
+  console.log('\n测试5: 模拟迁移旧PIN码');
+  console.log('-------------------------------------');
+  
+  // 清理现有PIN码
+  uni.removeStorageSync('appPINCode');
+  authService.default.clearSettingsCache();
+  
+  // 模拟设置旧格式PIN码
+  console.log('设置旧格式PIN码...');
+  const deviceId = secureStorage.default.getDeviceId();
+  const encrypted = secureStorage.default.encrypt(TEST_OLD_PIN, deviceId);
+  uni.setStorageSync('tradePINCode', encrypted);
+  
+  // 执行迁移
+  console.log('执行迁移...');
+  const migrationResult = secureStorage.default.migrateLegacyPINCode();
+  console.log('迁移结果:', migrationResult ? '成功' : '失败');
+  
+  // 验证迁移后的PIN码
+  const verified = authService.default.verifyPINCode(TEST_OLD_PIN);
+  console.log('迁移后验证结果:', verified ? '成功' : '失败');
+  
+  // 检查旧数据是否被清除
+  const oldDataExists = uni.getStorageSync('tradePINCode');
+  console.log('旧数据是否已清除:', !oldDataExists ? '是' : '否');
+  
+  return migrationResult && verified && !oldDataExists;
+}
+
+/**
+ * 测试6: 模拟锁屏解锁
+ */
+function testLockAndUnlock() {
+  console.log('\n测试6: 模拟锁屏解锁');
+  console.log('-------------------------------------');
+  
+  // 确保PIN码已设置
+  if (!authService.default.getSecuritySettings().hasPINCode) {
+    authService.default.setPINCode(TEST_NEW_PIN);
+  }
+  
+  // 锁定应用
+  console.log('锁定应用...');
+  authService.default.setAppLocked(true);
+  
+  // 检查锁定状态
+  const isLocked = authService.default.isAppLocked();
+  console.log('应用锁定状态:', isLocked ? '已锁定' : '未锁定');
+  
+  // 模拟解锁
+  console.log('使用PIN码解锁...');
+  const unlockResult = authService.default.unlockWithPINCode(TEST_NEW_PIN);
+  console.log('解锁结果:', unlockResult.status);
+  
+  // 检查解锁后状态
+  const isLockedAfter = authService.default.isAppLocked();
+  console.log('解锁后状态:', isLockedAfter ? '仍然锁定' : '已解锁');
+  
+  return isLocked && unlockResult.status === 'success' && !isLockedAfter;
+}
+
+/**
+ * 测试7: 模拟应用退出的强制锁定
+ */
+function testExitLock() {
+  console.log('\n测试7: 模拟应用退出的强制锁定');
+  console.log('-------------------------------------');
+  
+  // 确保PIN码已设置
+  if (!authService.default.getSecuritySettings().hasPINCode) {
+    authService.default.setPINCode(TEST_NEW_PIN);
+  }
+  
+  // 模拟应用退出时设置强制锁定标志
+  console.log('模拟应用退出前调用锁定...');
+  authService.default.lockApp();
+  uni.setStorageSync('forceAppLock', 'true');
+  
+  // 模拟应用重启后的初始化逻辑
+  console.log('模拟应用重启后检查强制锁定标志...');
+  const forceLock = uni.getStorageSync('forceAppLock');
+  console.log('强制锁定标志值:', forceLock);
+  
+  // 处理强制锁定标志
+  if (forceLock === 'true') {
+    console.log('检测到强制锁定标志，模拟移除标志');
+    uni.removeStorageSync('forceAppLock');
+    authService.default.setAppLocked(true);
+  }
+  
+  // 检查锁定状态
+  const isLocked = authService.default.isAppLocked();
+  console.log('应用锁定状态:', isLocked ? '已锁定' : '未锁定');
+  
+  // 模拟解锁
+  console.log('使用PIN码解锁...');
+  const unlockResult = authService.default.unlockWithPINCode(TEST_NEW_PIN);
+  console.log('解锁结果:', unlockResult.status);
+  
+  // 检查解锁后状态
+  const isLockedAfter = authService.default.isAppLocked();
+  console.log('解锁后状态:', isLockedAfter ? '仍然锁定' : '已解锁');
+  
+  return isLocked && unlockResult.status === 'success' && !isLockedAfter;
+}
+
+/**
+ * 运行所有测试
+ */
+function runAllTests() {
+  setupTestEnvironment();
+  
+  const test1 = testSetPINCode();
+  const test2 = testVerifyPINCode();
+  const test3 = testChangePINCode();
+  const test4 = testTogglePINCodLock();
+  const test5 = testMigration();
+  const test6 = testLockAndUnlock();
+  const test7 = testExitLock();
+  
+  // 输出测试结果摘要
+  console.log('\n-------------------------------------');
+  console.log('PIN码功能测试结果摘要:');
+  console.log('-------------------------------------');
+  console.log('测试1 (设置初始PIN码):', test1 ? '通过' : '失败');
+  console.log('测试2 (验证PIN码):', test2 ? '通过' : '失败');
+  console.log('测试3 (修改PIN码):', test3 ? '通过' : '失败');
+  console.log('测试4 (切换PIN码开关):', test4 ? '通过' : '失败');
+  console.log('测试5 (迁移旧PIN码):', test5 ? '通过' : '失败');
+  console.log('测试6 (锁屏解锁):', test6 ? '通过' : '失败');
+  console.log('测试7 (应用退出锁定):', test7 ? '通过' : '失败');
+  
+  // 计算总结果
+  const totalTests = 7;
+  const passedTests = [test1, test2, test3, test4, test5, test6, test7].filter(Boolean).length;
+  console.log(`\n通过率: ${passedTests}/${totalTests} (${Math.round(passedTests/totalTests*100)}%)`);
+  
+  // 最后清理
+  cleanupStorage();
+}
+
+// 导出测试函数，方便在控制台单独调用
+module.exports = {
+  setupTestEnvironment,
+  cleanupStorage,
+  testSetPINCode,
+  testVerifyPINCode,
+  testChangePINCode,
+  testTogglePINCodLock,
+  testMigration,
+  testLockAndUnlock,
+  testExitLock,
+  runAllTests
+}; 

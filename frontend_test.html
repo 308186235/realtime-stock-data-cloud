@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前后端连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        .warning { background: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.success { background: #28a745; color: white; }
+        .status.error { background: #dc3545; color: white; }
+        .status.warning { background: #ffc107; color: black; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 前后端连接测试</h1>
+        <p>测试前端是否能正常连接到后端API (http://localhost:8002)</p>
+        
+        <div class="test-section">
+            <h3>🚀 快速测试</h3>
+            <button onclick="runAllTests()">运行所有测试</button>
+            <button onclick="clearLog()">清空日志</button>
+            <div id="quickStatus"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📋 单项测试</h3>
+            <button onclick="testHealth()">健康检查</button>
+            <button onclick="testEcho()">Echo测试</button>
+            <button onclick="testStock()">股票数据</button>
+            <button onclick="testPost()">POST测试</button>
+            <button onclick="testCORS()">CORS测试</button>
+        </div>
+        
+        <div class="test-section">
+            <h3>📊 测试结果</h3>
+            <div id="testResults"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📝 测试日志</h3>
+            <div id="testLog" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8002';
+        let testResults = {};
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('testLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️';
+            logDiv.innerHTML += `<div>[${timestamp}] ${icon} ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('testLog').innerHTML = '';
+            document.getElementById('testResults').innerHTML = '';
+            document.getElementById('quickStatus').innerHTML = '';
+            testResults = {};
+        }
+        
+        function updateResults() {
+            const resultsDiv = document.getElementById('testResults');
+            const total = Object.keys(testResults).length;
+            const success = Object.values(testResults).filter(r => r.status === 'success').length;
+            const errors = Object.values(testResults).filter(r => r.status === 'error').length;
+            
+            let html = `<p>测试进度: ${success}/${total} 成功`;
+            if (errors > 0) html += `, ${errors} 失败`;
+            html += '</p>';
+            
+            for (const [test, result] of Object.entries(testResults)) {
+                const statusClass = result.status;
+                const statusText = result.status === 'success' ? '成功' : 
+                                 result.status === 'error' ? '失败' : '警告';
+                html += `<div><span class="status ${statusClass}">${statusText}</span> ${test}: ${result.message}</div>`;
+            }
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        function setTestResult(testName, status, message) {
+            testResults[testName] = { status, message };
+            updateResults();
+        }
+        
+        async function testHealth() {
+            log('开始健康检查测试...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/health`);
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`健康检查成功: ${data.message}`, 'success');
+                    setTestResult('健康检查', 'success', `状态: ${data.status}`);
+                    return true;
+                } else {
+                    log(`健康检查失败: HTTP ${response.status}`, 'error');
+                    setTestResult('健康检查', 'error', `HTTP ${response.status}`);
+                    return false;
+                }
+            } catch (error) {
+                log(`健康检查错误: ${error.message}`, 'error');
+                setTestResult('健康检查', 'error', error.message);
+                return false;
+            }
+        }
+        
+        async function testEcho() {
+            log('开始Echo测试...');
+            try {
+                const testMessage = '前端测试消息';
+                const response = await fetch(`${API_BASE_URL}/api/test/echo?message=${encodeURIComponent(testMessage)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Echo测试成功: ${data.echo}`, 'success');
+                    setTestResult('Echo测试', 'success', `回显: ${data.echo}`);
+                    return true;
+                } else {
+                    log(`Echo测试失败: HTTP ${response.status}`, 'error');
+                    setTestResult('Echo测试', 'error', `HTTP ${response.status}`);
+                    return false;
+                }
+            } catch (error) {
+                log(`Echo测试错误: ${error.message}`, 'error');
+                setTestResult('Echo测试', 'error', error.message);
+                return false;
+            }
+        }
+        
+        async function testStock() {
+            log('开始股票数据测试...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/stock/quote?code=000001`);
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`股票数据获取成功: ${data.name} - ¥${data.price}`, 'success');
+                    setTestResult('股票数据', 'success', `${data.name}: ¥${data.price}`);
+                    return true;
+                } else {
+                    log(`股票数据获取失败: HTTP ${response.status}`, 'error');
+                    setTestResult('股票数据', 'error', `HTTP ${response.status}`);
+                    return false;
+                }
+            } catch (error) {
+                log(`股票数据测试错误: ${error.message}`, 'error');
+                setTestResult('股票数据', 'error', error.message);
+                return false;
+            }
+        }
+        
+        async function testPost() {
+            log('开始POST测试...');
+            try {
+                const testData = {
+                    message: '前端POST测试',
+                    timestamp: new Date().toISOString(),
+                    source: 'frontend_html_test'
+                };
+                
+                const response = await fetch(`${API_BASE_URL}/api/test/echo`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`POST测试成功: ${JSON.stringify(data.echo)}`, 'success');
+                    setTestResult('POST测试', 'success', '数据发送和接收正常');
+                    return true;
+                } else {
+                    log(`POST测试失败: HTTP ${response.status}`, 'error');
+                    setTestResult('POST测试', 'error', `HTTP ${response.status}`);
+                    return false;
+                }
+            } catch (error) {
+                log(`POST测试错误: ${error.message}`, 'error');
+                setTestResult('POST测试', 'error', error.message);
+                return false;
+            }
+        }
+        
+        async function testCORS() {
+            log('开始CORS测试...');
+            try {
+                // 发送一个带有自定义头的请求来测试CORS
+                const response = await fetch(`${API_BASE_URL}/api/health`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Test-Header': 'frontend-test'
+                    }
+                });
+                
+                if (response.ok) {
+                    log('CORS测试成功: 跨域请求正常', 'success');
+                    setTestResult('CORS测试', 'success', '跨域配置正确');
+                    return true;
+                } else {
+                    log(`CORS测试失败: HTTP ${response.status}`, 'error');
+                    setTestResult('CORS测试', 'error', `HTTP ${response.status}`);
+                    return false;
+                }
+            } catch (error) {
+                if (error.message.includes('CORS')) {
+                    log(`CORS配置有问题: ${error.message}`, 'error');
+                    setTestResult('CORS测试', 'error', 'CORS配置问题');
+                } else {
+                    log(`CORS测试错误: ${error.message}`, 'warning');
+                    setTestResult('CORS测试', 'warning', error.message);
+                }
+                return false;
+            }
+        }
+        
+        async function runAllTests() {
+            log('🚀 开始运行所有测试...', 'info');
+            clearLog();
+            
+            const quickStatus = document.getElementById('quickStatus');
+            quickStatus.innerHTML = '<p>⏳ 测试进行中...</p>';
+            
+            const tests = [
+                { name: '健康检查', func: testHealth },
+                { name: 'Echo测试', func: testEcho },
+                { name: '股票数据', func: testStock },
+                { name: 'POST测试', func: testPost },
+                { name: 'CORS测试', func: testCORS }
+            ];
+            
+            let successCount = 0;
+            
+            for (const test of tests) {
+                log(`正在执行: ${test.name}...`);
+                const result = await test.func();
+                if (result) successCount++;
+                await new Promise(resolve => setTimeout(resolve, 500)); // 延迟500ms
+            }
+            
+            const total = tests.length;
+            log(`\n🎉 所有测试完成! 成功: ${successCount}/${total}`, successCount === total ? 'success' : 'warning');
+            
+            if (successCount === total) {
+                quickStatus.innerHTML = '<div class="success"><h4>🎉 所有测试通过!</h4><p>前后端连接完全正常，可以开始开发了！</p></div>';
+            } else {
+                quickStatus.innerHTML = `<div class="warning"><h4>⚠️ 部分测试失败</h4><p>成功: ${successCount}/${total}，请检查失败的项目</p></div>`;
+            }
+        }
+        
+        // 页面加载完成后自动运行测试
+        window.addEventListener('load', () => {
+            log('页面加载完成，准备测试前后端连接...', 'info');
+            setTimeout(runAllTests, 1000);
+        });
+    </script>
+</body>
+</html>

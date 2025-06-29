@@ -1,0 +1,59 @@
+"""
+WebSocket连接管理器
+用于管理WebSocket连接并向客户端广播消息
+"""
+from fastapi import WebSocket
+from typing import List, Dict, Any
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+class WebSocketManager:
+    """WebSocket连接管理器"""
+    
+    def __init__(self):
+        """初始化连接管理器"""
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        """添加新的WebSocket连接"""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"WebSocket连接已建立,当前连接数: {len(self.active_connections)}")
+    
+    def disconnect(self, websocket: WebSocket):
+        """移除WebSocket连接"""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket连接已断开,当前连接数: {len(self.active_connections)}")
+    
+    async def broadcast_text(self, message: str):
+        """向所有连接的客户端广播文本消息"""
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.error(f"WebSocket广播文本消息失败: {str(e)}")
+    
+    async def broadcast_json(self, message: Dict[str, Any]):
+        """向所有连接的客户端广播JSON消息"""
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.error(f"WebSocket广播JSON消息失败: {str(e)}")
+    
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        """向特定的WebSocket连接发送文本消息"""
+        try:
+            await websocket.send_text(message)
+        except Exception as e:
+            logger.error(f"WebSocket发送个人文本消息失败: {str(e)}")
+    
+    async def send_personal_json(self, message: Dict[str, Any], websocket: WebSocket):
+        """向特定的WebSocket连接发送JSON消息"""
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logger.error(f"WebSocket发送个人JSON消息失败: {str(e)}") 

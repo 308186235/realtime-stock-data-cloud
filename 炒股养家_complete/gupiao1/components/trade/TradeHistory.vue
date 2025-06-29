@@ -1,0 +1,442 @@
+<template>
+  <view class="trade-history-container">
+    <view class="filter-tabs">
+      <text 
+        :class="['tab', activeTab === 'all' ? 'active' : '']" 
+        @click="activeTab = 'all'">全部</text>
+      <text 
+        :class="['tab', activeTab === 'manual' ? 'active' : '']" 
+        @click="activeTab = 'manual'">手动交易</text>
+      <text 
+        :class="['tab', activeTab === 'ai' ? 'active' : '']" 
+        @click="activeTab = 'ai'">Agent交易</text>
+    </view>
+    
+    <view class="trade-list">
+      <view v-for="(trade, index) in filteredTrades" :key="index" class="trade-item">
+        <view class="trade-header">
+          <view class="trade-stock">
+            <text class="stock-name">{{trade.stockName}}</text>
+            <text class="stock-code">{{trade.stockCode}}</text>
+          </view>
+          <view class="trade-action" :class="trade.action === 'buy' ? 'buy' : 'sell'">
+            {{trade.action === 'buy' ? '买入' : '卖出'}}
+          </view>
+        </view>
+        
+        <view class="trade-details">
+          <view class="detail-item">
+            <text class="detail-label">成交价</text>
+            <text class="detail-value">¥{{trade.price}}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">数量</text>
+            <text class="detail-value">{{trade.quantity}}股</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">金额</text>
+            <text class="detail-value">¥{{trade.amount.toFixed(2)}}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">时间</text>
+            <text class="detail-value">{{trade.tradeTime}}</text>
+          </view>
+        </view>
+        
+        <!-- 显示Agent交易标签和理由 -->
+        <view v-if="trade.tradeSource === 'ai'" class="ai-trade-info">
+          <view class="ai-trade-tag">
+            <text class="tag">Agent交易</text>
+            <text class="strategy">策略: {{trade.strategy}}</text>
+          </view>
+          <view class="ai-trade-reason">
+            <text class="reason-label">交易理由:</text>
+            <text class="reason-content">{{trade.reason}}</text>
+          </view>
+          <!-- 添加查看K线图按钮 -->
+          <view class="view-chart-btn" @click="viewKLineChart(trade)">
+            <text class="btn-text">在K线图中查看</text>
+          </view>
+        </view>
+      </view>
+      
+      <view v-if="filteredTrades.length === 0" class="empty-state">
+        <text class="empty-text">暂无交易记录</text>
+      </view>
+    </view>
+    
+    <view class="pagination" v-if="trades.length > pageSize">
+      <text 
+        :class="['page-btn', currentPage === 1 ? 'disabled' : '']" 
+        @click="prevPage"
+      >上一页</text>
+      <text class="page-info">{{currentPage}}/{{totalPages}}</text>
+      <text 
+        :class="['page-btn', currentPage === totalPages ? 'disabled' : '']" 
+        @click="nextPage"
+      >下一页</text>
+    </view>
+  </view>
+</template>
+
+<script>
+import { getAITradeHistory } from '../../services/agentTradingService.js';
+
+export default {
+  props: {
+    isConnected: {
+      type: Boolean,
+      default: false
+    }
+  },
+  data() {
+    return {
+      activeTab: 'all',
+      trades: [],
+      manualTrades: [],
+      pageSize: 10,
+      currentPage: 1,
+      loading: false
+    }
+  },
+  computed: {
+    totalPages() {
+      return Math.ceil(this.filteredByTypeTradesLength / this.pageSize);
+    },
+    filteredByTypeTradesLength() {
+      if (this.activeTab === 'all') {
+        return this.trades.length;
+      } else {
+        return this.trades.filter(trade => trade.tradeSource === this.activeTab).length;
+      }
+    },
+    filteredTrades() {
+      let filtered = [];
+      
+      // 先按类型筛选
+      if (this.activeTab === 'all') {
+        filtered = this.trades;
+      } else {
+        filtered = this.trades.filter(trade => trade.tradeSource === this.activeTab);
+      }
+      
+      // 再分页
+      const startIdx = (this.currentPage - 1) * this.pageSize;
+      const endIdx = startIdx + this.pageSize;
+      return filtered.slice(startIdx, endIdx);
+    }
+  },
+  methods: {
+    async loadTrades() {
+      try {
+        this.loading = true;
+        
+        // 从东吴秀才获取交易记录
+        // TODO: 替换为实际交易历史API
+        const mockTrades = [
+          {
+            id: 'trade-001',
+            stockCode: '600519',
+            stockName: '贵州茅台',
+            action: 'buy',
+            price: 1680.25,
+            quantity: 10,
+            amount: 16802.50,
+            tradeTime: '2023-06-15 14:30:22',
+            tradeSource: 'manual'
+          },
+          {
+            id: 'trade-002',
+            stockCode: '000001',
+            stockName: '平安银行',
+            action: 'buy',
+            price: 16.05,
+            quantity: 1000,
+            amount: 16050.00,
+            tradeTime: '2023-05-22 10:05:47',
+            tradeSource: 'manual'
+          },
+          {
+            id: 'trade-003',
+            stockCode: '600050',
+            stockName: '中国联通',
+            action: 'buy',
+            price: 5.12,
+            quantity: 5000,
+            amount: 25600.00,
+            tradeTime: '2023-01-30 09:32:10',
+            tradeSource: 'manual'
+          }
+        ];
+        
+        this.manualTrades = mockTrades;
+        this.trades = [...mockTrades];
+        
+        // 获取Agent交易历史
+        await this.loadAITrades();
+      } catch (error) {
+        console.error('加载交易记录失败:', error);
+        uni.showToast({
+          title: '加载交易记录失败',
+          icon: 'none'
+        });
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    async loadAITrades() {
+      try {
+        const response = await getAITradeHistory(50);
+        
+        if (response.success && response.data && response.data.trades) {
+          // 添加Agent交易记录到交易列表
+          const aiTrades = response.data.trades;
+          this.trades = [...this.manualTrades, ...aiTrades];
+          
+          // 按时间排序
+          this.trades.sort((a, b) => {
+            return new Date(b.tradeTime) - new Date(a.tradeTime);
+          });
+        }
+      } catch (error) {
+        console.error('加载Agent交易记录失败:', error);
+      }
+    },
+    
+    prevPage() {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+      }
+    },
+    
+    nextPage() {
+      if (this.currentPage < this.totalPages) {
+        this.currentPage++;
+      }
+    },
+    
+    // 刷新数据
+    refresh() {
+      this.currentPage = 1;
+      this.loadTrades();
+    },
+    
+    /**
+     * 在K线图中查看交易
+     * @param {Object} trade 交易对象
+     */
+    viewKLineChart(trade) {
+      // 跳转到股票详情页,并传递交易信息
+      uni.navigateTo({
+        url: `/pages/portfolio/stock-detail?code=${trade.stockCode}&showAITrade=true&tradeTime=${encodeURIComponent(trade.tradeTime)}`
+      });
+    }
+  },
+  created() {
+    // 组件创建时加载数据
+    if (this.isConnected) {
+      this.loadTrades();
+    }
+  },
+  watch: {
+    // 当连接状态变化时刷新数据
+    isConnected(newVal) {
+      if (newVal) {
+        this.loadTrades();
+      }
+    },
+    // 当切换标签页时重置到第一页
+    activeTab() {
+      this.currentPage = 1;
+    }
+  }
+}
+</script>
+
+<style>
+.trade-history-container {
+  padding: 20rpx 0;
+}
+
+.filter-tabs {
+  display: flex;
+  margin-bottom: 30rpx;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 10rpx;
+  padding: 10rpx;
+}
+
+.tab {
+  flex: 1;
+  text-align: center;
+  padding: 16rpx 0;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+}
+
+.tab.active {
+  background-color: #4C8DFF;
+  color: white;
+}
+
+.trade-list {
+  margin-top: 20rpx;
+}
+
+.trade-item {
+  margin-bottom: 30rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+  padding: 24rpx;
+  background-color: #ffffff;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.05);
+}
+
+.trade-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.stock-name {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333333;
+}
+
+.stock-code {
+  font-size: 24rpx;
+  color: #666;
+  margin-left: 10rpx;
+}
+
+.trade-action {
+  font-size: 28rpx;
+  padding: 8rpx 24rpx;
+  border-radius: 6rpx;
+  font-weight: bold;
+}
+
+.trade-action.buy {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: #4CAF50;
+}
+
+.trade-action.sell {
+  background-color: rgba(244, 67, 54, 0.1);
+  color: #F44336;
+}
+
+.trade-details {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.detail-item {
+  width: 50%;
+  margin-bottom: 16rpx;
+}
+
+.detail-label {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.detail-value {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: #333333;
+}
+
+.ai-trade-info {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.ai-trade-tag {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10rpx;
+}
+
+.tag {
+  background-color: #9C27B0;
+  color: white;
+  padding: 4rpx 12rpx;
+  border-radius: 4rpx;
+  font-size: 24rpx;
+}
+
+.strategy {
+  margin-left: 10rpx;
+  font-size: 26rpx;
+}
+
+.ai-trade-reason {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.reason-label {
+  font-weight: bold;
+  margin-right: 10rpx;
+}
+
+.empty-state {
+  padding: 60rpx 0;
+  text-align: center;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #666;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 30rpx;
+  padding: 20rpx 0;
+}
+
+.page-btn {
+  padding: 12rpx 30rpx;
+  border-radius: 6rpx;
+  background-color: #4C8DFF;
+  color: white;
+  font-size: 28rpx;
+}
+
+.page-btn.disabled {
+  background-color: #ccc;
+  color: #888;
+}
+
+.page-info {
+  margin: 0 30rpx;
+  font-size: 28rpx;
+  color: #666;
+}
+
+.view-chart-btn {
+  margin-top: 16rpx;
+  background-color: rgba(156, 39, 176, 0.1);
+  border: 1px solid #9C27B0;
+  border-radius: 30rpx;
+  padding: 8rpx 20rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-text {
+  color: #9C27B0;
+  font-size: 24rpx;
+}
+</style> 

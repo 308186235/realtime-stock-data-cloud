@@ -1,0 +1,10 @@
+"""
+东吴证券同花顺API集成
+"""
+from fastapi import APIRouter
+from .routers import ths_service
+
+router = APIRouter()
+
+# 集成同花顺交易服务路由
+router.include_router(ths_service.router, prefix="/api") 

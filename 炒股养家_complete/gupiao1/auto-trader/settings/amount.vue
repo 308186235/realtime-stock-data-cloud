@@ -1,0 +1,296 @@
+<template>
+    <view class="container">
+        <view class="header">
+            <text class="title">设置可操作金额</text>
+            <text class="subtitle">设置您想要用于自动交易的资金金额</text>
+        </view>
+        
+        <view class="form-section">
+            <view class="input-group">
+                <text class="label">可操作金额</text>
+                <view class="input-wrapper">
+                    <text class="currency-symbol">¥</text>
+                    <input 
+                        type="digit" 
+                        class="amount-input" 
+                        v-model="amount" 
+                        placeholder="请输入金额"
+                        @input="formatAmount"
+                        @focus="onFocus"
+                        @blur="onBlur"
+                    />
+                </view>
+            </view>
+            
+            <view class="tips">
+                <text class="tip-text">· 可操作金额不能超过可用资金</text>
+                <text class="tip-text">· 设置为0表示不参与自动交易</text>
+                <text class="tip-text">· 修改后需重新设置交易策略</text>
+            </view>
+            
+            <view class="available-cash">
+                <text class="available-label">可用资金:</text>
+                <text class="available-value">¥{{ availableCash }}</text>
+            </view>
+        </view>
+        
+        <view class="actions">
+            <button class="btn cancel" @click="goBack">取消</button>
+            <button class="btn save" @click="saveAmount">保存</button>
+        </view>
+    </view>
+</template>
+
+<script>
+    export default {
+        data() {
+            return {
+                amount: '',
+                availableCash: '27,230.00',
+                originalAmount: '',
+                isEditing: false
+            }
+        },
+        onLoad(options) {
+            // 获取传递过来的当前金额参数
+            if (options && options.current) {
+                this.amount = options.current;
+                this.originalAmount = options.current;
+            }
+            
+            // 从全局数据获取可用资金
+            const app = getApp();
+            if (app.globalData && app.globalData.availableCash) {
+                this.availableCash = app.globalData.availableCash;
+            }
+        },
+        methods: {
+            // 格式化输入的金额
+            formatAmount(e) {
+                if (!this.isEditing) {
+                    let value = e.detail.value;
+                    
+                    // 移除非数字和小数点字符
+                    value = value.replace(/[^\d.]/g, '');
+                    
+                    // 确保只有一个小数点
+                    const parts = value.split('.');
+                    if (parts.length > 2) {
+                        value = parts[0] + '.' + parts.slice(1).join('');
+                    }
+                    
+                    // 限制小数点后两位
+                    if (parts.length > 1 && parts[1].length > 2) {
+                        value = parts[0] + '.' + parts[1].substring(0, 2);
+                    }
+                    
+                    this.amount = value;
+                }
+            },
+            
+            // 聚焦时移除千分位分隔符
+            onFocus() {
+                this.isEditing = true;
+                this.amount = this.amount.replace(/,/g, '');
+            },
+            
+            // 失焦时添加千分位分隔符
+            onBlur() {
+                this.isEditing = false;
+                if (this.amount) {
+                    // 分离整数部分和小数部分
+                    const parts = this.amount.split('.');
+                    const integerPart = parts[0];
+                    const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
+                    
+                    // 添加千分位分隔符
+                    this.amount = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + decimalPart;
+                }
+            },
+            
+            // 返回上一页
+            goBack() {
+                uni.navigateBack();
+            },
+            
+            // 保存金额
+            saveAmount() {
+                // 检查金额是否有效
+                const numAmount = parseFloat(this.amount.replace(/,/g, ''));
+                const numAvailable = parseFloat(this.availableCash.replace(/,/g, ''));
+                
+                if (isNaN(numAmount) || numAmount < 0) {
+                    uni.showToast({
+                        title: '请输入有效金额',
+                        icon: 'none'
+                    });
+                    return;
+                }
+                
+                if (numAmount > numAvailable) {
+                    uni.showToast({
+                        title: '金额不能超过可用资金',
+                        icon: 'none'
+                    });
+                    return;
+                }
+                
+                // 保存到全局数据
+                const app = getApp();
+                if (app.globalData) {
+                    app.globalData.operableAmount = this.amount;
+                }
+                
+                // 返回上一页并传递数据
+                const pages = getCurrentPages();
+                const prevPage = pages[pages.length - 2];
+                if (prevPage) {
+                    // 更新上一页的数据
+                    prevPage.$vm.operableAmount = this.amount;
+                }
+                
+                uni.showToast({
+                    title: '保存成功',
+                    icon: 'success',
+                    duration: 1500,
+                    success: () => {
+                        setTimeout(() => {
+                            uni.navigateBack();
+                        }, 1500);
+                    }
+                });
+            }
+        }
+    }
+</script>
+
+<style>
+.container {
+    padding: 30rpx;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+}
+
+.header {
+    margin-bottom: 40rpx;
+    padding: 20rpx;
+    background: linear-gradient(135deg, #1989fa, #0056b3);
+    border-radius: 16rpx;
+    color: #fff;
+    box-shadow: 0 4rpx 12rpx rgba(25, 137, 250, 0.3);
+}
+
+.title {
+    font-size: 40rpx;
+    font-weight: bold;
+    margin-bottom: 10rpx;
+    display: block;
+}
+
+.subtitle {
+    font-size: 24rpx;
+    opacity: 0.9;
+    display: block;
+}
+
+.form-section {
+    background-color: #fff;
+    border-radius: 16rpx;
+    padding: 30rpx;
+    margin-bottom: 30rpx;
+    box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.input-group {
+    margin-bottom: 30rpx;
+}
+
+.label {
+    font-size: 28rpx;
+    color: #333;
+    margin-bottom: 16rpx;
+    display: block;
+    font-weight: bold;
+}
+
+.input-wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-bottom: 2rpx solid #e0e0e0;
+    padding-bottom: 10rpx;
+}
+
+.currency-symbol {
+    font-size: 40rpx;
+    color: #333;
+    margin-right: 10rpx;
+    font-weight: bold;
+}
+
+.amount-input {
+    flex: 1;
+    font-size: 40rpx;
+    color: #333;
+    padding: 10rpx 0;
+}
+
+.tips {
+    background-color: #f9f9f9;
+    padding: 20rpx;
+    border-radius: 8rpx;
+    margin-bottom: 30rpx;
+}
+
+.tip-text {
+    font-size: 24rpx;
+    color: #666;
+    margin-bottom: 10rpx;
+    display: block;
+    line-height: 1.5;
+}
+
+.available-cash {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 20rpx;
+    background-color: #f0f8ff;
+    border-radius: 8rpx;
+}
+
+.available-label {
+    font-size: 28rpx;
+    color: #333;
+}
+
+.available-value {
+    font-size: 28rpx;
+    font-weight: bold;
+    color: #1989fa;
+}
+
+.actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.btn {
+    flex: 1;
+    margin: 0 10rpx;
+    font-size: 30rpx;
+    padding: 20rpx 0;
+    border-radius: 8rpx;
+}
+
+.cancel {
+    background-color: #f0f0f0;
+    color: #666;
+}
+
+.save {
+    background: linear-gradient(135deg, #1989fa, #0056b3);
+    color: #fff;
+}
+</style> 

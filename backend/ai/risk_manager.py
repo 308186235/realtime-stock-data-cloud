@@ -1,0 +1,627 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+import traceback
+
+logger = logging.getLogger("RiskManager")
+
+class RiskManager:
+    """
+    风险管理器 - 负责评估和控制交易风险
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化风险管理器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 风险阈值
+        self.risk_thresholds = {
+            "low": 0.10,           # 低风险阈值
+            "medium": 0.20,        # 中等风险阈值
+            "high": 0.30           # 高风险阈值
+        }
+        
+        # 最大风险敞口设置
+        self.max_risk_exposure = {
+            "total_portfolio": 0.5,   # 总投资组合风险上限
+            "single_position": 0.15,  # 单一仓位风险上限
+            "sector": 0.30,           # 单一行业风险上限
+            "strategy": 0.40          # 单一策略风险上限
+        }
+        
+        # 止损设置
+        self.stop_loss_settings = {
+            "default": 0.05,          # 默认止损比例
+            "trailing": True,         # 是否启用追踪止损
+            "trailing_distance": 0.03 # 追踪止损距离
+        }
+        
+        # 风险计算参数
+        self.risk_params = {
+            "var_confidence": 0.95,   # VaR置信度
+            "var_horizon": 10,        # VaR时间范围(天)
+            "volatility_window": 20,  # 波动率计算窗口
+            "correlation_window": 60  # 相关性计算窗口
+        }
+        
+        # 风险状态缓存
+        self.risk_state_cache = {}
+        
+        logger.info("Risk Manager initialized")
+    
+    async def assess_risk(self, 
+                        market_data: Dict[str, Any], 
+                        portfolio_state: Dict[str, Any] = None,
+                        context: Dict = None) -> Dict[str, Any]:
+        """
+        评估当前交易风险
+        
+        Args:
+            market_data: 市场数据
+            portfolio_state: 投资组合状态
+            context: 额外上下文
+            
+        Returns:
+            风险评估结果
+        """
+        try:
+            logger.info("Assessing trading risk...")
+            
+            # 市场风险评估
+            market_risk = self._assess_market_risk(market_data)
+            
+            # 投资组合风险评估
+            portfolio_risk = self._assess_portfolio_risk(portfolio_state, market_data)
+            
+            # 头寸风险评估
+            position_risk = self._assess_position_risk(portfolio_state, market_data)
+            
+            # 流动性风险评估
+            liquidity_risk = self._assess_liquidity_risk(market_data, portfolio_state)
+            
+            # 综合风险评估
+            overall_risk = self._calculate_overall_risk(
+                market_risk, portfolio_risk, position_risk, liquidity_risk
+            )
+            
+            # 风险控制建议
+            risk_controls = self._generate_risk_controls(
+                overall_risk, market_risk, portfolio_risk, position_risk, liquidity_risk
+            )
+            
+            # 构建风险评估结果
+            risk_assessment = {
+                "timestamp": datetime.now().isoformat(),
+                "overall_risk": overall_risk,
+                "market_risk": market_risk,
+                "portfolio_risk": portfolio_risk,
+                "position_risk": position_risk,
+                "liquidity_risk": liquidity_risk,
+                "risk_controls": risk_controls
+            }
+            
+            # 更新风险状态缓存
+            self.risk_state_cache = risk_assessment
+            
+            logger.info(f"Risk assessment completed: level={overall_risk['level']}, score={overall_risk['score']:.2f}")
+            return risk_assessment
+            
+        except Exception as e:
+            error_msg = f"Error in risk assessment: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            
+            # 出错时返回高风险状态
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "overall_risk": {"level": "high", "score": 0.8},
+                "error": error_msg
+            }
+    
+    def _assess_market_risk(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """评估市场风险"""
+        # 提取价格数据
+        prices = market_data.get("prices", {})
+        close_prices = np.array(prices.get("close", []))
+        
+        if len(close_prices) < 2:
+            return {
+                "level": "medium",
+                "score": 0.5,
+                "factors": {}
+            }
+        
+        # 计算收益率
+        returns = np.diff(close_prices) / close_prices[:-1]
+        
+        # 计算波动率 (使用过去20日标准差,年化)
+        volatility_window = min(self.risk_params["volatility_window"], len(returns))
+        volatility = np.std(returns[-volatility_window:]) * np.sqrt(252)
+        
+        # 计算风险值 (VaR)
+        var_confidence = self.risk_params["var_confidence"]
+        var_horizon = self.risk_params["var_horizon"]
+        
+        # 参数化VaR (假设正态分布)
+        z_score = abs(np.percentile(np.random.normal(0, 1, 10000), (1 - var_confidence) * 100))
+        daily_var = z_score * np.std(returns[-volatility_window:])
+        period_var = daily_var * np.sqrt(var_horizon)
+        
+        # 下行风险 (只考虑负收益)
+        negative_returns = returns[returns < 0]
+        downside_risk = np.std(negative_returns) * np.sqrt(252) if len(negative_returns) > 0 else 0
+        
+        # 计算风险得分 (0-1)
+        volatility_score = min(1.0, volatility / 0.4)  # 40%年化波动率为满分
+        var_score = min(1.0, period_var / 0.15)        # 15%VaR为满分
+        downside_score = min(1.0, downside_risk / 0.3) # 30%下行风险为满分
+        
+        # 综合风险得分 (加权平均)
+        risk_score = 0.4 * volatility_score + 0.4 * var_score + 0.2 * downside_score
+        
+        # 确定风险级别
+        if risk_score < self.risk_thresholds["low"]:
+            risk_level = "low"
+        elif risk_score < self.risk_thresholds["medium"]:
+            risk_level = "medium"
+        elif risk_score < self.risk_thresholds["high"]:
+            risk_level = "high"
+        else:
+            risk_level = "extreme"
+        
+        return {
+            "level": risk_level,
+            "score": risk_score,
+            "factors": {
+                "volatility": volatility,
+                "var_10d_95": period_var,
+                "downside_risk": downside_risk,
+                "volatility_score": volatility_score,
+                "var_score": var_score,
+                "downside_score": downside_score
+            }
+        }
+    
+    def _assess_portfolio_risk(self, 
+                             portfolio_state: Dict[str, Any], 
+                             market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """评估投资组合风险"""
+        # 如果没有投资组合状态,返回默认值
+        if not portfolio_state:
+            return {
+                "level": "low",
+                "score": 0.1,
+                "factors": {}
+            }
+        
+        # 提取投资组合信息
+        positions = portfolio_state.get("positions", [])
+        total_value = portfolio_state.get("total_value", 0)
+        
+        if not positions or total_value == 0:
+            return {
+                "level": "low",
+                "score": 0.1,
+                "factors": {}
+            }
+        
+        # 计算投资组合集中度
+        position_values = [p.get("value", 0) for p in positions]
+        position_weights = [pv / total_value for pv in position_values if total_value > 0]
+        
+        # 赫芬达尔-赫希曼指数 (HHI) - 衡量集中度
+        hhi = sum([w**2 for w in position_weights])
+        
+        # 计算最大持仓比例
+        max_position_weight = max(position_weights) if position_weights else 0
+        
+        # 计算行业集中度
+        sector_weights = {}
+        for position in positions:
+            sector = position.get("sector", "unknown")
+            weight = position.get("value", 0) / total_value if total_value > 0 else 0
+            sector_weights[sector] = sector_weights.get(sector, 0) + weight
+        
+        max_sector_weight = max(sector_weights.values()) if sector_weights else 0
+        
+        # 计算杠杆率
+        total_exposure = sum(position_values)
+        leverage = total_exposure / total_value if total_value > 0 else 1.0
+        
+        # 计算风险分数
+        concentration_score = min(1.0, hhi * 5)  # HHI通常在0.1-0.25之间
+        position_size_score = min(1.0, max_position_weight / self.max_risk_exposure["single_position"])
+        sector_score = min(1.0, max_sector_weight / self.max_risk_exposure["sector"])
+        leverage_score = min(1.0, (leverage - 1) / 1.5) if leverage > 1 else 0
+        
+        # 综合风险得分
+        risk_score = 0.3 * concentration_score + 0.3 * position_size_score + 0.2 * sector_score + 0.2 * leverage_score
+        
+        # 确定风险级别
+        if risk_score < self.risk_thresholds["low"]:
+            risk_level = "low"
+        elif risk_score < self.risk_thresholds["medium"]:
+            risk_level = "medium"
+        elif risk_score < self.risk_thresholds["high"]:
+            risk_level = "high"
+        else:
+            risk_level = "extreme"
+        
+        return {
+            "level": risk_level,
+            "score": risk_score,
+            "factors": {
+                "concentration_hhi": hhi,
+                "max_position_weight": max_position_weight,
+                "max_sector_weight": max_sector_weight,
+                "leverage": leverage,
+                "concentration_score": concentration_score,
+                "position_size_score": position_size_score,
+                "sector_score": sector_score,
+                "leverage_score": leverage_score
+            }
+        }
+    
+    def _assess_position_risk(self, 
+                            portfolio_state: Dict[str, Any], 
+                            market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """评估头寸风险"""
+        # 如果没有投资组合状态,返回默认值
+        if not portfolio_state:
+            return {
+                "level": "low",
+                "score": 0.1,
+                "factors": {},
+                "positions": []
+            }
+        
+        # 提取投资组合信息
+        positions = portfolio_state.get("positions", [])
+        
+        if not positions:
+            return {
+                "level": "low",
+                "score": 0.1,
+                "factors": {},
+                "positions": []
+            }
+        
+        # 分析每个头寸的风险
+        position_risks = []
+        total_risk_score = 0
+        
+        for position in positions:
+            symbol = position.get("symbol", "")
+            entry_price = position.get("entry_price", 0)
+            current_price = position.get("current_price", entry_price)
+            position_size = position.get("value", 0)
+            
+            # 计算收益率
+            returns = (current_price / entry_price - 1) if entry_price > 0 else 0
+            
+            # 计算止损距离
+            stop_loss = position.get("stop_loss", entry_price * (1 - self.stop_loss_settings["default"]))
+            stop_distance = (current_price - stop_loss) / current_price if current_price > 0 else 0
+            
+            # 获取市场数据中该股票的波动率
+            symbol_data = market_data.get("symbols", {}).get(symbol, {})
+            volatility = symbol_data.get("volatility", 0.2)  # 默认20%
+            
+            # 计算风险分数
+            volatility_score = min(1.0, volatility / 0.4)
+            stop_distance_score = max(0, 1.0 - stop_distance / 0.1)  # 10%止损距离为基准
+            unrealized_loss_score = max(0, -returns) * 5 if returns < 0 else 0  # 将亏损转换为风险分
+            
+            # 个股风险分数
+            position_risk_score = 0.4 * volatility_score + 0.3 * stop_distance_score + 0.3 * unrealized_loss_score
+            
+            # 确定风险级别
+            if position_risk_score < self.risk_thresholds["low"]:
+                risk_level = "low"
+            elif position_risk_score < self.risk_thresholds["medium"]:
+                risk_level = "medium"
+            elif position_risk_score < self.risk_thresholds["high"]:
+                risk_level = "high"
+            else:
+                risk_level = "extreme"
+            
+            position_risks.append({
+                "symbol": symbol,
+                "level": risk_level,
+                "score": position_risk_score,
+                "returns": returns,
+                "stop_distance": stop_distance,
+                "volatility": volatility,
+                "size": position_size
+            })
+            
+            # 累计总风险分数(按头寸大小加权)
+            total_risk_score += position_risk_score * position_size
+        
+        # 计算加权平均风险分数
+        total_size = sum([p.get("value", 0) for p in positions])
+        avg_risk_score = total_risk_score / total_size if total_size > 0 else 0
+        
+        # 确定总体风险级别
+        if avg_risk_score < self.risk_thresholds["low"]:
+            risk_level = "low"
+        elif avg_risk_score < self.risk_thresholds["medium"]:
+            risk_level = "medium"
+        elif avg_risk_score < self.risk_thresholds["high"]:
+            risk_level = "high"
+        else:
+            risk_level = "extreme"
+        
+        return {
+            "level": risk_level,
+            "score": avg_risk_score,
+            "factors": {
+                "average_volatility": np.mean([p.get("volatility", 0) for p in position_risks]),
+                "average_stop_distance": np.mean([p.get("stop_distance", 0) for p in position_risks]),
+                "losing_positions": sum(1 for p in position_risks if p.get("returns", 0) < 0)
+            },
+            "positions": position_risks
+        }
+    
+    def _assess_liquidity_risk(self, 
+                             market_data: Dict[str, Any], 
+                             portfolio_state: Dict[str, Any] = None) -> Dict[str, Any]:
+        """评估流动性风险"""
+        # 从市场数据中提取流动性信息
+        liquidity_data = market_data.get("liquidity", {})
+        
+        # 默认流动性风险
+        default_risk = {
+            "level": "medium",
+            "score": 0.5,
+            "factors": {}
+        }
+        
+        # 如果没有流动性数据,返回默认值
+        if not liquidity_data:
+            return default_risk
+        
+        # 提取流动性指标
+        bid_ask_spread = liquidity_data.get("average_spread", 0.001)  # 默认0.1%
+        volume = liquidity_data.get("volume", 0)
+        turnover = liquidity_data.get("turnover", 0)
+        
+        # 计算风险分数
+        spread_score = min(1.0, bid_ask_spread / 0.01)  # 1%点差为满分
+        
+        volume_score = 0.5  # 默认中等风险
+        if volume > 0:
+            volume_percentile = liquidity_data.get("volume_percentile", 50)
+            volume_score = max(0, 1.0 - volume_percentile / 100)
+        
+        # 综合流动性风险分数
+        risk_score = 0.6 * spread_score + 0.4 * volume_score
+        
+        # 如果有投资组合,评估变现能力
+        if portfolio_state and "positions" in portfolio_state:
+            positions = portfolio_state["positions"]
+            
+            # 计算投资组合中流动性差的资产比例
+            illiquid_positions = 0
+            total_value = sum([p.get("value", 0) for p in positions])
+            
+            for position in positions:
+                symbol = position.get("symbol", "")
+                symbol_liquidity = market_data.get("symbols", {}).get(symbol, {}).get("liquidity", {})
+                
+                # 流动性差的标准
+                if symbol_liquidity.get("volume_percentile", 50) < 20 or symbol_liquidity.get("average_spread", 0.001) > 0.005:
+                    illiquid_positions += position.get("value", 0)
+            
+            # 计算流动性差的资产比例
+            illiquid_ratio = illiquid_positions / total_value if total_value > 0 else 0
+            
+            # 调整风险分数
+            risk_score = 0.7 * risk_score + 0.3 * min(1.0, illiquid_ratio * 2)
+        
+        # 确定风险级别
+        if risk_score < self.risk_thresholds["low"]:
+            risk_level = "low"
+        elif risk_score < self.risk_thresholds["medium"]:
+            risk_level = "medium"
+        elif risk_score < self.risk_thresholds["high"]:
+            risk_level = "high"
+        else:
+            risk_level = "extreme"
+        
+        return {
+            "level": risk_level,
+            "score": risk_score,
+            "factors": {
+                "bid_ask_spread": bid_ask_spread,
+                "volume": volume,
+                "turnover": turnover,
+                "spread_score": spread_score,
+                "volume_score": volume_score
+            }
+        }
+    
+    def _calculate_overall_risk(self, 
+                              market_risk: Dict[str, Any],
+                              portfolio_risk: Dict[str, Any],
+                              position_risk: Dict[str, Any],
+                              liquidity_risk: Dict[str, Any]) -> Dict[str, Any]:
+        """计算总体风险"""
+        # 提取各类风险分数
+        market_score = market_risk.get("score", 0.5)
+        portfolio_score = portfolio_risk.get("score", 0.1)
+        position_score = position_risk.get("score", 0.1)
+        liquidity_score = liquidity_risk.get("score", 0.5)
+        
+        # 加权计算总体风险分数
+        overall_score = (
+            0.35 * market_score + 
+            0.25 * portfolio_score + 
+            0.25 * position_score + 
+            0.15 * liquidity_score
+        )
+        
+        # 确定风险级别
+        if overall_score < self.risk_thresholds["low"]:
+            risk_level = "low"
+        elif overall_score < self.risk_thresholds["medium"]:
+            risk_level = "medium"
+        elif overall_score < self.risk_thresholds["high"]:
+            risk_level = "high"
+        else:
+            risk_level = "extreme"
+        
+        # 主要风险因素
+        main_factors = []
+        
+        if market_score > self.risk_thresholds["medium"]:
+            main_factors.append("market_volatility")
+        if portfolio_score > self.risk_thresholds["medium"]:
+            main_factors.append("portfolio_concentration")
+        if position_score > self.risk_thresholds["medium"]:
+            main_factors.append("position_exposure")
+        if liquidity_score > self.risk_thresholds["medium"]:
+            main_factors.append("liquidity_constraints")
+        
+        return {
+            "level": risk_level,
+            "score": overall_score,
+            "main_factors": main_factors,
+            "component_scores": {
+                "market": market_score,
+                "portfolio": portfolio_score,
+                "position": position_score,
+                "liquidity": liquidity_score
+            }
+        }
+    
+    def _generate_risk_controls(self, 
+                              overall_risk: Dict[str, Any],
+                              market_risk: Dict[str, Any],
+                              portfolio_risk: Dict[str, Any],
+                              position_risk: Dict[str, Any],
+                              liquidity_risk: Dict[str, Any]) -> Dict[str, Any]:
+        """生成风险控制建议"""
+        risk_level = overall_risk["level"]
+        main_factors = overall_risk["main_factors"]
+        
+        # 基于风险等级的通用建议
+        general_controls = {
+            "low": {
+                "position_sizing": 1.0,      # 正常仓位
+                "stop_loss_width": 1.0,      # 正常止损宽度
+                "diversification_need": "low" # 分散化需求
+            },
+            "medium": {
+                "position_sizing": 0.8,        # 降低20%仓位
+                "stop_loss_width": 0.8,        # 收紧20%止损
+                "diversification_need": "medium" # 中度分散化
+            },
+            "high": {
+                "position_sizing": 0.6,       # 降低40%仓位
+                "stop_loss_width": 0.6,       # 收紧40%止损
+                "diversification_need": "high" # 高度分散化
+            },
+            "extreme": {
+                "position_sizing": 0.3,        # 降低70%仓位
+                "stop_loss_width": 0.4,        # 收紧60%止损
+                "diversification_need": "urgent" # 紧急分散
+            }
+        }
+        
+        # 获取基础控制建议
+        controls = general_controls.get(risk_level, general_controls["medium"]).copy()
+        
+        # 特定风险因素的额外建议
+        specific_controls = []
+        
+        # 市场风险相关建议
+        if "market_volatility" in main_factors:
+            volatility = market_risk.get("factors", {}).get("volatility", 0)
+            
+            if volatility > 0.3:  # 30%以上年化波动率
+                specific_controls.append({
+                    "type": "market_hedge",
+                    "reason": "Extreme market volatility",
+                    "action": "Add market hedges through index options or inverse ETFs",
+                    "urgency": "high"
+                })
+            elif volatility > 0.2:  # 20%以上年化波动率
+                specific_controls.append({
+                    "type": "reduce_exposure",
+                    "reason": "High market volatility",
+                    "action": "Reduce overall market exposure by 20-30%",
+                    "urgency": "medium"
+                })
+        
+        # 投资组合集中度相关建议
+        if "portfolio_concentration" in main_factors:
+            hhi = portfolio_risk.get("factors", {}).get("concentration_hhi", 0)
+            max_sector = portfolio_risk.get("factors", {}).get("max_sector_weight", 0)
+            
+            if hhi > 0.25:
+                specific_controls.append({
+                    "type": "diversify",
+                    "reason": "High portfolio concentration",
+                    "action": "Add 3-5 uncorrelated positions across different sectors",
+                    "urgency": "medium"
+                })
+            
+            if max_sector > self.max_risk_exposure["sector"]:
+                specific_controls.append({
+                    "type": "reduce_sector",
+                    "reason": f"Excessive sector exposure ({max_sector:.1%})",
+                    "action": f"Reduce exposure to dominant sector below {self.max_risk_exposure['sector']:.1%}",
+                    "urgency": "high"
+                })
+        
+        # 头寸风险相关建议
+        if "position_exposure" in main_factors:
+            losing_positions = position_risk.get("factors", {}).get("losing_positions", 0)
+            risky_positions = [p for p in position_risk.get("positions", []) if p.get("level") in ["high", "extreme"]]
+            
+            if losing_positions > 0:
+                specific_controls.append({
+                    "type": "cut_losses",
+                    "reason": f"Multiple losing positions ({losing_positions})",
+                    "action": "Review and potentially exit worst performing positions",
+                    "urgency": "medium"
+                })
+            
+            if risky_positions:
+                for position in risky_positions:
+                    symbol = position.get("symbol", "unknown")
+                    risk_score = position.get("score", 0)
+                    
+                    if risk_score > 0.7:  # 高风险头寸
+                        specific_controls.append({
+                            "type": "position_risk",
+                            "reason": f"High risk position in {symbol} (score: {risk_score:.2f})",
+                            "action": f"Tighten stop loss or reduce position size for {symbol}",
+                            "urgency": "high"
+                        })
+        
+        # 流动性风险相关建议
+        if "liquidity_constraints" in main_factors:
+            spread = liquidity_risk.get("factors", {}).get("bid_ask_spread", 0)
+            
+            if spread > 0.01:  # 1%以上点差
+                specific_controls.append({
+                    "type": "liquidity_risk",
+                    "reason": f"Wide bid-ask spreads ({spread:.2%})",
+                    "action": "Use limit orders and avoid market orders; consider exiting least liquid positions",
+                    "urgency": "medium"
+                })
+        
+        # 将具体建议添加到控制中
+        controls["specific_recommendations"] = specific_controls
+        
+        return controls 

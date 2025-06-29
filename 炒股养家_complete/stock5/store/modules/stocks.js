@@ -1,0 +1,249 @@
+/**
+ * Stocks Vuex Module
+ * Manages stock information, quotes, and watchlists
+ */
+
+import { get } from '../../utils/request';
+import { parseStockCode } from '../../utils/formatters';
+
+// Initial state
+const state = {
+  currentStock: null,
+  stockQuotes: {},
+  watchlist: [],
+  searchHistory: [],
+  loading: {
+    quote: false,
+    watchlist: false
+  },
+  error: null
+};
+
+// Getters
+const getters = {
+  watchlistStocks: state => state.watchlist,
+  stockQuotes: state => state.stockQuotes,
+  currentStock: state => state.currentStock,
+  isInWatchlist: state => stockCode => {
+    return state.watchlist.some(item => item.code === stockCode);
+  }
+};
+
+// Mutations
+const mutations = {
+  SET_CURRENT_STOCK(state, stock) {
+    state.currentStock = stock;
+  },
+  SET_STOCK_QUOTE(state, { code, quote }) {
+    state.stockQuotes = {
+      ...state.stockQuotes,
+      [code]: quote
+    };
+  },
+  SET_WATCHLIST(state, watchlist) {
+    state.watchlist = watchlist;
+  },
+  ADD_TO_WATCHLIST(state, stock) {
+    if (!state.watchlist.some(item => item.code === stock.code)) {
+      state.watchlist.push(stock);
+    }
+  },
+  REMOVE_FROM_WATCHLIST(state, stockCode) {
+    state.watchlist = state.watchlist.filter(item => item.code !== stockCode);
+  },
+  ADD_TO_SEARCH_HISTORY(state, stock) {
+    // Remove if already exists
+    const existingIndex = state.searchHistory.findIndex(item => item.code === stock.code);
+    if (existingIndex !== -1) {
+      state.searchHistory.splice(existingIndex, 1);
+    }
+    
+    // Add to the beginning of the array
+    state.searchHistory.unshift(stock);
+    
+    // Keep only last 10 items
+    if (state.searchHistory.length > 10) {
+      state.searchHistory.pop();
+    }
+  },
+  SET_LOADING(state, { type, status }) {
+    state.loading = {
+      ...state.loading,
+      [type]: status
+    };
+  },
+  SET_ERROR(state, error) {
+    state.error = error;
+  }
+};
+
+// Actions
+const actions = {
+  /**
+   * Load watchlist from storage or server
+   */
+  async loadWatchlist({ commit }) {
+    try {
+      commit('SET_LOADING', { type: 'watchlist', status: true });
+      
+      // Try to get from server first
+      try {
+        const response = await get('/api/stock/watchlist');
+        if (response && response.data && Array.isArray(response.data)) {
+          commit('SET_WATCHLIST', response.data);
+          return;
+        }
+      } catch (error) {
+        console.log('Failed to get watchlist from server, using local storage');
+      }
+      
+      // Fallback to local storage
+      const storedWatchlist = uni.getStorageSync('stock_watchlist');
+      if (storedWatchlist) {
+        try {
+          const watchlist = JSON.parse(storedWatchlist);
+          if (Array.isArray(watchlist)) {
+            commit('SET_WATCHLIST', watchlist);
+          }
+        } catch (e) {
+          console.error('Failed to parse watchlist from storage:', e);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load watchlist:', error);
+    } finally {
+      commit('SET_LOADING', { type: 'watchlist', status: false });
+    }
+  },
+  
+  /**
+   * Add stock to watchlist
+   */
+  async addToWatchlist({ commit, state }, stock) {
+    commit('ADD_TO_WATCHLIST', stock);
+    
+    // Save to local storage
+    uni.setStorageSync('stock_watchlist', JSON.stringify(state.watchlist));
+    
+    // Try to sync with server
+    try {
+      await get('/api/stock/watchlist/add', { code: stock.code });
+    } catch (error) {
+      console.error('Failed to sync watchlist with server:', error);
+    }
+    
+    // Show toast
+    uni.showToast({
+      title: `Added ${stock.name || stock.code} to watchlist`,
+      icon: 'success'
+    });
+  },
+  
+  /**
+   * Remove stock from watchlist
+   */
+  async removeFromWatchlist({ commit, state }, stockCode) {
+    commit('REMOVE_FROM_WATCHLIST', stockCode);
+    
+    // Save to local storage
+    uni.setStorageSync('stock_watchlist', JSON.stringify(state.watchlist));
+    
+    // Try to sync with server
+    try {
+      await get('/api/stock/watchlist/remove', { code: stockCode });
+    } catch (error) {
+      console.error('Failed to sync watchlist with server:', error);
+    }
+    
+    // Show toast
+    uni.showToast({
+      title: 'Removed from watchlist',
+      icon: 'success'
+    });
+  },
+  
+  /**
+   * Fetch stock quote
+   */
+  async fetchStockQuote({ commit }, stockCode) {
+    // Standardize stock code format
+    const code = parseStockCode(stockCode);
+    if (!code) {
+      uni.showToast({
+        title: 'Invalid stock code',
+        icon: 'none'
+      });
+      return null;
+    }
+    
+    try {
+      commit('SET_LOADING', { type: 'quote', status: true });
+      commit('SET_ERROR', null);
+      
+      const response = await get('/api/stock/quote', { code });
+      
+      if (response && response.code === 200 && response.data) {
+        const data = response.data;
+        
+        // Process quote data
+        const quote = {
+          code: data.code,
+          name: data.name,
+          currentPrice: data.currentPrice,
+          open: data.open,
+          high: data.high,
+          low: data.low,
+          volume: data.volume,
+          turnoverRate: data.turnoverRate,
+          amplitude: ((data.high - data.low) / data.open * 100).toFixed(2),
+          priceChange: (data.currentPrice - data.open).toFixed(2),
+          priceChangePercent: ((data.currentPrice - data.open) / data.open * 100).toFixed(2),
+          lastUpdated: new Date().toISOString()
+        };
+        
+        // Update quote cache
+        commit('SET_STOCK_QUOTE', { code, quote });
+        
+        // Set as current stock
+        commit('SET_CURRENT_STOCK', quote);
+        
+        // Add to search history
+        commit('ADD_TO_SEARCH_HISTORY', {
+          code: quote.code,
+          name: quote.name,
+          lastPrice: quote.currentPrice
+        });
+        
+        return quote;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch stock quote:', error);
+      commit('SET_ERROR', error.message || 'Failed to fetch stock data');
+      uni.showToast({
+        title: 'Failed to fetch stock data',
+        icon: 'none'
+      });
+      return null;
+    } finally {
+      commit('SET_LOADING', { type: 'quote', status: false });
+    }
+  },
+  
+  /**
+   * Set current stock directly (without fetching)
+   */
+  setCurrentStock({ commit }, stock) {
+    commit('SET_CURRENT_STOCK', stock);
+  }
+};
+
+export default {
+  namespaced: true,
+  state,
+  getters,
+  actions,
+  mutations
+}; 
+ 

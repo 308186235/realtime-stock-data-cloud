@@ -1,0 +1,369 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from io import BytesIO
+import base64
+
+class PerformanceAnalyzer:
+    """
+    回测性能分析类，用于计算各种性能指标和绘制图表
+    """
+    
+    @staticmethod
+    def calculate_metrics(equity_curve, trades):
+        """
+        计算回测性能指标
+        
+        参数:
+        - equity_curve: DataFrame，权益曲线数据
+        - trades: 列表，交易记录
+        
+        返回:
+        - 字典，包含各种性能指标
+        """
+        if equity_curve.empty:
+            return {
+                'total_return': 0,
+                'annual_return': 0,
+                'sharpe_ratio': 0,
+                'max_drawdown': 0,
+                'win_rate': 0,
+                'profit_factor': 0,
+                'trade_count': 0,
+                'profit_trades': 0,
+                'loss_trades': 0,
+                'avg_profit': 0,
+                'avg_loss': 0,
+                'max_profit': 0,
+                'max_loss': 0
+            }
+            
+        # 总收益率
+        initial_equity = equity_curve['equity'].iloc[0]
+        final_equity = equity_curve['equity'].iloc[-1]
+        total_return = final_equity / initial_equity - 1
+        
+        # 计算日收益率
+        if 'daily_return' not in equity_curve.columns:
+            equity_curve['daily_return'] = equity_curve['equity'].pct_change()
+            
+        daily_returns = equity_curve['daily_return'].dropna()
+        
+        # 计算年化收益率
+        days = len(equity_curve)
+        annual_return = (1 + total_return) ** (252 / days) - 1 if days > 0 else 0
+        
+        # 计算夏普比率 (假设无风险利率为0)
+        sharpe_ratio = daily_returns.mean() / daily_returns.std() * np.sqrt(252) if daily_returns.std() != 0 else 0
+        
+        # 计算最大回撤
+        max_drawdown = PerformanceAnalyzer._calculate_max_drawdown(equity_curve['equity'])
+        
+        # 交易统计
+        if not trades:
+            return {
+                'total_return': total_return,
+                'annual_return': annual_return,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown,
+                'win_rate': 0,
+                'profit_factor': 0,
+                'trade_count': 0,
+                'profit_trades': 0,
+                'loss_trades': 0,
+                'avg_profit': 0,
+                'avg_loss': 0,
+                'max_profit': 0,
+                'max_loss': 0
+            }
+            
+        # 统计交易盈亏
+        profits = [t.get('profit', 0) for t in trades if t.get('action') == 'SELL']
+        profit_trades = sum(1 for p in profits if p > 0)
+        loss_trades = sum(1 for p in profits if p < 0)
+        win_rate = profit_trades / len(profits) if profits else 0
+        
+        # 计算盈亏比
+        total_profit = sum(p for p in profits if p > 0)
+        total_loss = abs(sum(p for p in profits if p < 0))
+        profit_factor = total_profit / total_loss if total_loss != 0 else float('inf')
+        
+        # 平均盈利和亏损
+        avg_profit = total_profit / profit_trades if profit_trades > 0 else 0
+        avg_loss = total_loss / loss_trades if loss_trades > 0 else 0
+        
+        # 最大单次盈利和亏损
+        max_profit = max(profits) if profits and max(profits) > 0 else 0
+        min_profit = min(profits) if profits else 0
+        max_loss = abs(min_profit) if min_profit < 0 else 0
+        
+        return {
+            'total_return': total_return,
+            'annual_return': annual_return,
+            'sharpe_ratio': sharpe_ratio,
+            'max_drawdown': max_drawdown,
+            'win_rate': win_rate,
+            'profit_factor': profit_factor,
+            'trade_count': len(profits),
+            'profit_trades': profit_trades,
+            'loss_trades': loss_trades,
+            'avg_profit': avg_profit,
+            'avg_loss': avg_loss,
+            'max_profit': max_profit,
+            'max_loss': max_loss
+        }
+        
+    @staticmethod
+    def _calculate_max_drawdown(equity_series):
+        """计算最大回撤"""
+        # 计算累计最大值
+        roll_max = equity_series.cummax()
+        # 计算相对回撤
+        drawdown = (equity_series - roll_max) / roll_max
+        # 返回最大回撤
+        return abs(drawdown.min())
+        
+    @staticmethod
+    def plot_equity_curve(equity_curve):
+        """
+        绘制权益曲线
+        
+        参数:
+        - equity_curve: DataFrame，权益曲线数据
+        
+        返回:
+        - 图表对象
+        """
+        fig = Figure(figsize=(10, 6))
+        ax = fig.add_subplot(111)
+        
+        # 设置日期为索引以便于绘图
+        if 'date' in equity_curve.columns:
+            equity_df = equity_curve.set_index('date')
+        else:
+            equity_df = equity_curve.copy()
+            
+        # 绘制权益曲线
+        ax.plot(equity_df.index, equity_df['equity'], label='权益曲线')
+        
+        # 添加横线表示初始资金
+        if not equity_df.empty:
+            ax.axhline(y=equity_df['equity'].iloc[0], color='r', linestyle='--', label='初始资金')
+        
+        # 设置标题和标签
+        ax.set_title('权益曲线')
+        ax.set_xlabel('日期')
+        ax.set_ylabel('权益')
+        ax.legend()
+        ax.grid(True)
+        
+        return fig
+        
+    @staticmethod
+    def plot_drawdown_curve(equity_curve):
+        """
+        绘制回撤曲线
+        
+        参数:
+        - equity_curve: DataFrame，权益曲线数据
+        
+        返回:
+        - 图表对象
+        """
+        fig = Figure(figsize=(10, 6))
+        ax = fig.add_subplot(111)
+        
+        # 设置日期为索引以便于绘图
+        if 'date' in equity_curve.columns:
+            equity_df = equity_curve.set_index('date')
+        else:
+            equity_df = equity_curve.copy()
+            
+        # 计算累计最大值
+        roll_max = equity_df['equity'].cummax()
+        # 计算相对回撤
+        drawdown = (equity_df['equity'] - roll_max) / roll_max
+        
+        # 绘制回撤曲线
+        ax.fill_between(equity_df.index, 0, drawdown, color='red', alpha=0.3)
+        ax.plot(equity_df.index, drawdown, color='red', label='回撤')
+        
+        # 设置标题和标签
+        ax.set_title('回撤曲线')
+        ax.set_xlabel('日期')
+        ax.set_ylabel('回撤')
+        ax.legend()
+        ax.grid(True)
+        
+        # 设置y轴显示为百分比
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.1%}'.format(y)))
+        
+        return fig
+        
+    @staticmethod
+    def plot_monthly_returns(equity_curve):
+        """
+        绘制月度收益热图
+        
+        参数:
+        - equity_curve: DataFrame，权益曲线数据
+        
+        返回:
+        - 图表对象
+        """
+        # 确保日期列格式正确
+        if 'date' in equity_curve.columns:
+            equity_df = equity_curve.copy()
+            equity_df['date'] = pd.to_datetime(equity_df['date'])
+            equity_df = equity_df.set_index('date')
+        else:
+            equity_df = equity_curve.copy()
+            if not isinstance(equity_df.index, pd.DatetimeIndex):
+                return None
+                
+        # 计算日收益率
+        if 'daily_return' not in equity_df.columns:
+            equity_df['daily_return'] = equity_df['equity'].pct_change()
+            
+        # 计算月度收益率
+        monthly_returns = equity_df['daily_return'].resample('M').apply(lambda x: (1 + x).prod() - 1)
+        monthly_returns_df = monthly_returns.to_frame()
+        
+        # 提取年和月
+        monthly_returns_df['year'] = monthly_returns_df.index.year
+        monthly_returns_df['month'] = monthly_returns_df.index.month
+        
+        # 数据透视表，行为年，列为月
+        pivot_table = monthly_returns_df.pivot_table(
+            values='daily_return',
+            index='year',
+            columns='month',
+            aggfunc='sum'
+        )
+        
+        # 创建月份标签
+        month_labels = ['一月', '二月', '三月', '四月', '五月', '六月', 
+                        '七月', '八月', '九月', '十月', '十一月', '十二月']
+        pivot_table.columns = month_labels[:len(pivot_table.columns)]
+        
+        fig = Figure(figsize=(12, 8))
+        ax = fig.add_subplot(111)
+        
+        # 绘制热力图
+        cax = ax.imshow(pivot_table, cmap='RdYlGn')
+        
+        # 添加色条
+        fig.colorbar(cax)
+        
+        # 设置轴标签
+        ax.set_title('月度收益率热图')
+        ax.set_xlabel('月份')
+        ax.set_ylabel('年份')
+        
+        # 设置轴刻度
+        ax.set_xticks(np.arange(len(pivot_table.columns)))
+        ax.set_yticks(np.arange(len(pivot_table.index)))
+        
+        # 设置轴标签
+        ax.set_xticklabels(pivot_table.columns)
+        ax.set_yticklabels(pivot_table.index)
+        
+        # 循环添加文本标签
+        for i in range(len(pivot_table.index)):
+            for j in range(len(pivot_table.columns)):
+                if not pd.isna(pivot_table.iloc[i, j]):
+                    color = 'white' if abs(pivot_table.iloc[i, j]) > 0.1 else 'black'
+                    ax.text(j, i, '{:.1%}'.format(pivot_table.iloc[i, j]), 
+                            ha='center', va='center', color=color)
+                        
+        return fig
+        
+    @staticmethod
+    def plot_trade_distribution(trades):
+        """
+        绘制交易盈亏分布
+        
+        参数:
+        - trades: 列表，交易记录
+        
+        返回:
+        - 图表对象
+        """
+        # 提取盈亏数据
+        profits = [t.get('profit', 0) for t in trades if t.get('action') == 'SELL']
+        
+        if not profits:
+            return None
+            
+        fig = Figure(figsize=(10, 6))
+        ax = fig.add_subplot(111)
+        
+        # 绘制直方图
+        ax.hist(profits, bins=20, alpha=0.7, color='blue', edgecolor='black')
+        
+        # 设置标题和标签
+        ax.set_title('交易盈亏分布')
+        ax.set_xlabel('盈亏')
+        ax.set_ylabel('频率')
+        ax.grid(True)
+        
+        return fig
+        
+    @staticmethod
+    def generate_report(equity_curve, trades):
+        """
+        生成完整的回测报告
+        
+        参数:
+        - equity_curve: DataFrame，权益曲线数据
+        - trades: 列表，交易记录
+        
+        返回:
+        - 字典，包含指标和图表
+        """
+        # 计算指标
+        metrics = PerformanceAnalyzer.calculate_metrics(equity_curve, trades)
+        
+        # 生成图表并转换为base64字符串
+        charts = {}
+        
+        # 权益曲线
+        equity_fig = PerformanceAnalyzer.plot_equity_curve(equity_curve)
+        if equity_fig:
+            equity_buf = BytesIO()
+            equity_fig.savefig(equity_buf, format='png')
+            equity_buf.seek(0)
+            charts['equity_curve'] = base64.b64encode(equity_buf.getvalue()).decode('utf-8')
+            
+        # 回撤曲线
+        drawdown_fig = PerformanceAnalyzer.plot_drawdown_curve(equity_curve)
+        if drawdown_fig:
+            drawdown_buf = BytesIO()
+            drawdown_fig.savefig(drawdown_buf, format='png')
+            drawdown_buf.seek(0)
+            charts['drawdown_curve'] = base64.b64encode(drawdown_buf.getvalue()).decode('utf-8')
+            
+        # 月度收益热图
+        monthly_fig = PerformanceAnalyzer.plot_monthly_returns(equity_curve)
+        if monthly_fig:
+            monthly_buf = BytesIO()
+            monthly_fig.savefig(monthly_buf, format='png')
+            monthly_buf.seek(0)
+            charts['monthly_returns'] = base64.b64encode(monthly_buf.getvalue()).decode('utf-8')
+            
+        # 交易分布
+        trade_fig = PerformanceAnalyzer.plot_trade_distribution(trades)
+        if trade_fig:
+            trade_buf = BytesIO()
+            trade_fig.savefig(trade_buf, format='png')
+            trade_buf.seek(0)
+            charts['trade_distribution'] = base64.b64encode(trade_buf.getvalue()).decode('utf-8')
+            
+        # 整合结果
+        report = {
+            'metrics': metrics,
+            'charts': charts
+        }
+        
+        return report 

@@ -1,0 +1,15 @@
+# 东吴证券同花顺设置
+# 将这些配置添加到您的 .env 文件中
+
+# 同花顺安装路径
+THS_PATH=C:/同花顺
+
+# 账号信息
+DONGWU_ACCOUNT_ID=your_dongwu_account_id
+DONGWU_ACCOUNT_PWD=your_dongwu_account_password
+
+# 验证码（如果需要）
+DONGWU_VERIFICATION_CODE=
+
+# 默认使用的券商API类型
+DONGWU_DEFAULT_BROKER=THS_DONGWU 

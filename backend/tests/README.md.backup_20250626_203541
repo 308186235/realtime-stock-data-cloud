@@ -1,0 +1,92 @@
+# 交易系统增强功能集成测试
+
+本目录包含用于测试交易系统增强功能的集成测试和性能测试脚本。这些测试确保风险管理、技术指标分析和基准比较等功能能够正确协同工作。
+
+## 测试内容
+
+集成测试包括以下内容：
+
+1. **技术指标测试**：验证各种技术指标的计算和信号生成
+2. **风险管理测试**：验证仓位管理、止损策略和风险控制
+3. **基准比较测试**：验证与市场基准的比较分析
+4. **完整回测流程测试**：验证所有组件的集成工作流程
+
+性能测试包括：
+
+1. **指标性能测试**：评估各技术指标的计算性能
+2. **回测性能分析**：识别回测引擎的性能瓶颈
+3. **内存使用分析**：监控内存使用情况和潜在内存泄漏
+
+## 运行测试
+
+使用项目根目录下的`run_integration_tests.bat`脚本来运行测试：
+
+```bash
+# 运行全部集成测试
+run_integration_tests.bat
+
+# 运行单个组件测试
+run_integration_tests.bat component
+
+# 运行性能测试
+run_integration_tests.bat perf
+
+# 运行特定性能测试
+run_integration_tests.bat perf indicators  # 仅运行指标性能测试
+run_integration_tests.bat perf backtest    # 仅运行回测性能测试
+run_integration_tests.bat perf memory      # 仅运行内存使用分析
+
+# 显示帮助信息
+run_integration_tests.bat help
+```
+
+## 测试结果
+
+测试结果将保存在 `backend/tests/test_results` 目录中：
+
+- **集成测试结果**：详细记录测试失败和错误信息
+- **性能分析**：包含各组件的性能指标和瓶颈分析
+- **回测结果**：包含策略回测的详细结果
+
+## 依赖安装
+
+运行测试前确保已安装所需依赖：
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+## 自定义测试
+
+### 添加新的测试用例
+
+要添加新的测试用例，请将测试函数添加到 `test_integration_enhanced_features.py` 文件中：
+
+```python
+def test_new_feature(self):
+    """测试新功能"""
+    # 实现测试逻辑
+    self.assertTrue(condition)
+```
+
+### 添加新的性能测试
+
+要添加新的性能测试，请将测试函数添加到 `performance_test.py` 文件中：
+
+```python
+def test_new_performance_aspect():
+    """测试新的性能方面"""
+    # 实现性能测试逻辑
+    return results
+```
+
+## 故障排除
+
+如果测试失败，请检查：
+
+1. 所有依赖是否正确安装
+2. 代码修改是否影响了其他组件
+3. 测试数据是否充分
+4. 配置参数是否合理
+
+具体错误信息将保存在测试结果文件中，可帮助定位问题。 

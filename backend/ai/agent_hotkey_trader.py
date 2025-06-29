@@ -1,0 +1,588 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Agent快捷键交易集成模块
+将AI Agent的决策自动转换为交易软件的快捷键操作
+支持买入,卖出,查询等自动化操作
+"""
+
+import asyncio
+import json
+import logging
+import os
+import time
+import threading
+from datetime import datetime
+from typing import Dict, Any, Optional, List
+import win32gui
+import win32con
+import win32api
+import pyautogui
+import keyboard
+import re
+
+import pyautogui
+
+# 禁用pyautogui的安全检查
+pyautogui.FAILSAFE = False
+
+logger = logging.getLogger(__name__)
+
+class AgentHotkeyTrader:
+    """Agent快捷键交易集成器,将AI决策转换为自动交易操作"""
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """
+        初始化Agent快捷键交易器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        self.hotkey_trader = HotkeyTrader()
+        self.active = False
+        self.auto_trading_enabled = False
+        self.pending_orders = []
+        self.execution_history = []
+        
+        # 安全设置
+        self.max_daily_trades = self.config.get("max_daily_trades", 50)
+        self.max_position_size = self.config.get("max_position_size", 0.2)
+        self.min_confidence_threshold = self.config.get("min_confidence_threshold", 0.7)
+        self.daily_trade_count = 0
+        self.last_trade_time = None
+        
+        # 交易软件窗口信息
+        self.trading_window = None
+        self.window_title_patterns = [
+            "东吴证券", "网上股票交易系统", "同花顺", "通达信", 
+            "华泰证券", "中信证券", "招商证券"
+        ]
+        
+        logger.info("Agent快捷键交易器初始化完成")
+    
+    async def start(self) -> bool:
+        """启动Agent快捷键交易系统"""
+        try:
+            # 查找交易软件窗口
+            if not self._find_trading_window():
+                logger.error("未找到交易软件窗口,请确保交易软件已打开")
+                return False
+            
+            # 启动底层快捷键交易器
+            if not self.hotkey_trader.start():
+                logger.error("快捷键交易器启动失败")
+                return False
+            
+            self.active = True
+            logger.info("Agent快捷键交易系统启动成功")
+            return True
+            
+        except Exception as e:
+            logger.error(f"启动Agent快捷键交易系统失败: {str(e)}")
+            return False
+    
+    async def stop(self):
+        """停止Agent快捷键交易系统"""
+        try:
+            self.active = False
+            self.auto_trading_enabled = False
+            
+            if self.hotkey_trader:
+                self.hotkey_trader.stop()
+            
+            logger.info("Agent快捷键交易系统已停止")
+            
+        except Exception as e:
+            logger.error(f"停止Agent快捷键交易系统失败: {str(e)}")
+    
+    def _find_trading_window(self) -> bool:
+        """查找交易软件窗口"""
+        def enum_windows_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                window_title = win32gui.GetWindowText(hwnd)
+                for pattern in self.window_title_patterns:
+                    if pattern in window_title:
+                        windows.append((hwnd, window_title))
+            return True
+        
+        windows = []
+        win32gui.EnumWindows(enum_windows_callback, windows)
+        
+        if windows:
+            self.trading_window = windows[0][0]
+            logger.info(f"找到交易软件窗口: {windows[0][1]}")
+            return True
+        
+        return False
+    
+    async def execute_agent_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行Agent决策
+        
+        Args:
+            decision: Agent决策信息
+            
+        Returns:
+            执行结果
+        """
+        if not self.active:
+            return {"status": "error", "message": "交易系统未启动"}
+        
+        if not self.auto_trading_enabled:
+            return {"status": "pending", "message": "自动交易未启用,决策已加入待处理队列"}
+        
+        try:
+            # 安全检查
+            safety_check = self._safety_check(decision)
+            if not safety_check["passed"]:
+                return {"status": "rejected", "message": safety_check["reason"]}
+            
+            # 解析决策
+            action = decision.get("action", "").lower()
+            symbol = decision.get("symbol", "")
+            confidence = decision.get("confidence", 0.0)
+            
+            # 执行对应操作
+            if action == "buy":
+                result = await self._execute_buy_decision(decision)
+            elif action == "sell":
+                result = await self._execute_sell_decision(decision)
+            elif action == "hold":
+                result = {"status": "success", "message": "持有决策,无需操作"}
+            else:
+                result = {"status": "error", "message": f"未知操作类型: {action}"}
+            
+            # 记录执行历史
+            self._record_execution(decision, result)
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"执行Agent决策失败: {str(e)}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+    
+    def _safety_check(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        安全检查
+        
+        Args:
+            decision: 决策信息
+            
+        Returns:
+            检查结果
+        """
+        # 检查置信度
+        confidence = decision.get("confidence", 0.0)
+        if confidence < self.min_confidence_threshold:
+            return {
+                "passed": False,
+                "reason": f"置信度过低: {confidence:.2f} < {self.min_confidence_threshold}"
+            }
+        
+        # 检查日交易次数
+        if self.daily_trade_count >= self.max_daily_trades:
+            return {
+                "passed": False,
+                "reason": f"已达到日交易次数限制: {self.daily_trade_count}"
+            }
+        
+        # 检查仓位大小
+        position_size = decision.get("position_size", 0.0)
+        if position_size > self.max_position_size:
+            return {
+                "passed": False,
+                "reason": f"仓位过大: {position_size:.2f} > {self.max_position_size}"
+            }
+        
+        # 检查交易间隔
+        if self.last_trade_time:
+            time_diff = (datetime.now() - self.last_trade_time).total_seconds()
+            min_interval = self.config.get("min_trade_interval", 60)  # 默认60秒
+            if time_diff < min_interval:
+                return {
+                    "passed": False,
+                    "reason": f"交易间隔过短: {time_diff:.1f}s < {min_interval}s"
+                }
+        
+        return {"passed": True, "reason": "安全检查通过"}
+    
+    async def _execute_buy_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """执行买入决策"""
+        try:
+            symbol = decision.get("symbol", "")
+            price = decision.get("price", 0.0)
+            quantity = decision.get("quantity", 100)
+            
+            # 验证股票代码
+            if not re.match(r'^\d{6}$', symbol):
+                return {"status": "error", "message": f"无效的股票代码: {symbol}"}
+            
+            # 执行买入操作
+            logger.info(f"执行买入: {symbol}, 价格: {price}, 数量: {quantity}")
+            
+            # 导航到买入页面
+            if not self.hotkey_trader.navigate_to_buy():
+                return {"status": "error", "message": "无法导航到买入页面"}
+            
+            # 等待页面加载
+            await asyncio.sleep(0.5)
+            
+            # 输入股票代码
+            result = await self._input_stock_code(symbol)
+            if not result:
+                return {"status": "error", "message": "输入股票代码失败"}
+            
+            # 输入价格
+            result = await self._input_price(price)
+            if not result:
+                return {"status": "error", "message": "输入价格失败"}
+            
+            # 输入数量
+            result = await self._input_quantity(quantity)
+            if not result:
+                return {"status": "error", "message": "输入数量失败"}
+            
+            # 确认买入
+            if self.config.get("auto_confirm", False):
+                result = await self._confirm_order()
+                if result:
+                    self.daily_trade_count += 1
+                    self.last_trade_time = datetime.now()
+                    return {"status": "success", "message": f"买入订单已提交: {symbol}"}
+                else:
+                    return {"status": "error", "message": "确认订单失败"}
+            else:
+                return {"status": "pending", "message": "买入信息已填入,等待手动确认"}
+            
+        except Exception as e:
+            return {"status": "error", "message": f"执行买入失败: {str(e)}"}
+    
+    async def _execute_sell_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """执行卖出决策"""
+        try:
+            symbol = decision.get("symbol", "")
+            price = decision.get("price", 0.0)
+            quantity = decision.get("quantity", 100)
+            
+            # 验证股票代码
+            if not re.match(r'^\d{6}$', symbol):
+                return {"status": "error", "message": f"无效的股票代码: {symbol}"}
+            
+            # 执行卖出操作
+            logger.info(f"执行卖出: {symbol}, 价格: {price}, 数量: {quantity}")
+            
+            # 导航到卖出页面
+            if not self.hotkey_trader.navigate_to_sell():
+                return {"status": "error", "message": "无法导航到卖出页面"}
+            
+            # 等待页面加载
+            await asyncio.sleep(0.5)
+            
+            # 输入股票代码
+            result = await self._input_stock_code(symbol)
+            if not result:
+                return {"status": "error", "message": "输入股票代码失败"}
+            
+            # 输入价格
+            result = await self._input_price(price)
+            if not result:
+                return {"status": "error", "message": "输入价格失败"}
+            
+            # 输入数量
+            result = await self._input_quantity(quantity)
+            if not result:
+                return {"status": "error", "message": "输入数量失败"}
+            
+            # 确认卖出
+            if self.config.get("auto_confirm", False):
+                result = await self._confirm_order()
+                if result:
+                    self.daily_trade_count += 1
+                    self.last_trade_time = datetime.now()
+                    return {"status": "success", "message": f"卖出订单已提交: {symbol}"}
+                else:
+                    return {"status": "error", "message": "确认订单失败"}
+            else:
+                return {"status": "pending", "message": "卖出信息已填入,等待手动确认"}
+            
+        except Exception as e:
+            return {"status": "error", "message": f"执行卖出失败: {str(e)}"}
+
+    async def _input_stock_code(self, symbol: str) -> bool:
+        """输入股票代码"""
+        try:
+            # 激活交易窗口
+            win32gui.SetForegroundWindow(self.trading_window)
+            await asyncio.sleep(0.2)
+
+            # 清空当前输入框
+            pyautogui.hotkey('ctrl', 'a')
+            await asyncio.sleep(0.1)
+
+            # 输入股票代码
+            pyautogui.typewrite(symbol)
+            await asyncio.sleep(0.2)
+
+            # 按Tab键切换到下一个输入框
+            pyautogui.press('tab')
+            await asyncio.sleep(0.2)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"输入股票代码失败: {str(e)}")
+            return False
+
+    async def _input_price(self, price: float) -> bool:
+        """输入价格"""
+        try:
+            # 清空当前输入框
+            pyautogui.hotkey('ctrl', 'a')
+            await asyncio.sleep(0.1)
+
+            # 输入价格(保留2位小数)
+            price_str = f"{price:.2f}"
+            pyautogui.typewrite(price_str)
+            await asyncio.sleep(0.2)
+
+            # 按Tab键切换到下一个输入框
+            pyautogui.press('tab')
+            await asyncio.sleep(0.2)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"输入价格失败: {str(e)}")
+            return False
+
+    async def _input_quantity(self, quantity: int) -> bool:
+        """输入数量"""
+        try:
+            # 清空当前输入框
+            pyautogui.hotkey('ctrl', 'a')
+            await asyncio.sleep(0.1)
+
+            # 输入数量
+            quantity_str = str(quantity)
+            pyautogui.typewrite(quantity_str)
+            await asyncio.sleep(0.2)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"输入数量失败: {str(e)}")
+            return False
+
+    async def _confirm_order(self) -> bool:
+        """确认订单"""
+        try:
+            # 按回车键确认
+            pyautogui.press('enter')
+            await asyncio.sleep(0.5)
+
+            # 如果有确认对话框,再次按回车
+            pyautogui.press('enter')
+            await asyncio.sleep(0.3)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"确认订单失败: {str(e)}")
+            return False
+
+    def _record_execution(self, decision: Dict[str, Any], result: Dict[str, Any]):
+        """记录执行历史"""
+        record = {
+            "timestamp": datetime.now().isoformat(),
+            "decision": decision,
+            "result": result,
+            "execution_id": f"exec_{int(time.time())}"
+        }
+
+        self.execution_history.append(record)
+
+        # 保持历史记录在合理范围内
+        if len(self.execution_history) > 1000:
+            self.execution_history = self.execution_history[-500:]
+
+    async def get_position_info(self) -> Dict[str, Any]:
+        """获取持仓信息"""
+        try:
+            # 导航到持仓页面
+            if not self.hotkey_trader.navigate_to_position():
+                return {"status": "error", "message": "无法导航到持仓页面"}
+
+            await asyncio.sleep(1.0)  # 等待页面加载
+
+            # 调用真实的持仓导出功能
+            try:
+                # 导入持仓导出模块
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+                from trader_export_real import export_holdings
+
+                # 获取真实的持仓数据
+                export_success = export_holdings()
+
+                if export_success:
+                    # 导出成功，现在读取导出的文件
+                    import glob
+                    import pandas as pd
+
+                    try:
+                        # 查找最新的持仓文件
+                        holdings_files = glob.glob("持仓数据_*.csv")
+                        if not holdings_files:
+                            return {"status": "error", "message": "未找到持仓数据文件"}
+
+                        latest_file = max(holdings_files, key=lambda f: os.path.getctime(f))
+                        logger.info(f"读取持仓文件: {latest_file}")
+
+                        # 读取并解析CSV文件
+                        df = pd.read_csv(latest_file, encoding='gbk')
+
+                        # 转换数据格式
+                        formatted_positions = []
+                        for index, row in df.iterrows():
+                            try:
+                                position = {
+                                    "symbol": str(row.get('证券代码', '')).strip(),
+                                    "name": str(row.get('证券名称', '')).strip(),
+                                    "volume": int(float(row.get('股票余额', 0))),
+                                    "available_volume": int(float(row.get('可用余额', 0))),
+                                    "cost_price": float(row.get('成本价', 0)),
+                                    "current_price": float(row.get('最新价', 0)),
+                                    "market_value": float(row.get('最新市值', 0)),
+                                    "profit_loss": float(row.get('浮动盈亏', 0)),
+                                    "profit_loss_ratio": float(row.get('盈亏比例(%)', 0)) / 100 if row.get('盈亏比例(%)', 0) else 0,
+                                    "position_date": str(row.get('买入日期', '')).strip()
+                                }
+
+                                # 只添加有效的持仓
+                                if position["symbol"] and position["volume"] > 0:
+                                    formatted_positions.append(position)
+
+                            except Exception as e:
+                                logger.warning(f"解析持仓行数据失败: {str(e)}")
+                                continue
+
+                        return {
+                            "status": "success",
+                            "message": "持仓信息获取成功",
+                            "data": {
+                                "total_value": sum(pos["market_value"] for pos in formatted_positions),
+                                "positions": formatted_positions
+                            }
+                        }
+
+                    except Exception as e:
+                        logger.error(f"解析持仓文件失败: {str(e)}")
+                        return {"status": "error", "message": f"解析持仓文件失败: {str(e)}"}
+                else:
+                    logger.warning("持仓数据导出失败")
+                    return {"status": "error", "message": "持仓数据导出失败"}
+
+            except ImportError as e:
+                logger.error(f"无法导入持仓导出模块: {str(e)}")
+                return {"status": "error", "message": "持仓导出模块不可用"}
+            except Exception as e:
+                logger.error(f"调用持仓导出功能失败: {str(e)}")
+                return {"status": "error", "message": f"调用持仓导出功能失败: {str(e)}"}
+
+        except Exception as e:
+            return {"status": "error", "message": f"获取持仓信息失败: {str(e)}"}
+
+    async def get_fund_info(self) -> Dict[str, Any]:
+        """获取资金信息"""
+        try:
+            # 导航到资金页面
+            if not self.hotkey_trader.navigate_to_fund():
+                return {"status": "error", "message": "无法导航到资金页面"}
+
+            await asyncio.sleep(1.0)  # 等待页面加载
+
+            # 调用真实的余额读取功能
+            try:
+                # 导入余额读取模块
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+                from fixed_balance_reader import get_balance_fixed
+
+                # 获取真实的账户余额
+                balance_result = get_balance_fixed()
+
+                if balance_result and isinstance(balance_result, dict):
+                    # 处理真实的余额数据
+                    return {
+                        "status": "success",
+                        "message": "资金信息获取成功",
+                        "data": {
+                            "total_assets": balance_result.get("total_assets", 0.0),
+                            "available_cash": balance_result.get("available_cash", 0.0),
+                            "market_value": balance_result.get("market_value", 0.0),
+                            "frozen_amount": balance_result.get("frozen_amount", 0.0)
+                        }
+                    }
+                else:
+                    logger.warning(f"获取真实余额失败或返回数据格式错误")
+                    # 返回错误信息而不是假数据
+                    return {"status": "error", "message": "获取真实余额失败或返回数据格式错误"}
+
+            except ImportError as e:
+                logger.error(f"无法导入余额读取模块: {str(e)}")
+                return {"status": "error", "message": "余额读取模块不可用"}
+            except Exception as e:
+                logger.error(f"调用余额读取功能失败: {str(e)}")
+                return {"status": "error", "message": f"调用余额读取功能失败: {str(e)}"}
+
+        except Exception as e:
+            return {"status": "error", "message": f"获取资金信息失败: {str(e)}"}
+
+    def enable_auto_trading(self, enable: bool = True):
+        """启用/禁用自动交易"""
+        self.auto_trading_enabled = enable
+        status = "启用" if enable else "禁用"
+        logger.info(f"自动交易已{status}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """获取系统状态"""
+        return {
+            "active": self.active,
+            "auto_trading_enabled": self.auto_trading_enabled,
+            "daily_trade_count": self.daily_trade_count,
+            "pending_orders": len(self.pending_orders),
+            "execution_history_count": len(self.execution_history),
+            "last_trade_time": self.last_trade_time.isoformat() if self.last_trade_time else None,
+            "trading_window_found": self.trading_window is not None,
+            "safety_settings": {
+                "max_daily_trades": self.max_daily_trades,
+                "max_position_size": self.max_position_size,
+                "min_confidence_threshold": self.min_confidence_threshold
+            }
+        }
+
+    def get_execution_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取执行历史"""
+        return self.execution_history[-limit:] if self.execution_history else []
+
+    def clear_execution_history(self):
+        """清空执行历史"""
+        self.execution_history.clear()
+        logger.info("执行历史已清空")
+
+    def update_config(self, new_config: Dict[str, Any]):
+        """更新配置"""
+        self.config.update(new_config)
+
+        # 更新安全设置
+        self.max_daily_trades = self.config.get("max_daily_trades", 50)
+        self.max_position_size = self.config.get("max_position_size", 0.2)
+        self.min_confidence_threshold = self.config.get("min_confidence_threshold", 0.7)
+
+        logger.info("配置已更新")

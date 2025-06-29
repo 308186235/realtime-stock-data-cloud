@@ -1,0 +1,15 @@
+{
+  "backend_process": true,
+  "backend_api": true,
+  "frontend_process": true,
+  "frontend_configs": [
+    "炒股养家/env.js",
+    "frontend/stock5/env.js",
+    "frontend/gupiao1/env.js"
+  ],
+  "used_ports": [
+    8000
+  ],
+  "ngrok_tunnel": "https://1caf-39-188-128-188.ngrok-free.app",
+  "cloudflare_tunnel": true
+}

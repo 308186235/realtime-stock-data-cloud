@@ -1,0 +1,552 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">形态识别</text>
+    </view>
+    
+    <view class="search-bar">
+      <input 
+        class="search-input" 
+        v-model="searchQuery" 
+        placeholder="搜索股票代码或名称"
+        @input="searchStocks"
+      />
+      <button class="search-button" @click="searchStocks">搜索</button>
+    </view>
+    
+    <view v-if="currentStock" class="stock-header">
+      <view class="stock-info">
+        <text class="stock-name">{{currentStock.name}}</text>
+        <text class="stock-code">{{currentStock.code}}</text>
+      </view>
+      <view class="stock-price">
+        <text class="price">{{currentStock.price}}</text>
+        <text :class="['change', currentStock.changePercentage >= 0 ? 'positive' : 'negative']">
+          {{currentStock.changePercentage >= 0 ? '+' : ''}}{{currentStock.changePercentage}}%
+        </text>
+      </view>
+    </view>
+    
+    <view class="time-selector">
+      <text 
+        v-for="(timeframe, index) in timeframes" 
+        :key="index" 
+        :class="['time-option', selectedTimeframeIndex === index ? 'active' : '']"
+        @click="selectTimeframe(index)"
+      >
+        {{timeframe.label}}
+      </text>
+    </view>
+    
+    <view v-if="currentStock" class="chart-container">
+      <!-- 这里将渲染K线图表 -->
+      <view class="chart-placeholder">
+        <text>{{currentStock.name}} K线图</text>
+      </view>
+    </view>
+    
+    <view v-if="currentStock" class="patterns-container">
+      <view class="section-title">
+        <text>识别到的形态</text>
+        <text class="last-updated">最后更新: {{lastUpdatedTime}}</text>
+      </view>
+      
+      <view v-if="recognizedPatterns.length > 0" class="patterns-list">
+        <view v-for="(pattern, index) in recognizedPatterns" :key="index" class="pattern-card">
+          <view class="pattern-header">
+            <text class="pattern-name">{{pattern.name}}</text>
+            <text :class="['pattern-signal', pattern.signal === '买入' ? 'signal-buy' : 'signal-sell']">
+              {{pattern.signal}}信号
+            </text>
+          </view>
+          
+          <view class="pattern-details">
+            <view class="pattern-image">
+              <!-- 这里将显示形态示意图 -->
+              <text class="image-placeholder">形态示意图</text>
+            </view>
+            
+            <view class="pattern-info">
+              <view class="info-row">
+                <text class="info-label">形成时间:</text>
+                <text class="info-value">{{pattern.formationDate}}</text>
+              </view>
+              <view class="info-row">
+                <text class="info-label">可信度:</text>
+                <text class="info-value">{{pattern.confidence}}%</text>
+              </view>
+              <view class="info-row">
+                <text class="info-label">预期目标:</text>
+                <text class="info-value">{{pattern.targetPrice}}</text>
+              </view>
+              <view class="info-row">
+                <text class="info-label">潜在收益:</text>
+                <text :class="['info-value', pattern.potentialReturn >= 0 ? 'positive' : 'negative']">
+                  {{pattern.potentialReturn >= 0 ? '+' : ''}}{{pattern.potentialReturn}}%
+                </text>
+              </view>
+            </view>
+          </view>
+          
+          <view class="pattern-description">
+            <text class="description-label">形态描述:</text>
+            <text class="description-text">{{pattern.description}}</text>
+          </view>
+          
+          <view class="pattern-actions">
+            <button class="action-btn details" @click="showPatternDetails(pattern)">详细分析</button>
+            <button class="action-btn trade" @click="createTradeFromPattern(pattern)">创建交易</button>
+          </view>
+        </view>
+      </view>
+      
+      <view v-else class="no-patterns">
+        <text class="no-patterns-text">未检测到明显的技术形态</text>
+        <text class="no-patterns-suggestion">请尝试切换不同的时间周期或选择其他股票</text>
+      </view>
+    </view>
+    
+    <view v-if="!currentStock" class="empty-state">
+      <text class="empty-text">请搜索并选择股票以进行形态识别</text>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      searchQuery: '',
+      currentStock: null,
+      timeframes: [
+        { label: '日线', value: 'day' },
+        { label: '周线', value: 'week' },
+        { label: '月线', value: 'month' },
+        { label: '60分钟', value: '60min' },
+        { label: '30分钟', value: '30min' },
+        { label: '15分钟', value: '15min' }
+      ],
+      selectedTimeframeIndex: 0,
+      lastUpdatedTime: '',
+      recognizedPatterns: []
+    };
+  },
+  created() {
+    this.updateTime();
+  },
+  methods: {
+    searchStocks() {
+      if (this.searchQuery.length < 2) return;
+      
+      // 模拟股票搜索结果
+      setTimeout(() => {
+        this.currentStock = {
+          name: '贵州茅台',
+          code: '600519',
+          price: '1789.50',
+          changePercentage: 2.35
+        };
+        
+        this.loadPatterns();
+      }, 500);
+    },
+    
+    selectTimeframe(index) {
+      this.selectedTimeframeIndex = index;
+      if (this.currentStock) {
+        this.loadPatterns();
+      }
+    },
+    
+    loadPatterns() {
+      // 模拟加载不同时间周期的形态
+      this.updateTime();
+      
+      // 根据选择的时间周期加载不同的示例形态
+      if (this.timeframes[this.selectedTimeframeIndex].value === 'day') {
+        this.recognizedPatterns = [
+          {
+            name: '头肩顶形态',
+            signal: '卖出',
+            formationDate: '2023-05-08',
+            confidence: 85,
+            targetPrice: '1720.00',
+            potentialReturn: -3.88,
+            description: '头肩顶形态是一种反转形态，通常出现在上升趋势的末期，预示着可能的下跌。该形态由三个峰组成，中间的峰（头部）高于两侧的峰（肩部）。'
+          },
+          {
+            name: '双重顶',
+            signal: '卖出',
+            formationDate: '2023-05-05',
+            confidence: 72,
+            targetPrice: '1700.00',
+            potentialReturn: -5.00,
+            description: '双重顶是股票图表中的一种常见反转形态，表现为价格两次达到相近的高点后回落，可能预示着趋势即将反转向下。'
+          }
+        ];
+      } else if (this.timeframes[this.selectedTimeframeIndex].value === 'week') {
+        this.recognizedPatterns = [
+          {
+            name: '上升三角形',
+            signal: '买入',
+            formationDate: '2023-04-28',
+            confidence: 78,
+            targetPrice: '1850.00',
+            potentialReturn: 3.38,
+            description: '上升三角形是一种延续形态，通常在上升趋势中出现，表现为高点持平而低点不断抬高，形成一个三角形，突破上轨后可能继续上涨。'
+          }
+        ];
+      } else if (this.timeframes[this.selectedTimeframeIndex].value === '60min') {
+        this.recognizedPatterns = [
+          {
+            name: '杯柄形态',
+            signal: '买入',
+            formationDate: '2023-05-10 10:00',
+            confidence: 65,
+            targetPrice: '1830.00',
+            potentialReturn: 2.26,
+            description: '杯柄形态是一种底部反转形态，由一个U形杯子和右侧的小幅回调（柄）组成，突破柄部上轨后可能出现上涨。'
+          },
+          {
+            name: '布林带挤压',
+            signal: '买入',
+            formationDate: '2023-05-10 11:00',
+            confidence: 70,
+            targetPrice: '1820.00',
+            potentialReturn: 1.70,
+            description: '布林带挤压是指布林带上下轨道变窄，表明波动率降低，通常会在大幅波动前出现，可能预示即将出现较大的价格变动。'
+          }
+        ];
+      } else {
+        // 对于其他时间周期，显示没有形态
+        this.recognizedPatterns = [];
+      }
+    },
+    
+    updateTime() {
+      const now = new Date();
+      const hours = now.getHours().toString().padStart(2, '0');
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      const seconds = now.getSeconds().toString().padStart(2, '0');
+      this.lastUpdatedTime = `${hours}:${minutes}:${seconds}`;
+    },
+    
+    showPatternDetails(pattern) {
+      uni.navigateTo({
+        url: `/pages/indicators/index?pattern=${encodeURIComponent(JSON.stringify(pattern))}`
+      });
+    },
+    
+    createTradeFromPattern(pattern) {
+      uni.navigateTo({
+        url: `/pages/trade-settings/index?code=${this.currentStock.code}&price=${this.currentStock.price}&action=${pattern.signal === '买入' ? 'buy' : 'sell'}`
+      });
+    }
+  }
+};
+</script>
+
+<style>
+.container {
+  background-color: #141414;
+  color: #eee;
+  min-height: 100vh;
+  padding: 20rpx;
+}
+
+.header {
+  padding: 20rpx 0;
+}
+
+.title {
+  font-size: 36rpx;
+  font-weight: bold;
+}
+
+.search-bar {
+  display: flex;
+  margin: 20rpx 0;
+}
+
+.search-input {
+  flex: 1;
+  background-color: #222;
+  color: #eee;
+  padding: 15rpx 20rpx;
+  border-radius: 8rpx;
+  margin-right: 20rpx;
+  border: 1px solid #333;
+}
+
+.search-button {
+  background-color: #4c8dff;
+  color: white;
+  border: none;
+  border-radius: 8rpx;
+  padding: 0 30rpx;
+}
+
+.stock-header {
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin: 20rpx 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stock-info {
+  display: flex;
+  align-items: baseline;
+}
+
+.stock-name {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-right: 15rpx;
+}
+
+.stock-code {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.stock-price {
+  text-align: right;
+}
+
+.price {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-right: 15rpx;
+}
+
+.change {
+  font-size: 28rpx;
+}
+
+.positive {
+  color: #ff5252;
+}
+
+.negative {
+  color: #4caf50;
+}
+
+.time-selector {
+  display: flex;
+  background-color: #222;
+  border-radius: 10rpx;
+  overflow: hidden;
+  margin: 20rpx 0;
+}
+
+.time-option {
+  flex: 1;
+  text-align: center;
+  padding: 15rpx 0;
+  font-size: 28rpx;
+  transition: all 0.3s;
+}
+
+.time-option.active {
+  background-color: #4c8dff;
+  color: white;
+}
+
+.chart-container {
+  background-color: #222;
+  border-radius: 10rpx;
+  height: 500rpx;
+  margin: 20rpx 0;
+  overflow: hidden;
+}
+
+.chart-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #666;
+}
+
+.patterns-container {
+  margin: 20rpx 0;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.section-title text {
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.last-updated {
+  font-size: 24rpx;
+  color: #999;
+  font-weight: normal;
+}
+
+.patterns-list {
+  margin-bottom: 20rpx;
+}
+
+.pattern-card {
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.pattern-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+  padding-bottom: 15rpx;
+  border-bottom: 1px solid #333;
+}
+
+.pattern-name {
+  font-size: 30rpx;
+  font-weight: bold;
+}
+
+.pattern-signal {
+  font-size: 26rpx;
+  padding: 6rpx 12rpx;
+  border-radius: 6rpx;
+}
+
+.signal-buy {
+  background-color: rgba(255, 82, 82, 0.2);
+  color: #ff5252;
+}
+
+.signal-sell {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.pattern-details {
+  display: flex;
+  margin-bottom: 20rpx;
+}
+
+.pattern-image {
+  width: 200rpx;
+  height: 150rpx;
+  background-color: #333;
+  border-radius: 8rpx;
+  margin-right: 20rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.image-placeholder {
+  color: #666;
+  font-size: 24rpx;
+}
+
+.pattern-info {
+  flex: 1;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 10rpx;
+}
+
+.info-label {
+  width: 150rpx;
+  font-size: 26rpx;
+  color: #999;
+}
+
+.info-value {
+  font-size: 26rpx;
+}
+
+.pattern-description {
+  background-color: #333;
+  border-radius: 8rpx;
+  padding: 15rpx;
+  margin-bottom: 20rpx;
+}
+
+.description-label {
+  font-size: 26rpx;
+  color: #999;
+  display: block;
+  margin-bottom: 10rpx;
+}
+
+.description-text {
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.pattern-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.action-btn {
+  margin-left: 20rpx;
+  border-radius: 8rpx;
+  padding: 10rpx 30rpx;
+  font-size: 26rpx;
+}
+
+.details {
+  background-color: #333;
+  color: white;
+}
+
+.trade {
+  background-color: #4c8dff;
+  color: white;
+}
+
+.no-patterns {
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 40rpx 20rpx;
+  text-align: center;
+}
+
+.no-patterns-text {
+  font-size: 30rpx;
+  color: #999;
+  display: block;
+  margin-bottom: 15rpx;
+}
+
+.no-patterns-suggestion {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.empty-state {
+  height: 400rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #222;
+  border-radius: 10rpx;
+  margin: 40rpx 0;
+}
+
+.empty-text {
+  color: #666;
+  font-size: 30rpx;
+}
+</style> 

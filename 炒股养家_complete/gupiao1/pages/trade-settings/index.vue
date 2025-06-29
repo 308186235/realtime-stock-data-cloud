@@ -1,0 +1,703 @@
+<template>
+  <view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
+    <view class="header">
+      <text class="title">交易设置</text>
+    </view>
+    
+    <view v-if="stockInfo" class="stock-info-panel">
+      <view class="stock-header">
+        <view class="stock-basic">
+          <text class="stock-name">{{stockInfo.name}}</text>
+          <text class="stock-code">{{stockInfo.code}}</text>
+        </view>
+        <view class="stock-price-info">
+          <text class="stock-price">{{stockInfo.price}}</text>
+          <text :class="['price-change', stockInfo.change >= 0 ? 'price-up' : 'price-down']">
+            {{stockInfo.change >= 0 ? '+' : ''}}{{stockInfo.change}}%
+          </text>
+        </view>
+      </view>
+    </view>
+    
+    <view class="form-section">
+      <view class="trade-type-selector">
+        <text 
+          :class="['type-option', tradeAction === 'buy' ? 'active' : '']" 
+          @click="setTradeAction('buy')"
+        >买入</text>
+        <text 
+          :class="['type-option', tradeAction === 'sell' ? 'active' : '']" 
+          @click="setTradeAction('sell')"
+        >卖出</text>
+      </view>
+      
+      <view class="form-item">
+        <text class="form-label">交易股票</text>
+        <view class="stock-selector">
+          <view v-if="stockInfo" class="selected-stock">
+            <text>{{stockInfo.name}} ({{stockInfo.code}})</text>
+          </view>
+          <view v-else class="select-button" @click="selectStock">
+            <text>选择股票</text>
+          </view>
+        </view>
+      </view>
+      
+      <view class="form-item">
+        <text class="form-label">交易价格</text>
+        <view class="price-selector">
+          <view class="price-tabs">
+            <text 
+              :class="['price-tab', priceType === 'market' ? 'active' : '']" 
+              @click="setPriceType('market')"
+            >市价</text>
+            <text 
+              :class="['price-tab', priceType === 'limit' ? 'active' : '']" 
+              @click="setPriceType('limit')"
+            >限价</text>
+          </view>
+          
+          <view v-if="priceType === 'limit'" class="price-input-container">
+            <input
+              class="price-input"
+              type="digit"
+              v-model="limitPrice"
+              placeholder="请输入限价"
+            />
+          </view>
+          <view v-else class="market-price">
+            <text>以市场最优价格{{tradeAction === 'buy' ? '买入' : '卖出'}}</text>
+          </view>
+        </view>
+      </view>
+      
+      <view class="form-item">
+        <text class="form-label">交易数量</text>
+        <view class="quantity-selector">
+          <view class="quantity-input-container">
+            <input
+              class="quantity-input"
+              type="number"
+              v-model="quantity"
+              placeholder="请输入数量"
+            />
+            <text class="unit">股</text>
+          </view>
+          <view class="quick-quantity">
+            <text
+              v-for="(percent, index) in quantityPercents"
+              :key="index"
+              class="quantity-percent"
+              @click="setQuantityByPercent(percent)"
+            >{{percent}}%</text>
+          </view>
+        </view>
+      </view>
+      
+      <view v-if="tradeAction === 'buy'" class="form-item">
+        <text class="form-label">预估金额</text>
+        <view class="estimate-container">
+          <text class="estimate-value">¥{{estimatedAmount}}</text>
+          <text class="estimate-hint">(可用资金: ¥{{availableFunds}})</text>
+        </view>
+      </view>
+      
+      <view v-else class="form-item">
+        <text class="form-label">预估收入</text>
+        <view class="estimate-container">
+          <text class="estimate-value">¥{{estimatedAmount}}</text>
+          <text class="estimate-hint">(可卖股数: {{availableShares}}股)</text>
+        </view>
+      </view>
+      
+      <view class="form-item trade-settings">
+        <text class="section-subtitle">高级设置</text>
+        
+        <view class="setting-item">
+          <text class="setting-label">委托有效期</text>
+          <picker
+            class="setting-picker"
+            mode="selector"
+            :range="validityOptions"
+            @change="onValidityChange"
+          >
+            <view class="picker-value">{{validity}}</view>
+          </picker>
+        </view>
+        
+        <view v-if="tradeAction === 'buy'" class="setting-item">
+          <text class="setting-label">止盈价格</text>
+          <input
+            class="setting-input"
+            type="digit"
+            v-model="takeProfitPrice"
+            placeholder="可选"
+          />
+        </view>
+        
+        <view v-if="tradeAction === 'buy'" class="setting-item">
+          <text class="setting-label">止损价格</text>
+          <input
+            class="setting-input"
+            type="digit"
+            v-model="stopLossPrice"
+            placeholder="可选"
+          />
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">交易备注</text>
+          <input
+            class="setting-input"
+            type="text"
+            v-model="tradeNote"
+            placeholder="可选"
+          />
+        </view>
+      </view>
+    </view>
+    
+    <view class="button-group">
+      <button class="action-btn cancel" @click="cancel">取消</button>
+      <button class="action-btn submit" @click="showTradeConfirmation">{{tradeAction === 'buy' ? '买入' : '卖出'}}</button>
+    </view>
+    
+    <!-- 引入交易确认组件 -->
+    <trade-confirmation
+      ref="tradeConfirmation"
+      :tradeAction="tradeAction"
+      :stockInfo="stockInfo"
+      :tradeData="{
+        price: priceType === 'limit' ? parseFloat(limitPrice) : parseFloat(stockInfo?.price || 0),
+        quantity: parseInt(quantity || 0),
+        priceType: priceType,
+        takeProfitPrice: takeProfitPrice,
+        stopLossPrice: stopLossPrice,
+        validity: validity,
+        note: tradeNote
+      }"
+      @confirm="confirmTrade"
+      @cancel="cancelTrade"
+    ></trade-confirmation>
+  </view>
+</template>
+
+<script>
+import TradeConfirmation from '../../components/trade/TradeConfirmation.vue';
+
+export default {
+  components: {
+    TradeConfirmation
+  },
+  data() {
+    return {
+      isDarkMode: false,
+      tradeAction: 'buy', // 'buy' or 'sell'
+      stockInfo: null,
+      priceType: 'market', // 'market' or 'limit'
+      limitPrice: '',
+      quantity: '',
+      quantityPercents: [25, 50, 75, 100],
+      availableFunds: 100000.00,
+      availableShares: 0,
+      // 高级设置
+      validityOptions: ['当日有效', '本周有效', '本月有效', '撤单前有效'],
+      validity: '当日有效',
+      takeProfitPrice: '',
+      stopLossPrice: '',
+      tradeNote: ''
+    };
+  },
+  computed: {
+    estimatedAmount() {
+      if (!this.stockInfo || !this.quantity) {
+        return '0.00';
+      }
+      
+      const price = this.priceType === 'limit' ? 
+        parseFloat(this.limitPrice || this.stockInfo.price) : 
+        parseFloat(this.stockInfo.price);
+        
+      const qty = parseInt(this.quantity, 10) || 0;
+      
+      return (price * qty).toFixed(2);
+    }
+  },
+  onLoad(options) {
+    // 获取当前主题设置
+    const app = getApp();
+    this.isDarkMode = app.globalData.isDarkMode;
+    
+    // 解析传递的参数
+    if (options.action) {
+      this.tradeAction = options.action;
+    }
+    
+    if (options.stockData) {
+      try {
+        this.stockInfo = JSON.parse(decodeURIComponent(options.stockData));
+        
+        // 设置默认市价
+        if (this.stockInfo.price) {
+          this.limitPrice = this.stockInfo.price.toString();
+        }
+        
+        // 如果是卖出,预先加载持仓数据
+        if (this.tradeAction === 'sell') {
+          this.loadPositionData();
+        }
+      } catch (e) {
+        console.error('解析股票数据失败', e);
+      }
+    }
+  },
+  onShow() {
+    // 每次显示页面时检查当前主题
+    const app = getApp();
+    this.isDarkMode = app.globalData.isDarkMode;
+  },
+  methods: {
+    // 加载持仓数据
+    loadPositionData() {
+      // 实际应用中从API获取
+      // 这里只是模拟数据
+      this.availableShares = 500;
+    },
+    
+    // 更改价格类型
+    changePriceType(type) {
+      this.priceType = type;
+    },
+    
+    // 设置数量百分比
+    setQuantityPercent(percent) {
+      if (this.tradeAction === 'buy') {
+        // 买入时计算资金百分比
+        const price = this.priceType === 'limit' ? 
+          parseFloat(this.limitPrice || this.stockInfo.price) : 
+          parseFloat(this.stockInfo.price);
+        
+        const maxShares = Math.floor(this.availableFunds / price);
+        this.quantity = Math.floor(maxShares * (percent / 100)).toString();
+      } else {
+        // 卖出时计算持仓百分比
+        this.quantity = Math.floor(this.availableShares * (percent / 100)).toString();
+      }
+    },
+    
+    // 显示有效期选择
+    showValidityOptions() {
+      uni.showActionSheet({
+        itemList: this.validityOptions,
+        success: (res) => {
+          this.validity = this.validityOptions[res.tapIndex];
+        }
+      });
+    },
+    
+    // 取消交易
+    cancel() {
+      uni.navigateBack();
+    },
+    
+    // 显示交易确认弹窗
+    showTradeConfirmation() {
+      // 验证表单
+      if (!this.validateForm()) {
+        return;
+      }
+      
+      // 打开交易确认弹窗
+      this.$refs.tradeConfirmation.open();
+    },
+    
+    // 取消交易确认
+    cancelTrade() {
+      // 用户在交易确认弹窗中点击了取消
+      console.log('用户取消了交易确认');
+    },
+    
+    // 确认交易
+    confirmTrade(tradeInfo) {
+      console.log('交易已确认', tradeInfo);
+      
+      // 执行交易
+      uni.showLoading({
+        title: '提交中...'
+      });
+      
+      // 模拟API延迟
+      setTimeout(() => {
+        uni.hideLoading();
+        
+        uni.showToast({
+          title: (this.tradeAction === 'buy' ? '买入' : '卖出') + '成功',
+          icon: 'success',
+          duration: 2000
+        });
+        
+        // 返回到上一页
+        setTimeout(() => {
+          uni.navigateBack();
+        }, 2000);
+      }, 1500);
+    },
+    
+    // 验证表单
+    validateForm() {
+      if (!this.stockInfo) {
+        uni.showToast({
+          title: '股票信息不完整',
+          icon: 'none'
+        });
+        return false;
+      }
+      
+      if (this.priceType === 'limit' && (!this.limitPrice || parseFloat(this.limitPrice) <= 0)) {
+        uni.showToast({
+          title: '请输入有效的限价',
+          icon: 'none'
+        });
+        return false;
+      }
+      
+      if (!this.quantity || parseInt(this.quantity, 10) <= 0) {
+        uni.showToast({
+          title: '请输入有效的数量',
+          icon: 'none'
+        });
+        return false;
+      }
+      
+      if (this.tradeAction === 'buy') {
+        // 检查资金是否足够
+        const price = this.priceType === 'limit' ? 
+          parseFloat(this.limitPrice) : 
+          parseFloat(this.stockInfo.price);
+        
+        const totalCost = price * parseInt(this.quantity, 10);
+        
+        if (totalCost > this.availableFunds) {
+          uni.showToast({
+            title: '可用资金不足',
+            icon: 'none'
+          });
+          return false;
+        }
+      } else {
+        // 检查持仓是否足够
+        if (parseInt(this.quantity, 10) > this.availableShares) {
+          uni.showToast({
+            title: '可用持仓不足',
+            icon: 'none'
+          });
+          return false;
+        }
+      }
+      
+      // 验证止盈止损价格
+      if (this.takeProfitPrice && parseFloat(this.takeProfitPrice) <= 0) {
+        uni.showToast({
+          title: '请输入有效的止盈价格',
+          icon: 'none'
+        });
+        return false;
+      }
+      
+      if (this.stopLossPrice && parseFloat(this.stopLossPrice) <= 0) {
+        uni.showToast({
+          title: '请输入有效的止损价格',
+          icon: 'none'
+        });
+        return false;
+      }
+      
+      return true;
+    }
+  }
+};
+</script>
+
+<style>
+.container {
+  background-color: #f5f5f5;
+  color: #333;
+  min-height: 100vh;
+  padding: 20rpx;
+}
+
+.header {
+  padding: 20rpx 0;
+}
+
+.title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.stock-info-panel {
+  background-color: #ffffff;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin: 20rpx 0;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.stock-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stock-name {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-right: 10rpx;
+  color: #333;
+}
+
+.stock-code {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.stock-price {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-right: 10rpx;
+  color: #333;
+}
+
+.price-change {
+  font-size: 28rpx;
+}
+
+.price-up {
+  color: #ff5252;
+}
+
+.price-down {
+  color: #4caf50;
+}
+
+.form-section {
+  background-color: #ffffff;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin: 20rpx 0;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.trade-type-selector {
+  display: flex;
+  background-color: #f0f0f0;
+  border-radius: 10rpx;
+  overflow: hidden;
+  margin-bottom: 30rpx;
+}
+
+.type-option {
+  flex: 1;
+  text-align: center;
+  padding: 20rpx 0;
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #666;
+}
+
+.type-option.active {
+  color: white;
+}
+
+.type-option:first-child.active {
+  background-color: #ff5252;
+}
+
+.type-option:last-child.active {
+  background-color: #4caf50;
+}
+
+.form-item {
+  margin-bottom: 30rpx;
+}
+
+.form-label {
+  font-size: 28rpx;
+  color: #666;
+  margin-bottom: 15rpx;
+  display: block;
+}
+
+.stock-selector {
+  background-color: #f5f5f5;
+  border-radius: 8rpx;
+  padding: 20rpx;
+}
+
+.selected-stock {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.select-button {
+  font-size: 28rpx;
+  color: #4c8dff;
+}
+
+.price-selector {
+  margin-bottom: 10rpx;
+}
+
+.price-tabs {
+  display: flex;
+  margin-bottom: 15rpx;
+}
+
+.price-tab {
+  margin-right: 30rpx;
+  font-size: 28rpx;
+  padding-bottom: 10rpx;
+  border-bottom: 2rpx solid transparent;
+  color: #666;
+}
+
+.price-tab.active {
+  color: #4c8dff;
+  border-bottom-color: #4c8dff;
+}
+
+.price-input-container, .quantity-input-container {
+  background-color: #f5f5f5;
+  border-radius: 8rpx;
+  padding: 20rpx;
+  display: flex;
+  align-items: center;
+}
+
+.price-input, .quantity-input, .setting-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.market-price {
+  background-color: #f5f5f5;
+  border-radius: 8rpx;
+  padding: 20rpx;
+  font-size: 28rpx;
+  color: #666;
+}
+
+.unit {
+  font-size: 28rpx;
+  color: #999;
+  margin-left: 10rpx;
+}
+
+.quick-quantity {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15rpx;
+}
+
+.quantity-percent {
+  background-color: #f0f0f0;
+  color: #4c8dff;
+  font-size: 26rpx;
+  padding: 10rpx 20rpx;
+  border-radius: 6rpx;
+  text-align: center;
+}
+
+.estimate-container {
+  background-color: #f5f5f5;
+  border-radius: 8rpx;
+  padding: 20rpx;
+  display: flex;
+  align-items: center;
+}
+
+.estimate-value {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-right: 15rpx;
+  color: #333;
+}
+
+.estimate-hint {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.trade-settings {
+  border-top: 1px solid #eeeeee;
+  padding-top: 30rpx;
+}
+
+.section-subtitle {
+  font-size: 30rpx;
+  font-weight: bold;
+  margin-bottom: 20rpx;
+  display: block;
+  color: #333;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.setting-label {
+  width: 180rpx;
+  font-size: 28rpx;
+  color: #666;
+}
+
+.setting-picker, .setting-input {
+  flex: 1;
+  background-color: #f5f5f5;
+  border-radius: 8rpx;
+  padding: 15rpx;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.picker-value {
+  color: #333;
+}
+
+.button-group {
+  display: flex;
+  margin-top: 30rpx;
+  margin-bottom: 50rpx;
+}
+
+.action-btn {
+  flex: 1;
+  height: 90rpx;
+  line-height: 90rpx;
+  text-align: center;
+  border-radius: 10rpx;
+  font-size: 32rpx;
+  margin: 0 15rpx;
+}
+
+.cancel {
+  background-color: #f0f0f0;
+  color: #666;
+}
+
+.submit {
+  color: white;
+}
+
+.tradeAction-buy .submit {
+  background-color: #ff5252;
+}
+
+.tradeAction-sell .submit {
+  background-color: #4caf50;
+}
+</style> 

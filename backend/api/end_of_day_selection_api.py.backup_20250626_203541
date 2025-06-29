@@ -1,0 +1,309 @@
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from typing import List, Dict, Any, Optional
+import logging
+
+from services.end_of_day_selection_service import EndOfDaySelectionService
+
+router = APIRouter(
+    prefix="/api/eod-selection",
+    tags=["尾盘选股"]
+)
+
+logger = logging.getLogger(__name__)
+
+# 依赖项：获取尾盘选股服务实例
+def get_eod_selection_service():
+    return EndOfDaySelectionService()
+
+@router.get("/status")
+async def get_selection_status(
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    获取尾盘选股服务状态
+    
+    Returns:
+        dict: 服务状态信息
+    """
+    is_eod_time = service.is_eod_time()
+    is_trading_day = service.is_trading_day()
+    
+    return {
+        "status": "active",
+        "is_trading_day": is_trading_day,
+        "is_eod_time": is_eod_time,
+        "eod_start_time": service.config['eod_start_time'],
+        "eod_end_time": service.config['eod_end_time'],
+        "scheduler_active": service.scheduler_task is not None,
+        "scheduled_run_times": service.config['scheduled_run_times'],
+        "strategy_schedules": service.config['strategy_schedules'],
+        "active_strategies": service.config['active_strategies'],
+        "next_update": "14:30" if is_trading_day and not is_eod_time else "下一个交易日14:30"
+    }
+
+@router.get("/stocks")
+async def get_eod_stocks(
+    force_refresh: bool = Query(False, description="是否强制刷新数据"),
+    strategies: Optional[List[str]] = Query(None, description="要使用的策略列表"),
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    获取尾盘选股结果
+    
+    Args:
+        force_refresh (bool): 是否强制刷新数据
+        strategies (List[str], optional): 要使用的策略列表
+        
+    Returns:
+        dict: 尾盘选股结果
+    """
+    # 如果不是强制刷新，尝试加载最近的结果
+    if not force_refresh:
+        results = service.load_latest_results()
+        if results:
+            # 格式化结果为前端需要的格式
+            formatted_results = service.format_results_for_frontend(results)
+            return {
+                "status": "success",
+                "message": "获取最近选股结果成功",
+                "is_latest": service.is_eod_time(),  # 如果当前是尾盘时间，则数据可能不是最新的
+                "count": len(formatted_results),
+                "stocks": formatted_results
+            }
+    
+    # 需要刷新或没有找到最近的结果
+    if not service.is_eod_time() and not force_refresh:
+        # 如果不是尾盘时间，且不是强制刷新，则返回空结果
+        return {
+            "status": "warning",
+            "message": "当前不是尾盘时间，无法获取实时选股结果",
+            "is_latest": False,
+            "count": 0,
+            "stocks": []
+        }
+    
+    # 执行选股并返回结果
+    try:
+        # 设置force_run标志，即使不是尾盘时间也执行
+        service.config['force_run'] = True
+        results = await service.select_stocks(strategies)
+        service.config['force_run'] = False
+        
+        # 格式化结果
+        formatted_results = service.format_results_for_frontend(results)
+        
+        return {
+            "status": "success",
+            "message": "获取尾盘选股结果成功",
+            "is_latest": True,
+            "strategies_used": strategies if strategies else service.get_current_time_strategies(),
+            "count": len(formatted_results),
+            "stocks": formatted_results
+        }
+    except Exception as e:
+        logger.error(f"获取尾盘选股结果时出错: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取尾盘选股结果时出错: {str(e)}"
+        )
+
+@router.post("/refresh")
+async def refresh_eod_selection(
+    background_tasks: BackgroundTasks,
+    strategies: Optional[List[str]] = None,
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    在后台刷新尾盘选股数据
+    
+    Args:
+        strategies (List[str], optional): 要使用的策略列表
+    
+    Returns:
+        dict: 操作状态
+    """
+    # 将选股任务添加到后台任务
+    background_tasks.add_task(_refresh_selection_task, service, strategies)
+    
+    return {
+        "status": "accepted",
+        "message": "尾盘选股刷新任务已提交到后台",
+        "strategies": strategies if strategies else "使用当前时间策略"
+    }
+
+async def _refresh_selection_task(service: EndOfDaySelectionService, strategies: Optional[List[str]] = None):
+    """
+    后台执行选股任务
+    
+    Args:
+        service (EndOfDaySelectionService): 选股服务实例
+        strategies (List[str], optional): 要使用的策略列表
+    """
+    try:
+        # 强制执行选股
+        service.config['force_run'] = True
+        await service.select_stocks(strategies)
+        service.config['force_run'] = False
+        logger.info(f"后台尾盘选股任务完成，使用策略: {strategies if strategies else '当前时间默认策略'}")
+    except Exception as e:
+        logger.error(f"后台执行尾盘选股时出错: {str(e)}")
+
+@router.get("/parameters")
+async def get_strategy_parameters(
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    获取尾盘选股策略参数
+    
+    Returns:
+        dict: 策略参数
+    """
+    return {
+        "status": "success",
+        "parameters": service.strategy.parameters,
+        "default_parameters": service.strategy.get_default_parameters(),
+        "parameter_ranges": service.strategy.get_parameter_ranges(),
+        "scheduled_run_times": service.config['scheduled_run_times'],
+        "active_strategies": service.config['active_strategies'],
+        "strategy_schedules": service.config['strategy_schedules']
+    }
+
+@router.post("/parameters")
+async def update_strategy_parameters(
+    parameters: Dict[str, Any],
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    更新尾盘选股策略参数
+    
+    Args:
+        parameters (Dict[str, Any]): 新的策略参数
+        
+    Returns:
+        dict: 更新结果
+    """
+    try:
+        # 更新策略参数
+        service.strategy.parameters.update(parameters)
+        
+        # 更新服务配置中的策略参数
+        service.config['strategy_parameters'] = service.strategy.parameters
+        
+        return {
+            "status": "success",
+            "message": "策略参数更新成功",
+            "updated_parameters": service.strategy.parameters
+        }
+    except Exception as e:
+        logger.error(f"更新策略参数时出错: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"更新策略参数时出错: {str(e)}"
+        )
+
+@router.post("/scheduler/start")
+async def start_scheduler(
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    启动尾盘选股调度器
+    
+    Returns:
+        dict: 操作结果
+    """
+    try:
+        await service.start_scheduler()
+        return {
+            "status": "success",
+            "message": "尾盘选股调度器已启动",
+            "scheduled_run_times": service.config['scheduled_run_times']
+        }
+    except Exception as e:
+        logger.error(f"启动尾盘选股调度器时出错: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"启动尾盘选股调度器时出错: {str(e)}"
+        )
+
+@router.post("/scheduler/stop")
+async def stop_scheduler(
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    停止尾盘选股调度器
+    
+    Returns:
+        dict: 操作结果
+    """
+    try:
+        await service.stop_scheduler()
+        return {
+            "status": "success",
+            "message": "尾盘选股调度器已停止"
+        }
+    except Exception as e:
+        logger.error(f"停止尾盘选股调度器时出错: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"停止尾盘选股调度器时出错: {str(e)}"
+        )
+
+@router.post("/scheduler/config")
+async def update_scheduler_config(
+    scheduled_run_times: Optional[List[str]] = None,
+    strategy_schedules: Optional[Dict[str, List[str]]] = None,
+    service: EndOfDaySelectionService = Depends(get_eod_selection_service)
+):
+    """
+    更新尾盘选股调度器配置
+    
+    Args:
+        scheduled_run_times (List[str], optional): 定时执行时间列表
+        strategy_schedules (Dict[str, List[str]], optional): 不同时间点的策略配置
+        
+    Returns:
+        dict: 更新结果
+    """
+    try:
+        if scheduled_run_times is not None:
+            service.config['scheduled_run_times'] = scheduled_run_times
+            
+        if strategy_schedules is not None:
+            service.config['strategy_schedules'] = strategy_schedules
+            
+        return {
+            "status": "success",
+            "message": "调度器配置更新成功",
+            "scheduled_run_times": service.config['scheduled_run_times'],
+            "strategy_schedules": service.config['strategy_schedules']
+        }
+    except Exception as e:
+        logger.error(f"更新调度器配置时出错: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"更新调度器配置时出错: {str(e)}"
+        )
+    
+@router.get("/strategies")
+async def get_available_strategies():
+    """
+    获取所有可用的策略
+    
+    Returns:
+        dict: 可用策略列表及说明
+    """
+    strategies = {
+        "base": "基础尾盘策略 - 基于量价关系和技术指标",
+        "guocheng": "国诚投顾策略 - 尾盘资金动向和技术指标共振",
+        "zhinanzhen": "指南针策略 - 红锦鲤摆尾，尾盘回踩均线后快速拉升",
+        "tn6": "尾盘选股王(tn6)策略 - 结合资金流、技术指标和新闻事件",
+        "jingchuan": "经传短线策略 - 捕捞季节和主力追踪指标共振",
+        "qiankun": "乾坤六道策略 - 六大道指标共振",
+        "jiufang": "九方智投策略 - 尾盘K线形态与量价关系"
+    }
+    
+    return {
+        "status": "success",
+        "strategies": strategies
+    } 
+ 

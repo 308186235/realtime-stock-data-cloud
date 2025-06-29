@@ -1,0 +1,822 @@
+import os
+import logging
+import numpy as np
+import pandas as pd
+import json
+import asyncio
+import datetime
+import time
+import traceback
+from typing import Dict, List, Any, Union, Optional, Tuple
+import aiohttp
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# 璁剧疆鏃ュ織
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("TradingAgent")
+
+class TradingAgent:
+    """
+    鏅鸿兘交易Agent系统锛岃礋璐ｆ暣涓氦鏄撶郴缁熺殑决策鍜屾帶鍒躲€?
+    鍏锋湁鑷富瀛範銆侀闄╂帶鍒躲€佸策略铻嶅悎鍜屽競鍦烘劅鐭ヨ兘鍔涖€?
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        鍒濆鍖栦氦鏄揂gent
+        
+        Args:
+            config: Agent閰嶇疆鍙傛暟
+        """"""
+        self.config = config or {}
+        self.name = self.config.get("name", "MasterTradingAgent")
+        self.version = "1.0.0"
+        self.active = False
+        self.last_activity = None
+        
+        # 系统鐘舵€佸拰鎺у埗
+        self.system_state = {
+            "running": False,
+            "initialized": False,
+            "last_error": None,
+            "performance_metrics": {},
+            "resource_usage": {},
+            "connected_modules": []
+        }
+        
+        # 决策鐘舵€?
+        self.decision_state = {
+            "last_decision": None,
+            "decision_confidence": 0.0,
+            "decision_factors": {},
+            "decision_history": [],
+            "performance_tracking": {}
+        }
+        
+        # 甯傚満鐘舵€佹劅鐭?
+        self.market_state = {
+            "current_market_regime": "unknown",
+            "volatility_level": "medium",
+            "trend_strength": 0.0,
+            "sentiment": "neutral",
+            "liquidity": "normal",
+            "anomaly_score": 0.0
+        }
+        
+        # 椋庨櫓绠＄悊
+        self.risk_state = {
+            "portfolio_risk": 0.0,
+            "max_drawdown": 0.0,
+            "var_95": 0.0,
+            "risk_budget_used": 0.0,
+            "position_concentration": 0.0,
+            "risk_limits": {
+                "max_position_size": 0.1,
+                "max_sector_exposure": 0.3,
+                "max_leverage": 1.0
+            }
+        }
+        
+        # 策略鏉冮噸
+        self.strategy_weights = {
+            "momentum": 0.2,
+            "mean_reversion": 0.2,
+            "trend_following": 0.2,
+            "breakout": 0.1,
+            "fundamental": 0.1,
+            "sentiment": 0.1,
+            "volatility": 0.1
+        }
+        
+        # 执行鍣ㄥ拰缁勪欢
+        self.executors = {}
+        self.data_providers = {}
+        self.sub_agents = {}
+        self.models = {}
+        
+        # 宸ヤ綔绾跨▼鍜屾墽琛屽櫒
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.main_loop_task = None
+        self.monitor_task = None
+        
+        # 交易执行鍣?
+        self.trade_executor = None
+        
+        logger.info(f"Trading Agent '{self.name}' initialized (v{self.version})")
+    
+    async def start(self):
+        """鍚姩Agent系统"""
+        if self.active:
+            logger.warning("Agent already running")
+            return False
+            
+        try:
+            logger.info("Starting Trading Agent system...")
+            self.active = True
+            self.system_state["running"] = True
+            self.last_activity = datetime.datetime.now()
+            
+            # 鍒濆鍖栧悇涓瓙系统
+            await self._initialize_systems()
+            
+            # 鍚姩涓诲惊鐜拰鐩戞帶
+            self.main_loop_task = asyncio.create_task(self._main_loop())
+            self.monitor_task = asyncio.create_task(self._system_monitor())
+            
+            logger.info("Trading Agent system started successfully")
+            return True
+            
+        except Exception as e:
+            self.active = False
+            self.system_state["running"] = False
+            self.system_state["last_error"] = str(e)
+            logger.error(f"Failed to start Agent: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    async def stop(self):
+        """鍋滄Agent系统"""
+        if not self.active:
+            logger.warning("Agent not running")
+            return True
+            
+        try:
+            logger.info("Stopping Trading Agent system...")
+            self.active = False
+            self.system_state["running"] = False
+            
+            # 鍙栨秷鎵€鏈夎繍琛屼腑鐨勪换鍔?
+            if self.main_loop_task:
+                self.main_loop_task.cancel()
+            if self.monitor_task:
+                self.monitor_task.cancel()
+                
+            # 鍏抽棴执行鍣?
+            self.executor.shutdown(wait=False)
+            
+            # 鍋滄鎵€鏈夊瓙Agent
+            for name, sub_agent in self.sub_agents.items():
+                try:
+                    await sub_agent.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping sub-agent {name}: {str(e)}")
+            
+            logger.info("Trading Agent system stopped successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error stopping Agent: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    async def get_status(self) -> Dict[str, Any]:
+        """鑾峰彇Agent鐘舵€佷俊鎭?"""""
+        status = {
+            "name": self.name,
+            "version": self.version,
+            "active": self.active,
+            "last_activity": self.last_activity.isoformat() if self.last_activity else None,
+            "uptime": (datetime.datetime.now() - self.last_activity).total_seconds() if self.last_activity else 0,
+            "system_state": self.system_state,
+            "market_state": self.market_state,
+            "risk_state": self.risk_state,
+            "decision_state": {
+                "last_decision": self.decision_state["last_decision"],
+                "decision_confidence": self.decision_state["decision_confidence"],
+                "decision_factors": self.decision_state["decision_factors"]
+            },
+            "strategy_weights": self.strategy_weights,
+            "connected_modules": self.system_state["connected_modules"]
+        }
+        return status
+    
+    async def make_decision(self, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        执行决策过程锛岀敓鎴愪氦鏄撳喅绛?
+        
+        Args:
+            context: 决策涓婁笅鏂囦俊鎭?
+            
+        Returns:
+            决策缁撴灉
+        """"""
+        if not self.active:
+            return {"error": "Agent not active"}
+            
+        try:
+            logger.info("Making trading decision...")
+            self.last_activity = datetime.datetime.now()
+            
+            # 鏁村悎涓婁笅鏂?
+            full_context = self._build_decision_context(context)
+            
+            # 甯傚満鐘舵€佽瘎浼?
+            market_analysis = await self._analyze_market(full_context)
+            
+            # 风险评估
+            risk_assessment = await self._assess_risk(full_context)
+            
+            # 策略铻嶅悎生成淇彿
+            signals = await self._fuse_strategies(full_context)
+            
+            # 缁煎悎决策生成
+            decision = self._generate_final_decision(market_analysis, risk_assessment, signals)
+            
+            # 璁板綍决策
+            self.decision_state["last_decision"] = decision
+            self.decision_state["decision_confidence"] = decision.get("confidence", 0.0)
+            self.decision_state["decision_factors"] = decision.get("factors", {})
+            self.decision_state["decision_history"].append({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "decision": decision
+            })
+            
+            logger.info(f"Decision made: {decision['action']} with confidence {decision['confidence']:.2f}")
+            return decision
+            
+        except Exception as e:
+            error_msg = f"Error making decision: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"error": error_msg, "timestamp": datetime.datetime.now().isoformat()}
+    
+    async def execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行交易鍔ㄤ綔
+        
+        Args:
+            action: 要执行的动作
+            
+        Returns:
+            执行缁撴灉
+        """"""
+        if not self.active:
+            return {"error": "Agent not active"}
+            
+        try:
+            logger.info(f"Executing action: {action.get('action', 'unknown')}")
+            self.last_activity = datetime.datetime.now()
+            
+            # 鏍规嵁鍔ㄤ綔绫诲瀷閫夋嫨执行鍣?
+            action_type = action.get("action", "").lower()
+            
+            if action_type == "buy":
+                result = await self._execute_buy(action)
+            elif action_type == "sell":
+                result = await self._execute_sell(action)
+            elif action_type == "adjust_position":
+                result = await self._adjust_position(action)
+            elif action_type == "hedge":
+                result = await self._apply_hedge(action)
+            elif action_type == "cancel":
+                result = await self._cancel_orders(action)
+            elif action_type == "market_analysis":
+                result = await self._analyze_market(action.get("context", {}))
+            else:
+                result = {"error": f"Unknown action type: {action_type}"}
+            
+            logger.info(f"Action execution result: {result.get('status', 'unknown')}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error executing action: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"error": error_msg, "timestamp": datetime.datetime.now().isoformat()}
+    
+    async def learn(self, feedback: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        从反馈中学习锛屾敼杩涘喅绛栨ā鍨?
+        
+        Args:
+            feedback: 瀛範鍙嶉鏁版嵁
+            
+        Returns:
+            学习结果
+        """"""
+        try:
+            logger.info("Learning from feedback...")
+            self.last_activity = datetime.datetime.now()
+            
+            # 澶勭悊鍙嶉鏁版嵁
+            learning_outcome = await self._process_learning_feedback(feedback)
+            
+            # 鏇存柊模型鍜岀瓥鐣ユ潈閲?
+            if learning_outcome.get("update_weights", False):
+                self._update_strategy_weights(learning_outcome.get("new_weights", {}))
+            
+            logger.info(f"Learning completed: {learning_outcome.get('status', 'unknown')}")
+            return learning_outcome
+            
+        except Exception as e:
+            error_msg = f"Error in learning process: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"error": error_msg, "timestamp": datetime.datetime.now().isoformat()}
+    
+    async def connect_module(self, module_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        连接外部模块鍒癆gent系统
+        
+        Args:
+            module_info: 模块信息
+            
+        Returns:
+            连接结果
+        """"""
+        try:
+            module_type = module_info.get("type", "unknown")
+            module_name = module_info.get("name", f"{module_type}_{len(self.system_state['connected_modules'])}")
+            
+            logger.info(f"Connecting module '{module_name}' of type '{module_type}'...")
+            
+            # 楠岃瘉模块信息
+            if not self._validate_module(module_info):
+                return {"status": "error", "message": "Invalid module information"}
+            
+            # 杩炴帴涓嶅悓绫诲瀷鐨勬ā鍧?
+            if module_type == "data_provider":
+                result = self._connect_data_provider(module_info)
+            elif module_type == "executor":
+                result = self._connect_executor(module_info)
+            elif module_type == "model":
+                result = self._connect_model(module_info)
+            elif module_type == "sub_agent":
+                result = await self._connect_sub_agent(module_info)
+            else:
+                result = {"status": "error", "message": f"Unknown module type: {module_type}"}
+            
+            # 璁板綍杩炴帴鐨勬ā鍧?
+            if result.get("status") == "success":
+                self.system_state["connected_modules"].append({
+                    "id": result.get("module_id"),
+                    "name": module_name,
+                    "type": module_type,
+                    "connection_time": datetime.datetime.now().isoformat()
+                })
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error connecting module: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    # ========== 鍐呴儴鏂规硶 ==========
+    
+    async def _initialize_systems(self):
+        """鍒濆鍖栧悇涓瓙系统"""
+        logger.info("Initializing agent subsystems...")
+        
+        # 鍒濆鍖栧競鍦哄垎鏋愬櫒
+        self.market_analyzer = self._init_market_analyzer()
+        
+        # 鍒濆鍖栭闄╃鐞嗗櫒
+        self.risk_manager = self._init_risk_manager()
+        
+        # 鍒濆鍖栫瓥鐣ラ泦鍚?
+        self.strategies = self._init_strategies()
+        
+        # 鍒濆鍖栧喅绛栧紩鎿?
+        self.decision_engine = self._init_decision_engine()
+        
+        # 鍒濆鍖栦氦鏄撴墽琛屽櫒
+        self.trade_executor = self._init_trade_executor()
+        
+        # 鍒濆鍖栨墽琛屽紩鎿?
+        self.execution_engine = self._init_execution_engine()
+        
+        # 鏍囪系统涓哄凡鍒濆鍖?
+        self.system_state["initialized"] = True
+        logger.info("All subsystems initialized successfully")
+    
+    async def _main_loop(self):
+        """Agent涓诲惊鐜紝璐熻矗瀹氭湡执行决策鍜岀洃鎺?"""""
+        logger.info("Starting main agent loop")
+        
+        while self.active:
+            try:
+                # 鏇存柊甯傚満鐘舵€?
+                await self._update_market_state()
+                
+                # 鏇存柊椋庨櫓鐘舵€?
+                await self._update_risk_state()
+                
+                # 执行决策逻辑
+                if self._should_make_decision():
+                    decision = await self.make_decision()
+                    
+                    # 濡傛灉决策缁撴灉闇€瑕佹墽琛屾搷浣滐紝鍒欐墽琛?
+                    if decision.get("execute", False):
+                        await self.execute_action(decision)
+                
+                # 鏇存柊鎬ц兘鎸囨爣
+                self._update_performance_metrics()
+                
+                # 绛夊緟涓嬩竴涓惊鐜?
+                await asyncio.sleep(self.config.get("loop_interval", 60))
+                
+            except asyncio.CancelledError:
+                logger.info("Main loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in main loop: {str(e)}")
+                traceback.print_exc()
+                await asyncio.sleep(5)  # 出错后短暂暂停?
+    
+    async def _system_monitor(self):
+        """系统鐩戞帶锛屾鏌ヨ祫婧愪娇鐢ㄥ拰健康状态?"""""
+        logger.info("Starting system monitor")
+        
+        while self.active:
+            try:
+                # 鏇存柊资源使用鎯呭喌
+                self._update_resource_usage()
+                
+                # 检查ョ郴缁熷仴搴风姸鎬?
+                health_status = self._check_system_health()
+                
+                # 澶勭悊浠讳綍鍋ュ悍闂
+                if health_status.get("status") != "healthy":
+                    await self._handle_health_issues(health_status)
+                
+                # 绛夊緟涓嬩竴涓鏌ュ懆鏈?
+                await asyncio.sleep(self.config.get("monitor_interval", 30))
+                
+            except asyncio.CancelledError:
+                logger.info("System monitor cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in system monitor: {str(e)}")
+                await asyncio.sleep(5)  # 出错后短暂暂停?
+
+    def _build_decision_context(self, user_context=None) -> Dict[str, Any]:
+        """鏋勫缓瀹屾暣鐨勫喅绛栦笂涓嬫枃"""
+        context = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "market_state": self.market_state,
+            "risk_state": self.risk_state,
+            "system_state": self.system_state,
+            "strategy_weights": self.strategy_weights
+        }
+        
+        # 鍚堝苟鐢ㄦ埛鎻愪緵鐨勪笂涓嬫枃
+        if user_context:
+            context.update(user_context)
+            
+        return context
+    
+    async def _analyze_market(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """分析市场状态?""
+        # 杩欓噷灏嗗疄鐜板競鍦哄垎鏋愰€昏緫
+        return {"status": "placeholder_for_market_analysis"}
+    
+    async def _assess_risk(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """评估当前风险状况"""
+        # 杩欓噷灏嗗疄鐜伴闄╄瘎浼伴€昏緫
+        return {"status": "placeholder_for_risk_assessment"}
+    
+    async def _fuse_strategies(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """融合多种交易策略"""
+        # 杩欓噷灏嗗疄鐜扮瓥鐣ヨ瀺鍚堥€昏緫
+        return {"status": "placeholder_for_strategy_fusion"}
+    
+    def _generate_final_decision(self, market_analysis, risk_assessment, signals) -> Dict[str, Any]:
+        """生成鏈€缁堝喅绛?"""""
+        # 杩欓噷灏嗗疄鐜板喅绛栫敓鎴愰€昏緫
+        return {
+            "action": "hold",
+            "confidence": 0.75,
+            "factors": {},
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    
+    # 执行鍔ㄤ綔鐨勬柟娉曪紙灏嗗湪鍚庣画瀹炵幇锛?
+    async def _execute_buy(self, action):
+        """执行买入操作"""
+        try:
+            # 浣跨敤交易执行鍣ㄦ墽琛屼拱鍏?
+            if hasattr(self, 'trade_executor') and self.trade_executor:
+                decision = {
+                    "action": "buy",
+                    "symbol": action.get("symbol", ""),
+                    "confidence": action.get("confidence", 0.0),
+                    "position_size": action.get("position_size", 0.1),
+                    "reason": action.get("reason", "Agent decision")
+                }
+                result = await self.trade_executor.execute_decision(decision)
+                return result
+            else:
+                return {"status": "error", "message": "Trade executor not initialized"}
+        except Exception as e:
+            logger.error(f"Error executing buy: {str(e)}")
+            return {"status": "error", "message": str(e)}
+        
+    async def _execute_sell(self, action):
+        """执行鍗栧嚭鎿嶄綔"""
+        try:
+            # 浣跨敤交易执行鍣ㄦ墽琛屽崠鍑?
+            if hasattr(self, 'trade_executor') and self.trade_executor:
+                decision = {
+                    "action": "sell",
+                    "symbol": action.get("symbol", ""),
+                    "confidence": action.get("confidence", 0.0),
+                    "position_size": action.get("position_size", 1.0),  # 榛樿鍗栧嚭鍏ㄩ儴
+                    "reason": action.get("reason", "Agent decision")
+                }
+                result = await self.trade_executor.execute_decision(decision)
+                return result
+            else:
+                return {"status": "error", "message": "Trade executor not initialized"}
+        except Exception as e:
+            logger.error(f"Error executing sell: {str(e)}")
+            return {"status": "error", "message": str(e)}
+        
+    async def _adjust_position(self, action):
+        """璋冩暣鎸佷粨"""
+        try:
+            if hasattr(self, 'trade_executor') and self.trade_executor:
+                # 鑾峰彇褰撳墠鎸佷粨
+                positions = await self.trade_executor.get_positions()
+                symbol = action.get("symbol", "")
+                target_size = action.get("target_size", 0.0)
+                
+                # 鎵惧埌褰撳墠鎸佷粨
+                current_position = next((p for p in positions if p["symbol"] == symbol), None)
+                
+                if current_position:
+                    current_value = current_position["market_value"]
+                    portfolio_value = (await self.trade_executor.get_account_status())["portfolio_value"]
+                    current_size = current_value / portfolio_value if portfolio_value > 0 else 0
+                    
+                    # 璁＄畻闇€瑕佽皟鏁寸殑澶у皬
+                    adjustment = target_size - current_size
+                    
+                    if adjustment > 0:
+                        # 闇€瑕佷拱鍏?
+                        decision = {
+                            "action": "buy",
+                            "symbol": symbol,
+                            "confidence": action.get("confidence", 0.7),
+                            "position_size": adjustment,
+                            "reason": f"Adjust position to {target_size:.1%}"
+                        }
+                    else:
+                        # 闇€瑕佸崠鍑?
+                        sell_ratio = abs(adjustment) / current_size if current_size > 0 else 1.0
+                        decision = {
+                            "action": "sell",
+                            "symbol": symbol,
+                            "confidence": action.get("confidence", 0.7),
+                            "position_size": sell_ratio,
+                            "reason": f"Adjust position to {target_size:.1%}"
+                        }
+                    
+                    result = await self.trade_executor.execute_decision(decision)
+                    return result
+                else:
+                    # 娌℃湁鎸佷粨锛屽鏋滅洰鏍囧ぇ灏忓ぇ浜?鍒欎拱鍏?
+                    if target_size > 0:
+                        decision = {
+                            "action": "buy",
+                            "symbol": symbol,
+                            "confidence": action.get("confidence", 0.7),
+                            "position_size": target_size,
+                            "reason": f"Open position at {target_size:.1%}"
+                        }
+                        result = await self.trade_executor.execute_decision(decision)
+                        return result
+                    else:
+                        return {"status": "success", "message": "No position to adjust"}
+            else:
+                return {"status": "error", "message": "Trade executor not initialized"}
+        except Exception as e:
+            logger.error(f"Error adjusting position: {str(e)}")
+            return {"status": "error", "message": str(e)}
+        
+    async def _apply_hedge(self, action):
+        """搴旂敤瀵瑰啿策略"""
+        # 瀵瑰啿策略鐨勫疄鐜?
+        return {"status": "placeholder_for_hedging"}
+        
+    async def _cancel_orders(self, action):
+        """取消订单"""
+        # 取消订单鐨勫疄鐜?
+        return {"status": "placeholder_for_order_cancellation"}
+    
+    # 瀛範鐩稿叧鏂规硶
+    async def _process_learning_feedback(self, feedback):
+        return {"status": "placeholder_for_learning"}
+        
+    def _update_strategy_weights(self, new_weights):
+        # 鏇存柊策略鏉冮噸鐨勯€昏緫
+        for strategy, weight in new_weights.items():
+            if strategy in self.strategy_weights:
+                self.strategy_weights[strategy] = weight
+    
+    # 模块连接鐩稿叧鏂规硶
+    def _validate_module(self, module_info):
+        return True  # 绠€鍖栫増锛屽疄闄呭簲璇ラ獙璇佹ā鍧椾俊鎭?
+        
+    def _connect_data_provider(self, module_info):
+        return {"status": "success", "module_id": f"dp_{len(self.data_providers)}"}
+        
+    def _connect_executor(self, module_info):
+        return {"status": "success", "module_id": f"ex_{len(self.executors)}"}
+        
+    def _connect_model(self, module_info):
+        return {"status": "success", "module_id": f"model_{len(self.models)}"}
+        
+    async def _connect_sub_agent(self, module_info):
+        return {"status": "success", "module_id": f"agent_{len(self.sub_agents)}"}
+    
+    # 鐘舵€佹洿鏂版柟娉?
+    async def _update_market_state(self):
+        # 鏇存柊甯傚満鐘舵€佺殑逻辑
+        pass
+        
+    async def _update_risk_state(self):
+        # 鏇存柊椋庨櫓鐘舵€佺殑逻辑
+        pass
+        
+    def _update_performance_metrics(self):
+        # 鏇存柊鎬ц兘鎸囨爣鐨勯€昏緫
+        pass
+        
+    def _update_resource_usage(self):
+        # 鏇存柊资源使用鎯呭喌鐨勯€昏緫
+        pass
+    
+    # 鍋ュ悍检查ョ浉鍏虫柟娉?
+    def _check_system_health(self):
+        return {"status": "healthy"}
+        
+    async def _handle_health_issues(self, health_status):
+        # 处理健康问题鐨勯€昏緫
+        pass
+    
+    def _should_make_decision(self):
+        # 鍒ゆ柇鏄惁搴旇执行决策鐨勯€昏緫
+        return True
+    
+    # 鍒濆鍖栫粍浠剁殑鏂规硶
+    def _init_market_analyzer(self):
+        return {}
+        
+    def _init_risk_manager(self):
+        return {}
+        
+    def _init_strategies(self):
+        return {}
+        
+    def _init_decision_engine(self):
+        return {}
+        
+    def _init_execution_engine(self):
+        return {}
+
+    def _init_trade_executor(self):
+        """鍒濆鍖栦氦鏄撴墽琛屽櫒"""
+        from trade_executor import TradeExecutor
+        
+        # 鑾峰彇交易执行鍣ㄩ厤缃?
+        executor_config = self.config.get("trade_executor", {})
+        
+        # 鍒涘缓交易执行鍣?
+        trade_executor = TradeExecutor(executor_config)
+        logger.info("Trade executor initialized")
+        
+        return trade_executor
+
+
+# Agent API鎺ュ彛
+class AgentAPI:
+    """
+    鎻愪緵Agent系统鐨凙PI鎺ュ彛锛岀敤浜庝笌鍏朵粬系统闆嗘垚
+    """
+    
+    def __init__(self, agent: TradingAgent):
+        self.agent = agent
+        logger.info("Agent API initialized")
+    
+    async def handle_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """澶勭悊API璇锋眰"""
+        try:
+            action = request_data.get("action", "").lower()
+            
+            if action == "start":
+                return await self._handle_start()
+            elif action == "stop":
+                return await self._handle_stop()
+            elif action == "status":
+                return await self._handle_status()
+            elif action == "decision":
+                return await self._handle_decision(request_data)
+            elif action == "execute":
+                return await self._handle_execute(request_data)
+            elif action == "learn":
+                return await self._handle_learn(request_data)
+            elif action == "connect_module":
+                return await self._handle_connect_module(request_data)
+            else:
+                return {"status": "error", "message": f"Unknown action: {action}"}
+                
+        except Exception as e:
+            error_msg = f"Error handling API request: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    async def _handle_start(self) -> Dict[str, Any]:
+        """澶勭悊鍚姩璇锋眰"""
+        success = await self.agent.start()
+        return {"status": "success" if success else "error"}
+    
+    async def _handle_stop(self) -> Dict[str, Any]:
+        """澶勭悊鍋滄璇锋眰"""
+        success = await self.agent.stop()
+        return {"status": "success" if success else "error"}
+    
+    async def _handle_status(self) -> Dict[str, Any]:
+        """澶勭悊鐘舵€佽姹?""
+        status = await self.agent.get_status()
+        return {"status": "success", "data": status}
+    
+    async def _handle_decision(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """澶勭悊决策璇锋眰"""
+        context = request_data.get("context", {})
+        decision = await self.agent.make_decision(context)
+        if "error" in decision:
+            return {"status": "error", "message": decision["error"]}
+        return {"status": "success", "decision": decision}
+    
+    async def _handle_execute(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """澶勭悊执行璇锋眰"""
+        action = request_data.get("action_data", {})
+        result = await self.agent.execute_action(action)
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    
+    async def _handle_learn(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """澶勭悊瀛範璇锋眰"""
+        feedback = request_data.get("feedback", {})
+        result = await self.agent.learn(feedback)
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", "result": result}
+    
+    async def _handle_connect_module(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """澶勭悊模块连接璇锋眰"""
+        module_info = request_data.get("module_info", {})
+        result = await self.agent.connect_module(module_info)
+        return result
+
+
+# 绀轰緥浣跨敤
+async def main():
+    """绀轰緥浠ｇ爜锛屽睍绀哄浣曚娇鐢ˋgent系统"""
+    # 鍒涘缓Agent瀹炰緥
+    agent_config = {
+        "name": "MasterTradingAgent",
+        "loop_interval": 60,  # 涓诲惊鐜棿闅旓紙绉掞級
+        "monitor_interval": 30  # 鐩戞帶闂撮殧锛堢锛?
+    }
+    agent = TradingAgent(config=agent_config)
+    
+    # 鍒涘缓API鎺ュ彛
+    api = AgentAPI(agent)
+    
+    # 鍚姩Agent
+    await agent.start()
+    
+    # 鑾峰彇鐘舵€?
+    status = await agent.get_status()
+    print(f"Agent status: {json.dumps(status, indent=2)}")
+    
+    # 执行决策
+    decision = await agent.make_decision({
+        "symbol": "AAPL",
+        "timeframe": "1d"
+    })
+    print(f"Decision: {json.dumps(decision, indent=2)}")
+    
+    # 閫氳繃API澶勭悊璇锋眰
+    api_request = {
+        "action": "decision",
+        "context": {
+            "symbol": "MSFT",
+            "timeframe": "1h"
+        }
+    }
+    api_response = await api.handle_request(api_request)
+    print(f"API response: {json.dumps(api_response, indent=2)}")
+    
+    # 鍋滄Agent
+    await agent.stop()
+
+if __name__ == "__main__":
+    # 杩愯绀轰緥
+    asyncio.run(main()) 

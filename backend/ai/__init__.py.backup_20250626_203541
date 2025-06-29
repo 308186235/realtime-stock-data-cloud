@@ -1,0 +1,14 @@
+from .strategy_optimizer import StrategyOptimizer
+from .agent_system import TradingAgent, AgentAPI
+from .market_analyzer import MarketAnalyzer
+from .decision_engine import DecisionEngine
+from .risk_manager import RiskManager
+from .strategy_fusion import StrategyFusion
+from .agent_api import AgentWebAPI
+from .learning_manager import LearningManager
+from .reinforcement_learning import DeepQLearner, A2CLearner, FeatureExtractor
+from .experience_memory import ExperienceMemory
+
+# Add version and author information
+__version__ = '1.0.0'
+__author__ = 'AI Trading System' 

@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+import unittest
+import logging
+import sys
+import os
+import json
+from datetime import datetime
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Add parent directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import test modules
+from tests.test_integration_enhanced_features import TestEnhancedFeaturesIntegration
+
+def run_tests():
+    """Run all integration tests and save the results"""
+    # Create test suite
+    test_suite = unittest.TestSuite()
+    
+    # Add tests
+    test_suite.addTest(unittest.makeSuite(TestEnhancedFeaturesIntegration))
+    
+    # Run tests
+    test_runner = unittest.TextTestRunner(verbosity=2)
+    test_result = test_runner.run(test_suite)
+    
+    # Output results summary
+    logger.info(f"Tests run: {test_result.testsRun}")
+    logger.info(f"Errors: {len(test_result.errors)}")
+    logger.info(f"Failures: {len(test_result.failures)}")
+    
+    # Save detailed results if there were failures or errors
+    if test_result.errors or test_result.failures:
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_results')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file = os.path.join(output_dir, f'integration_test_results_{timestamp}.txt')
+        
+        with open(output_file, 'w') as f:
+            f.write(f"Integration Tests Results - {datetime.now()}\n")
+            f.write(f"Tests run: {test_result.testsRun}\n")
+            f.write(f"Errors: {len(test_result.errors)}\n")
+            f.write(f"Failures: {len(test_result.failures)}\n\n")
+            
+            if test_result.errors:
+                f.write("ERRORS:\n")
+                for test, error in test_result.errors:
+                    f.write(f"{test}: {error}\n\n")
+            
+            if test_result.failures:
+                f.write("FAILURES:\n")
+                for test, failure in test_result.failures:
+                    f.write(f"{test}: {failure}\n\n")
+        
+        logger.info(f"Detailed test results saved to: {output_file}")
+    
+    return test_result.wasSuccessful()
+
+def run_single_component_test():
+    """Run individual component tests for debugging"""
+    # Create an instance of the test class
+    test = TestEnhancedFeaturesIntegration()
+    
+    # Set up test environment
+    test.setUp()
+    
+    # Run individual tests
+    logger.info("Testing technical indicators...")
+    test.test_technical_indicators()
+    
+    logger.info("Testing risk management...")
+    test.test_risk_management()
+    
+    logger.info("Testing benchmark comparison...")
+    test.test_benchmark_comparison()
+    
+    logger.info("Testing full integrated backtest...")
+    results, report, benchmark_comparison = test.test_integrated_backtest()
+    
+    # Save backtest results for analysis
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_results')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_file = os.path.join(output_dir, f'backtest_results_{timestamp}.json')
+    
+    # Prepare data for serialization
+    serializable_results = {
+        'trades': results['trades'],
+        'final_equity': float(results['final_equity']),
+        'total_return': float(results['total_return']),
+        'risk_metrics': {k: float(v) for k, v in results['risk_metrics'].items()} if results['risk_metrics'] else {}
+    }
+    
+    with open(output_file, 'w') as f:
+        json.dump(serializable_results, f, indent=2)
+    
+    logger.info(f"Backtest results saved to: {output_file}")
+
+if __name__ == '__main__':
+    logger.info("Starting integration tests for enhanced trading features")
+    
+    # Check if we should run a specific test
+    if len(sys.argv) > 1 and sys.argv[1] == 'component':
+        run_single_component_test()
+    else:
+        success = run_tests()
+        sys.exit(0 if success else 1) 

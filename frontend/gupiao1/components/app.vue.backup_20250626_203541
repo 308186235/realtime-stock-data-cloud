@@ -1,0 +1,68 @@
+<template>
+  <view class="app-container">
+    <!-- 页面内容 -->
+    <view class="page-content">
+      <router-view></router-view>
+    </view>
+    
+    <!-- 统一底部导航 -->
+    <bottom-nav :active-tab="activeTab" @tab-changed="handleTabChange"></bottom-nav>
+  </view>
+</template>
+
+<script>
+import BottomNav from './bottom-nav.vue';
+
+export default {
+  name: 'App',
+  components: {
+    BottomNav
+  },
+  data() {
+    return {
+      activeTab: 'home'
+    };
+  },
+  watch: {
+    // 监听路由变化，更新当前激活的标签
+    '$route': {
+      handler(to) {
+        // 根据路由路径判断当前标签
+        if (to.path.includes('/agent-analysis')) {
+          this.activeTab = 'aiTrading';
+        } else if (to.path === '/' || to.path === '/pages/index/index') {
+          this.activeTab = 'home';
+        } else if (to.path.includes('/stock-picking') || to.path.includes('/indicators')) {
+          this.activeTab = 'stock';
+        } else if (to.path.includes('/trade') || to.path.includes('/auto-trader')) {
+          this.activeTab = 'trade';
+        } else if (to.path.includes('/portfolio')) {
+          this.activeTab = 'portfolio';
+        }
+      },
+      immediate: true
+    }
+  },
+  methods: {
+    handleTabChange(tab) {
+      this.activeTab = tab;
+    }
+  }
+};
+</script>
+
+<style>
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.page-content {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 110rpx; /* 留出底部导航的高度 */
+}
+</style> 

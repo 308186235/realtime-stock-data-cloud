@@ -1,0 +1,13 @@
+{
+  "cloudflared_installed": true,
+  "local_server": true,
+  "dns_resolution": {
+    "status": "SUCCESS",
+    "ip_address": "104.21.83.126"
+  },
+  "authentication": true,
+  "tunnel_exists": true,
+  "tunnel_running": true,
+  "quick_tunnel": true,
+  "domain_access": false
+}

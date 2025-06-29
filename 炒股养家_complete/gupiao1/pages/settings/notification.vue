@@ -1,0 +1,573 @@
+<template>
+  <view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
+    <view class="header">
+      <text class="title">通知设置</text>
+    </view>
+    
+    <view class="settings-section">
+      <view class="section-title">
+        <text class="title-text">推送通知</text>
+      </view>
+      
+      <view class="setting-group">
+        <view class="setting-item">
+          <text class="setting-label">交易通知</text>
+          <view class="setting-value">
+            <switch :checked="tradeNotifications" @change="toggleTradeNotifications" color="#4c8dff" />
+          </view>
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">AI资金预警</text>
+          <view class="setting-value">
+            <switch :checked="fundWarningNotifications" @change="toggleFundWarningNotifications" color="#4c8dff" />
+          </view>
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">市场行情提醒</text>
+          <view class="setting-value">
+            <switch :checked="marketNotifications" @change="toggleMarketNotifications" color="#4c8dff" />
+          </view>
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">系统更新提醒</text>
+          <view class="setting-value">
+            <switch :checked="systemNotifications" @change="toggleSystemNotifications" color="#4c8dff" />
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <view class="settings-section">
+      <view class="section-title">
+        <text class="title-text">提醒方式</text>
+      </view>
+      
+      <view class="setting-group">
+        <view class="setting-item">
+          <text class="setting-label">通知栏推送</text>
+          <view class="setting-value">
+            <switch :checked="pushNotifications" @change="togglePushNotifications" color="#4c8dff" />
+          </view>
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">应用内提醒</text>
+          <view class="setting-value">
+            <switch :checked="inAppNotifications" @change="toggleInAppNotifications" color="#4c8dff" />
+          </view>
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">声音提醒</text>
+          <view class="setting-value">
+            <switch :checked="soundNotifications" @change="toggleSoundNotifications" color="#4c8dff" />
+          </view>
+        </view>
+        
+        <view class="setting-item">
+          <text class="setting-label">震动提醒</text>
+          <view class="setting-value">
+            <switch :checked="vibrationNotifications" @change="toggleVibrationNotifications" color="#4c8dff" />
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <view class="notification-info">
+      <text class="info-text">请确保在系统设置中允许此应用发送通知,否则可能无法收到提醒。</text>
+      <button class="permission-btn" @click.stop="openSystemSettings">检查通知权限</button>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      isDarkMode: false,
+      // 通知类型设置
+      tradeNotifications: true,
+      fundWarningNotifications: true,
+      marketNotifications: true,
+      systemNotifications: true,
+      // 提醒方式设置
+      pushNotifications: true,
+      inAppNotifications: true,
+      soundNotifications: true,
+      vibrationNotifications: true
+    }
+  },
+  onLoad() {
+    // 获取当前主题设置
+    const app = getApp();
+    this.isDarkMode = app.globalData.isDarkMode;
+    
+    // 加载通知设置
+    this.loadNotificationSettings();
+  },
+  methods: {
+    // 加载通知设置
+    loadNotificationSettings() {
+      try {
+        // 尝试从本地存储加载通知设置
+        const settings = uni.getStorageSync('notification_settings');
+        if (settings) {
+          const parsedSettings = JSON.parse(settings);
+          // 通知类型设置
+          this.tradeNotifications = parsedSettings.tradeNotifications !== undefined ? 
+            parsedSettings.tradeNotifications : true;
+          this.fundWarningNotifications = parsedSettings.fundWarningNotifications !== undefined ? 
+            parsedSettings.fundWarningNotifications : true;
+          this.marketNotifications = parsedSettings.marketNotifications !== undefined ? 
+            parsedSettings.marketNotifications : true;
+          this.systemNotifications = parsedSettings.systemNotifications !== undefined ? 
+            parsedSettings.systemNotifications : true;
+          
+          // 提醒方式设置
+          this.pushNotifications = parsedSettings.pushNotifications !== undefined ? 
+            parsedSettings.pushNotifications : true;
+          this.inAppNotifications = parsedSettings.inAppNotifications !== undefined ? 
+            parsedSettings.inAppNotifications : true;
+          this.soundNotifications = parsedSettings.soundNotifications !== undefined ? 
+            parsedSettings.soundNotifications : true;
+          this.vibrationNotifications = parsedSettings.vibrationNotifications !== undefined ? 
+            parsedSettings.vibrationNotifications : true;
+        }
+      } catch (e) {
+        console.error('加载通知设置失败:', e);
+      }
+    },
+    
+    // 保存通知设置
+    saveNotificationSettings() {
+      try {
+        // 将当前设置保存到本地存储
+        const settings = {
+          // 通知类型设置
+          tradeNotifications: this.tradeNotifications,
+          fundWarningNotifications: this.fundWarningNotifications,
+          marketNotifications: this.marketNotifications,
+          systemNotifications: this.systemNotifications,
+          // 提醒方式设置
+          pushNotifications: this.pushNotifications,
+          inAppNotifications: this.inAppNotifications,
+          soundNotifications: this.soundNotifications,
+          vibrationNotifications: this.vibrationNotifications
+        };
+        
+        uni.setStorageSync('notification_settings', JSON.stringify(settings));
+        console.log('已保存通知设置');
+        
+        // 同时更新到全局状态
+        const app = getApp();
+        if (app.globalData) {
+          app.globalData.notificationSettings = settings;
+        }
+        
+        // 更新AI资金可控设置中的通知设置
+        uni.setStorageSync('ai_notifications_enabled', this.fundWarningNotifications && this.pushNotifications);
+        
+      } catch (e) {
+        console.error('保存通知设置失败:', e);
+      }
+    },
+    
+    // 检查通知权限
+    checkNotificationPermission() {
+      try {
+        console.log('开始检查通知权限');
+        
+        // 首先检查plus对象是否存在
+        if (typeof plus === 'undefined') {
+          console.log('plus对象不存在,可能在模拟器环境中');
+          uni.showToast({
+            title: '当前环境无法检查通知权限',
+            icon: 'none',
+            duration: 2000
+          });
+          return;
+        }
+        
+        // 检查push对象是否存在
+        if (!plus.push) {
+          console.log('plus.push对象不存在');
+          uni.showToast({
+            title: '通知功能不可用',
+            icon: 'none',
+            duration: 2000
+          });
+          return;
+        }
+        
+        try {
+          // 尝试获取通知权限状态
+          const clientInfo = plus.push.getClientInfo();
+          console.log('通知客户端信息:', clientInfo);
+          
+          // 检查权限状态
+          const hasPermission = clientInfo && (
+            clientInfo.sound !== false || 
+            clientInfo.vibrate !== false || 
+            clientInfo.message !== false
+          );
+          
+          console.log('通知权限状态:', hasPermission);
+          
+          if (!hasPermission) {
+            uni.showModal({
+              title: '通知权限',
+              content: '需要通知权限才能向您发送交易和资金提醒。请在设置中开启通知权限。',
+              success: (res) => {
+                if (res.confirm) {
+                  this.openSystemSettings();
+                }
+              }
+            });
+          } else {
+            uni.showToast({
+              title: '已获得通知权限',
+              icon: 'success',
+              duration: 2000
+            });
+          }
+        } catch (innerError) {
+          console.error('获取通知权限信息失败:', innerError);
+          // 如果获取权限状态失败,尝试直接打开系统设置
+          uni.showModal({
+            title: '无法检查通知权限',
+            content: '是否直接打开系统设置页面?',
+            success: (res) => {
+              if (res.confirm) {
+                this.openSystemSettings();
+              }
+            }
+          });
+        }
+      } catch (e) {
+        console.error('检查通知权限失败:', e);
+        uni.showToast({
+          title: '检查权限失败,请手动设置',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+    },
+    
+    // 打开系统设置
+    openSystemSettings() {
+      console.log('尝试打开系统设置');
+      try {
+        // 检查是否在真机环境
+        if (typeof plus !== 'undefined' && plus.runtime) {
+          console.log('使用plus.runtime打开系统设置');
+          
+          // 尝试直接打开应用权限设置页面(通用方式)
+          plus.runtime.openURL('package:' + plus.runtime.appid, 
+            // 成功回调
+            function(res) {
+              console.log('成功打开设置页面:', res);
+            }, 
+            // 失败回调
+            function(err) {
+              console.error('打开应用设置失败:', err);
+              // 尝试备用方法1:打开应用信息页面
+              tryBackupMethod();
+            }
+          );
+          
+          // 备用方法函数
+          function tryBackupMethod() {
+            try {
+              // 尝试使用应用通道打开系统设置
+              if (plus.os.name.toLowerCase() === 'android') {
+                // Android设备
+                var main = plus.android.runtimeMainActivity();
+                var Intent = plus.android.importClass('android.content.Intent');
+                var Settings = plus.android.importClass('android.provider.Settings');
+                var Uri = plus.android.importClass('android.net.Uri');
+                
+                var intent = new Intent();
+                intent.setAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                var uri = Uri.fromParts('package', main.getPackageName(), null);
+                intent.setData(uri);
+                main.startActivity(intent);
+              } else {
+                // iOS设备
+                plus.runtime.openURL('app-settings://', function(){}, function() {
+                  uni.showToast({
+                    title: '无法打开系统设置',
+                    icon: 'none',
+                    duration: 2000
+                  });
+                });
+              }
+            } catch (backupError) {
+              console.error('备用方法打开设置失败:', backupError);
+              // 尝试最通用的方法 - 打开系统设置主页
+              plus.runtime.openURL('app-settings://', function(){}, function() {
+                uni.showToast({
+                  title: '无法打开系统设置,请手动设置通知权限',
+                  icon: 'none',
+                  duration: 2000
+                });
+              });
+            }
+          }
+        } else {
+          // 模拟器环境下提示
+          console.log('在模拟器环境中,无法打开系统设置');
+          uni.showToast({
+            title: '当前环境无法打开系统设置',
+            icon: 'none',
+            duration: 2000
+          });
+        }
+      } catch (e) {
+        console.error('打开系统设置失败:', e);
+        uni.showToast({
+          title: '打开设置失败,请手动设置',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+    },
+    
+    // 切换开关的事件处理器
+    toggleTradeNotifications(e) {
+      this.tradeNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    },
+    
+    toggleFundWarningNotifications(e) {
+      this.fundWarningNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    },
+    
+    toggleMarketNotifications(e) {
+      this.marketNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    },
+    
+    toggleSystemNotifications(e) {
+      this.systemNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    },
+    
+    togglePushNotifications(e) {
+      this.pushNotifications = e.detail.value;
+      this.saveNotificationSettings();
+      
+      // 如果关闭推送通知,检查是否需要提示用户
+      if (!this.pushNotifications) {
+        uni.showModal({
+          title: '关闭推送通知',
+          content: '关闭推送通知后,您将无法收到重要的交易和资金提醒。确定要关闭吗?',
+          confirmText: '确定关闭',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.cancel) {
+              // 用户取消关闭,恢复设置
+              this.pushNotifications = true;
+              this.saveNotificationSettings();
+            }
+          }
+        });
+      } else {
+        // 如果开启推送通知,检查权限
+        this.checkNotificationPermission();
+      }
+    },
+    
+    toggleInAppNotifications(e) {
+      this.inAppNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    },
+    
+    toggleSoundNotifications(e) {
+      this.soundNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    },
+    
+    toggleVibrationNotifications(e) {
+      this.vibrationNotifications = e.detail.value;
+      this.saveNotificationSettings();
+    }
+  }
+}
+</script>
+
+<style>
+/* 通用容器样式 */
+.container {
+  padding: 30rpx;
+  min-height: 100vh;
+}
+
+/* 暗色主题 */
+.dark-theme {
+  background-color: #141414;
+  color: #fff;
+}
+
+.dark-theme .settings-section {
+  background-color: #222;
+}
+
+.dark-theme .setting-item {
+  border-bottom: 1px solid #333;
+}
+
+.dark-theme .setting-label {
+  color: #fff;
+}
+
+.dark-theme .value-text {
+  color: #ccc;
+}
+
+.dark-theme .info-text {
+  color: #999;
+}
+
+.dark-theme .permission-btn {
+  background-color: #444;
+  color: #fff;
+}
+
+/* 亮色主题 */
+.light-theme {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+.light-theme .settings-section {
+  background-color: #fff;
+}
+
+.light-theme .setting-item {
+  border-bottom: 1px solid #eee;
+}
+
+.light-theme .setting-label {
+  color: #333;
+}
+
+.light-theme .value-text {
+  color: #666;
+}
+
+.light-theme .info-text {
+  color: #666;
+}
+
+.light-theme .permission-btn {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+/* 头部样式 */
+.header {
+  margin-bottom: 30rpx;
+}
+
+.title {
+  font-size: 40rpx;
+  font-weight: bold;
+}
+
+/* 设置区域样式 */
+.settings-section {
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.1);
+}
+
+.section-title {
+  margin-bottom: 20rpx;
+}
+
+.title-text {
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  position: relative;
+}
+
+.setting-item:last-child {
+  border-bottom: none;
+}
+
+.setting-label {
+  font-size: 30rpx;
+}
+
+.setting-value {
+  display: flex;
+  align-items: center;
+}
+
+.value-text {
+  font-size: 28rpx;
+  margin-right: 10rpx;
+}
+
+.arrow-right {
+  width: 30rpx;
+  height: 30rpx;
+  border-top: 3rpx solid #999;
+  border-right: 3rpx solid #999;
+  transform: rotate(45deg);
+}
+
+/* 通知信息样式 */
+.notification-info {
+  margin-top: 30rpx;
+  padding: 20rpx;
+  border-radius: 12rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.info-text {
+  font-size: 26rpx;
+  text-align: center;
+  margin-bottom: 20rpx;
+}
+
+.permission-btn {
+  padding: 15rpx 40rpx;
+  border-radius: 30rpx;
+  font-size: 28rpx;
+  border: none;
+  margin-top: 10rpx;
+  margin-bottom: 10rpx;
+  z-index: 10;
+  position: relative;
+}
+
+.dark-theme .permission-btn {
+  background-color: #4c8dff;
+  color: #fff;
+}
+
+.light-theme .permission-btn {
+  background-color: #4c8dff;
+  color: #fff;
+}
+</style> 

@@ -1,0 +1,630 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+import os
+import pickle
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+import traceback
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, Model, load_model, save_model
+from tensorflow.keras.layers import Dense, Input, Concatenate, BatchNormalization, Dropout, LSTM
+from tensorflow.keras.optimizers import Adam
+import asyncio
+
+# 设置日志
+logger = logging.getLogger("MetaLearning")
+
+class MetaLearner:
+    """
+    元学习模块 - 实现Agent学习如何学习的能力
+    这个模块通过分析不同市场条件下的学习效果,优化学习参数和策略
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化元学习模块
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 学习参数范围
+        self.learning_rate_range = self.config.get("learning_rate_range", (0.0001, 0.01))
+        self.discount_factor_range = self.config.get("discount_factor_range", (0.9, 0.999))
+        self.exploration_rate_range = self.config.get("exploration_rate_range", (0.01, 0.3))
+        
+        # 模型存储路径
+        self.models_dir = self.config.get("models_dir", "models")
+        os.makedirs(self.models_dir, exist_ok=True)
+        
+        # 学习历史记录
+        self.learning_history = []
+        
+        # 市场分类 - 为不同市场状态训练不同模型
+        self.market_classifiers = {
+            "bull_trending": {"learning_rate": 0.005, "discount_factor": 0.95, "exploration_rate": 0.1},
+            "bear_trending": {"learning_rate": 0.003, "discount_factor": 0.97, "exploration_rate": 0.15},
+            "neutral_low_vol": {"learning_rate": 0.001, "discount_factor": 0.99, "exploration_rate": 0.05},
+            "neutral_high_vol": {"learning_rate": 0.008, "discount_factor": 0.9, "exploration_rate": 0.2},
+            "transition": {"learning_rate": 0.004, "discount_factor": 0.96, "exploration_rate": 0.12}
+        }
+        
+        # 初始化元学习模型
+        self.meta_model = self._build_meta_model()
+        
+        # 加载元学习模型
+        self._load_meta_model()
+        
+        logger.info("Meta Learning module initialized")
+    
+    def _build_meta_model(self) -> Model:
+        """
+        构建元学习模型
+        
+        Returns:
+            Keras模型
+        """
+        # 输入:市场状态特征
+        market_input = Input(shape=(8,), name="market_state")  # 8维市场状态向量
+        
+        # 性能历史输入
+        performance_input = Input(shape=(10, 5), name="performance_history")  # 10个时间步,每步5个性能指标
+        
+        # 处理市场状态
+        x1 = Dense(16, activation="relu")(market_input)
+        x1 = BatchNormalization()(x1)
+        x1 = Dense(16, activation="relu")(x1)
+        
+        # 处理性能历史
+        x2 = LSTM(32, return_sequences=False)(performance_input)
+        x2 = BatchNormalization()(x2)
+        
+        # 合并两个输入
+        combined = Concatenate()([x1, x2])
+        
+        # 共享层
+        x = Dense(32, activation="relu")(combined)
+        x = Dropout(0.3)(x)
+        x = Dense(16, activation="relu")(x)
+        
+        # 输出三个学习参数
+        learning_rate_output = Dense(1, activation="sigmoid", name="learning_rate")(x)
+        discount_factor_output = Dense(1, activation="sigmoid", name="discount_factor")(x)
+        exploration_rate_output = Dense(1, activation="sigmoid", name="exploration_rate")(x)
+        
+        # 创建模型
+        model = Model(
+            inputs=[market_input, performance_input],
+            outputs=[learning_rate_output, discount_factor_output, exploration_rate_output]
+        )
+        
+        # 编译模型
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss="mse"
+        )
+        
+        return model
+    
+    def _load_meta_model(self):
+        """加载元学习模型"""
+        model_path = os.path.join(self.models_dir, "meta_model.h5")
+        
+        if os.path.exists(model_path):
+            try:
+                self.meta_model = load_model(model_path)
+                logger.info(f"Meta model loaded from {model_path}")
+                return True
+            except Exception as e:
+                logger.error(f"Error loading meta model: {str(e)}")
+                traceback.print_exc()
+        
+        logger.info("No existing meta model found, using new model")
+        return False
+    
+    async def optimize_learning_parameters(self, 
+                                        market_state: Dict[str, Any], 
+                                        performance_history: List[Dict[str, Any]]) -> Dict[str, float]:
+        """
+        优化学习参数
+        
+        Args:
+            market_state: 当前市场状态
+            performance_history: 性能历史
+            
+        Returns:
+            优化后的学习参数
+        """
+        try:
+            # 检查是否有足够的性能历史
+            if len(performance_history) < 5:
+                # 如果历史不足,使用基于市场状态的默认参数
+                return self._get_default_parameters(market_state)
+            
+            # 提取市场状态向量
+            market_vector = self._extract_market_vector(market_state)
+            
+            # 提取性能历史矩阵
+            performance_matrix = self._extract_performance_matrix(performance_history)
+            
+            # 使用元模型预测最优参数
+            learning_rate, discount_factor, exploration_rate = self.meta_model.predict(
+                [
+                    np.array([market_vector]),
+                    np.array([performance_matrix])
+                ],
+                verbose=0
+            )
+            
+            # 将输出值映射到参数范围
+            optimized_params = {
+                "learning_rate": float(self._map_to_range(learning_rate[0][0], self.learning_rate_range)),
+                "discount_factor": float(self._map_to_range(discount_factor[0][0], self.discount_factor_range)),
+                "exploration_rate": float(self._map_to_range(exploration_rate[0][0], self.exploration_rate_range))
+            }
+            
+            # 记录优化结果
+            self.learning_history.append({
+                "timestamp": datetime.now().isoformat(),
+                "market_state": market_state.get("market_regime", "unknown"),
+                "parameters": optimized_params,
+                "performance_snapshot": performance_history[-1] if performance_history else None
+            })
+            
+            # 保持历史记录在合理大小
+            if len(self.learning_history) > 100:
+                self.learning_history = self.learning_history[-100:]
+            
+            logger.info(f"Optimized learning parameters: {optimized_params}")
+            return optimized_params
+            
+        except Exception as e:
+            logger.error(f"Error optimizing learning parameters: {str(e)}")
+            traceback.print_exc()
+            
+            # 出错时使用默认参数
+            return self._get_default_parameters(market_state)
+    
+    def _get_default_parameters(self, market_state: Dict[str, Any]) -> Dict[str, float]:
+        """获取基于市场状态的默认参数"""
+        # 获取市场状态
+        market_regime = market_state.get("market_regime", "neutral_low_vol")
+        
+        # 简化市场状态分类
+        if "bull" in market_regime and "trend" in market_regime:
+            classifier = "bull_trending"
+        elif "bear" in market_regime and "trend" in market_regime:
+            classifier = "bear_trending"
+        elif "neutral" in market_regime and "low" in market_regime:
+            classifier = "neutral_low_vol"
+        elif "neutral" in market_regime and "high" in market_regime:
+            classifier = "neutral_high_vol"
+        elif "transition" in market_regime:
+            classifier = "transition"
+        else:
+            classifier = "neutral_low_vol"  # 默认
+        
+        # 返回该市场状态的默认参数
+        return self.market_classifiers.get(classifier, {
+            "learning_rate": 0.003,
+            "discount_factor": 0.95,
+            "exploration_rate": 0.1
+        })
+    
+    def _extract_market_vector(self, market_state: Dict[str, Any]) -> np.ndarray:
+        """
+        从市场状态提取特征向量
+        
+        Args:
+            market_state: 市场状态
+            
+        Returns:
+            市场状态向量
+        """
+        # 获取市场状态
+        market_regime = market_state.get("market_regime", "neutral_low_vol")
+        
+        # 市场状态one-hot编码
+        market_regimes = [
+            "bull_trending", "bull_volatile", 
+            "bear_trending", "bear_volatile", 
+            "neutral_low_vol", "neutral_high_vol", 
+            "transition_bullish", "transition_bearish"
+        ]
+        
+        # 创建one-hot向量
+        market_vector = np.zeros(len(market_regimes))
+        
+        # 设置对应位置为1
+        try:
+            idx = market_regimes.index(market_regime)
+            market_vector[idx] = 1.0
+        except ValueError:
+            # 如果市场状态不在预定义列表中,使用neutral_low_vol
+            idx = market_regimes.index("neutral_low_vol")
+            market_vector[idx] = 1.0
+        
+        return market_vector
+    
+    def _extract_performance_matrix(self, performance_history: List[Dict[str, Any]]) -> np.ndarray:
+        """
+        从性能历史提取特征矩阵
+        
+        Args:
+            performance_history: 性能历史
+            
+        Returns:
+            性能历史矩阵
+        """
+        # 性能指标
+        metrics = ["win_rate", "avg_reward", "profit_factor", "sharpe_ratio", "exploration_rate"]
+        
+        # 创建性能矩阵
+        matrix = np.zeros((10, len(metrics)))
+        
+        # 填充性能矩阵
+        for i in range(min(10, len(performance_history))):
+            perf = performance_history[-(i+1)]  # 从最近的开始
+            
+            for j, metric in enumerate(metrics):
+                matrix[i, j] = perf.get(metric, 0.0)
+        
+        return matrix
+    
+    def _map_to_range(self, value: float, target_range: Tuple[float, float]) -> float:
+        """将0-1的值映射到目标范围"""
+        min_val, max_val = target_range
+        return min_val + value * (max_val - min_val)
+    
+    async def train_meta_model(self, 
+                            training_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        训练元学习模型
+        
+        Args:
+            training_data: 训练数据,包含市场状态,学习参数和结果性能
+            
+        Returns:
+            训练结果
+        """
+        try:
+            if len(training_data) < 10:
+                return {"status": "error", "message": "Insufficient training data"}
+            
+            # 准备训练数据
+            market_vectors = []
+            performance_matrices = []
+            target_learning_rates = []
+            target_discount_factors = []
+            target_exploration_rates = []
+            
+            for item in training_data:
+                # 提取输入特征
+                market_vector = self._extract_market_vector(item.get("market_state", {}))
+                perf_history = item.get("performance_history", [])
+                performance_matrix = self._extract_performance_matrix(perf_history)
+                
+                # 提取目标值 - 根据最终性能排名最好的参数
+                best_params = item.get("best_parameters", {})
+                
+                # 归一化参数到0-1范围
+                lr = (best_params.get("learning_rate", 0.003) - self.learning_rate_range[0]) / (self.learning_rate_range[1] - self.learning_rate_range[0])
+                df = (best_params.get("discount_factor", 0.95) - self.discount_factor_range[0]) / (self.discount_factor_range[1] - self.discount_factor_range[0])
+                er = (best_params.get("exploration_rate", 0.1) - self.exploration_rate_range[0]) / (self.exploration_rate_range[1] - self.exploration_rate_range[0])
+                
+                # 添加到训练数据
+                market_vectors.append(market_vector)
+                performance_matrices.append(performance_matrix)
+                target_learning_rates.append(lr)
+                target_discount_factors.append(df)
+                target_exploration_rates.append(er)
+            
+            # 转换为numpy数组
+            X_market = np.array(market_vectors)
+            X_performance = np.array(performance_matrices)
+            y_lr = np.array(target_learning_rates).reshape(-1, 1)
+            y_df = np.array(target_discount_factors).reshape(-1, 1)
+            y_er = np.array(target_exploration_rates).reshape(-1, 1)
+            
+            # 训练模型
+            history = self.meta_model.fit(
+                [X_market, X_performance],
+                [y_lr, y_df, y_er],
+                epochs=50,
+                batch_size=16,
+                validation_split=0.2,
+                verbose=0
+            )
+            
+            # 保存模型
+            model_path = os.path.join(self.models_dir, "meta_model.h5")
+            self.meta_model.save(model_path)
+            
+            # 返回训练结果
+            result = {
+                "status": "success",
+                "loss": float(history.history["loss"][-1]),
+                "val_loss": float(history.history["val_loss"][-1]) if "val_loss" in history.history else None,
+                "epochs": len(history.history["loss"]),
+                "model_path": model_path
+            }
+            
+            logger.info(f"Meta model trained: loss={result['loss']:.6f}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error training meta model: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    async def analyze_learning_effectiveness(self, 
+                                          market_states: List[Dict[str, Any]], 
+                                          learning_params: List[Dict[str, float]], 
+                                          performance_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        分析不同市场状态下学习参数的有效性
+        
+        Args:
+            market_states: 市场状态列表
+            learning_params: 学习参数列表
+            performance_results: 性能结果列表
+            
+        Returns:
+            分析结果
+        """
+        try:
+            if len(market_states) != len(learning_params) or len(learning_params) != len(performance_results):
+                return {"status": "error", "message": "Input data length mismatch"}
+            
+            # 按市场状态分组
+            market_groups = {}
+            
+            for i in range(len(market_states)):
+                market_regime = market_states[i].get("market_regime", "unknown")
+                
+                if market_regime not in market_groups:
+                    market_groups[market_regime] = {
+                        "params": [],
+                        "results": []
+                    }
+                
+                market_groups[market_regime]["params"].append(learning_params[i])
+                market_groups[market_regime]["results"].append(performance_results[i])
+            
+            # 分析每种市场状态
+            regime_analysis = {}
+            
+            for regime, data in market_groups.items():
+                if len(data["params"]) < 3:
+                    # 数据太少,跳过
+                    continue
+                
+                # 获取最佳性能
+                best_idx = np.argmax([r.get("avg_reward", 0) for r in data["results"]])
+                best_params = data["params"][best_idx]
+                best_performance = data["results"][best_idx]
+                
+                # 计算参数与性能的相关性
+                lr_values = [p.get("learning_rate", 0) for p in data["params"]]
+                df_values = [p.get("discount_factor", 0) for p in data["params"]]
+                er_values = [p.get("exploration_rate", 0) for p in data["params"]]
+                
+                reward_values = [r.get("avg_reward", 0) for r in data["results"]]
+                
+                # 相关系数
+                lr_corr = np.corrcoef(lr_values, reward_values)[0, 1] if len(set(lr_values)) > 1 else 0
+                df_corr = np.corrcoef(df_values, reward_values)[0, 1] if len(set(df_values)) > 1 else 0
+                er_corr = np.corrcoef(er_values, reward_values)[0, 1] if len(set(er_values)) > 1 else 0
+                
+                # 添加分析结果
+                regime_analysis[regime] = {
+                    "sample_size": len(data["params"]),
+                    "best_parameters": best_params,
+                    "best_performance": {
+                        "avg_reward": best_performance.get("avg_reward", 0),
+                        "win_rate": best_performance.get("win_rate", 0)
+                    },
+                    "correlations": {
+                        "learning_rate": float(lr_corr) if not np.isnan(lr_corr) else 0,
+                        "discount_factor": float(df_corr) if not np.isnan(df_corr) else 0,
+                        "exploration_rate": float(er_corr) if not np.isnan(er_corr) else 0
+                    }
+                }
+                
+                # 更新默认参数
+                if regime in self.market_classifiers:
+                    self.market_classifiers[regime] = best_params
+            
+            # 返回分析结果
+            analysis = {
+                "status": "success",
+                "timestamp": datetime.now().isoformat(),
+                "sample_size": len(market_states),
+                "regime_analysis": regime_analysis
+            }
+            
+            logger.info(f"Learning effectiveness analysis completed for {len(regime_analysis)} market regimes")
+            return analysis
+            
+        except Exception as e:
+            error_msg = f"Error analyzing learning effectiveness: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    def get_learning_history(self) -> List[Dict[str, Any]]:
+        """获取学习历史"""
+        return self.learning_history
+
+class AdaptiveStrategySelector:
+    """
+    自适应策略选择器 - 根据学习结果动态选择最佳策略
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化自适应策略选择器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 策略库
+        self.strategies = self.config.get("strategies", [
+            "trend_following", "mean_reversion", "breakout", 
+            "momentum", "value", "adaptive"
+        ])
+        
+        # 每种市场状态下的策略性能
+        self.strategy_performance = {}
+        
+        # 策略分配
+        self.strategy_allocation = {strategy: 1.0 / len(self.strategies) for strategy in self.strategies}
+        
+        # 探索率
+        self.exploration_rate = self.config.get("exploration_rate", 0.1)
+        
+        # 学习率
+        self.learning_rate = self.config.get("learning_rate", 0.05)
+        
+        logger.info(f"Adaptive Strategy Selector initialized with {len(self.strategies)} strategies")
+    
+    def select_strategy(self, market_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        选择策略
+        
+        Args:
+            market_state: 当前市场状态
+            
+        Returns:
+            选择的策略信息
+        """
+        # 获取市场状态
+        market_regime = market_state.get("market_regime", "unknown")
+        
+        # 探索:随机选择策略
+        if np.random.random() < self.exploration_rate:
+            selected_strategy = np.random.choice(self.strategies)
+            return {
+                "strategy": selected_strategy,
+                "confidence": 0.5,
+                "reason": "exploration",
+                "weights": {s: (1.0 if s == selected_strategy else 0.0) for s in self.strategies}
+            }
+        
+        # 利用:选择性能最好的策略
+        if market_regime in self.strategy_performance:
+            # 获取该市场状态下的策略性能
+            performance = self.strategy_performance[market_regime]
+            
+            # 根据性能计算策略权重
+            total_score = sum(performance.values())
+            
+            if total_score > 0:
+                weights = {s: performance.get(s, 0) / total_score for s in self.strategies}
+            else:
+                weights = {s: 1.0 / len(self.strategies) for s in self.strategies}
+            
+            # 保存当前分配
+            self.strategy_allocation = weights
+            
+            # 选择权重最高的策略
+            selected_strategy = max(weights, key=weights.get)
+            confidence = weights[selected_strategy]
+            
+            return {
+                "strategy": selected_strategy,
+                "confidence": float(confidence),
+                "reason": "exploitation",
+                "weights": {s: float(w) for s, w in weights.items()}
+            }
+        else:
+            # 没有性能数据,使用均匀分配
+            selected_strategy = np.random.choice(self.strategies)
+            return {
+                "strategy": selected_strategy,
+                "confidence": 1.0 / len(self.strategies),
+                "reason": "no_data",
+                "weights": {s: 1.0 / len(self.strategies) for s in self.strategies}
+            }
+    
+    def update_strategy_performance(self, 
+                                  market_state: Dict[str, Any], 
+                                  strategy: str, 
+                                  performance: float):
+        """
+        更新策略性能
+        
+        Args:
+            market_state: 市场状态
+            strategy: 使用的策略
+            performance: 性能指标
+        """
+        # 获取市场状态
+        market_regime = market_state.get("market_regime", "unknown")
+        
+        # 如果该市场状态没有记录,创建新记录
+        if market_regime not in self.strategy_performance:
+            self.strategy_performance[market_regime] = {s: 0.0 for s in self.strategies}
+        
+        # 更新策略性能
+        current = self.strategy_performance[market_regime].get(strategy, 0.0)
+        self.strategy_performance[market_regime][strategy] = current * (1 - self.learning_rate) + performance * self.learning_rate
+        
+        logger.debug(f"Updated strategy performance: {market_regime}/{strategy}: {self.strategy_performance[market_regime][strategy]:.4f}")
+    
+    def get_strategy_performance(self) -> Dict[str, Dict[str, float]]:
+        """获取策略性能"""
+        return self.strategy_performance
+    
+    def set_exploration_rate(self, rate: float):
+        """设置探索率"""
+        self.exploration_rate = max(0.01, min(0.5, rate))
+    
+    def set_learning_rate(self, rate: float):
+        """设置学习率"""
+        self.learning_rate = max(0.01, min(0.5, rate))
+
+# 主函数(用于测试)
+async def main():
+    """测试MetaLearner功能"""
+    # 创建元学习器
+    meta_learner = MetaLearner()
+    
+    # 创建模拟市场状态
+    market_state = {"market_regime": "bull_trending"}
+    
+    # 创建模拟性能历史
+    performance_history = [
+        {"win_rate": 0.6, "avg_reward": 0.2, "profit_factor": 1.5, "sharpe_ratio": 1.2, "exploration_rate": 0.15},
+        {"win_rate": 0.62, "avg_reward": 0.22, "profit_factor": 1.6, "sharpe_ratio": 1.3, "exploration_rate": 0.14},
+        {"win_rate": 0.58, "avg_reward": 0.18, "profit_factor": 1.4, "sharpe_ratio": 1.1, "exploration_rate": 0.13},
+        {"win_rate": 0.65, "avg_reward": 0.25, "profit_factor": 1.7, "sharpe_ratio": 1.4, "exploration_rate": 0.12},
+        {"win_rate": 0.63, "avg_reward": 0.23, "profit_factor": 1.65, "sharpe_ratio": 1.35, "exploration_rate": 0.11}
+    ]
+    
+    # 优化学习参数
+    optimized_params = await meta_learner.optimize_learning_parameters(market_state, performance_history)
+    print(f"Optimized parameters: {optimized_params}")
+    
+    # 测试自适应策略选择器
+    selector = AdaptiveStrategySelector()
+    
+    # 选择策略
+    selected = selector.select_strategy(market_state)
+    print(f"Selected strategy: {selected}")
+    
+    # 更新策略性能
+    selector.update_strategy_performance(market_state, selected["strategy"], 0.8)
+    
+    # 再次选择策略
+    selected = selector.select_strategy(market_state)
+    print(f"Selected strategy after update: {selected}")
+
+if __name__ == "__main__":
+    asyncio.run(main())

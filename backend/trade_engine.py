@@ -1,0 +1,88 @@
+from collections import defaultdict
+from datetime import datetime, timedelta
+import numpy as np
+
+class OrderAggregator:
+    def __init__(self, time_window=0.5):
+        self.time_window = timedelta(seconds=time_window)
+        self.order_pool = defaultdict(list)
+        
+    def add_order(self, order):
+        symbol = order['symbol']
+        current_time = datetime.now()
+        
+        # 自动移除超时订单
+        self.order_pool[symbol] = [o for o in self.order_pool[symbol] 
+                                 if current_time - o['timestamp'] <= self.time_window]
+        
+        # 添加新订单并执行聚合
+        self.order_pool[symbol].append({
+            'price': order['price'],
+            'quantity': order['quantity'],
+            'direction': order['direction'],
+            'timestamp': current_time
+        })
+        
+        return self._aggregate_orders(symbol)
+
+    def _aggregate_orders(self, symbol):
+        orders = self.order_pool[symbol]
+        if len(orders) < 3:
+            return []
+
+        # 计算加权平均价格
+        total_volume = sum(o['quantity'] for o in orders)
+        avg_price = np.average([o['price'] for o in orders], 
+                             weights=[o['quantity'] for o in orders])
+
+        # 生成聚合订单
+        aggregated = {
+            'symbol': symbol,
+            'price': round(avg_price, 2),
+            'quantity': total_volume,
+            'direction': self._get_dominant_direction(orders),
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # 清空已聚合订单
+        self.order_pool[symbol] = []
+        
+        return [aggregated]
+
+    def _get_dominant_direction(self, orders):
+        buy_count = sum(1 for o in orders if o['direction'] == 'BUY')
+        return 'BUY' if buy_count > len(orders)/2 else 'SELL'
+
+
+# 在TradingEngine类中新增缓存机制
+from functools import lru_cache
+
+class TradingEngine:
+    def __init__(self):
+        self.aggregator = OrderAggregator()
+        self.pending_orders = []
+        self.cache = LRUCache(capacity=1000)  # 新增缓存实例
+
+    @lru_cache(maxsize=1000)
+    async def get_market_data(self, symbol):
+        # 带缓存的行情获取方法
+        return await exchange_api.get(symbol)
+
+    async def execute_order(self, order):
+        # 高频订单聚合
+        aggregated = self.aggregator.add_order(order)
+        
+        if aggregated:
+            # 批量执行聚合订单
+            await self._batch_execute(aggregated)
+        else:
+            # 缓存未聚合订单
+            self.pending_orders.append(order)
+
+    async def _batch_execute(self, orders):
+        # 连接交易所API执行批量订单
+        # 实现实际交易逻辑
+        print(f"执行批量订单:{orders}")
+        
+        # 清空暂存订单
+        self.pending_orders = []

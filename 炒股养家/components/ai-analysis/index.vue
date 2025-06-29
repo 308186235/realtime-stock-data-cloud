@@ -1,0 +1,201 @@
+<template>
+    <view class="ai-analytics-container">
+        <!-- 状态和操作区 -->
+        <view class="top-control-area">
+            <!-- 状态指示器 -->
+            <view class="debug-status">
+                <text class="debug-title">AI分析控制台</text>
+                <view class="debug-info">
+                    <text>状态: 已加载 | 时间: {{ loadTime }}</text>
+                </view>
+            </view>
+            
+            <!-- 直接调用按钮区 -->
+            <view class="action-panel">
+                <button type="primary" @tap="testAIComponent" class="action-btn">测试AI组件</button>
+                <button type="default" @tap="refreshAIData" class="action-btn">刷新AI数据</button>
+                <button type="warn" @tap="showDebugInfo" class="action-btn">调试信息</button>
+            </view>
+        </view>
+        
+        <!-- 内容分隔线 -->
+        <view class="section-divider">
+            <text class="divider-text">AI分析内容</text>
+        </view>
+        
+        <!-- 引入AIAnalytics组件 -->
+        <AIAnalytics ref="aiAnalytics" />
+    </view>
+</template>
+
+<script>
+    import AIAnalytics from '../../components/AIAnalytics.vue';
+    
+    export default {
+        components: {
+            AIAnalytics
+        },
+        data() {
+            return {
+                loadTime: new Date().toLocaleTimeString(),
+                componentReady: false
+            };
+        },
+        onLoad() {
+            console.log('AI Analytics page loaded at ' + this.loadTime);
+            uni.setNavigationBarTitle({
+                title: 'AI智能分析控制台'
+            });
+            
+            // 页面加载时显示提示
+            uni.showToast({
+                title: 'AI分析界面已加载',
+                icon: 'success',
+                duration: 2000
+            });
+        },
+        onShow() {
+            console.log('AI Analytics page shown');
+        },
+        methods: {
+            showDebugInfo() {
+                uni.showModal({
+                    title: '调试信息',
+                    content: '页面加载时间: ' + this.loadTime + '\n组件状态: ' + (this.componentReady ? '已加载' : '未加载'),
+                    showCancel: false
+                });
+            },
+            
+            // 测试AI组件功能
+            testAIComponent() {
+                console.log('测试AI组件功能');
+                try {
+                    if (this.$refs.aiAnalytics && typeof this.$refs.aiAnalytics.testComponentAction === 'function') {
+                        this.$refs.aiAnalytics.testComponentAction();
+                        this.componentReady = true;
+                    } else {
+                        uni.showModal({
+                            title: '组件测试失败',
+                            content: 'AI分析组件未正确初始化',
+                            showCancel: false
+                        });
+                    }
+                } catch (error) {
+                    console.error('测试AI组件时出错:', error);
+                    uni.showToast({
+                        title: '组件测试失败',
+                        icon: 'none'
+                    });
+                }
+            },
+            
+            // 刷新AI数据
+            refreshAIData() {
+                console.log('刷新AI数据');
+                try {
+                    if (this.$refs.aiAnalytics && typeof this.$refs.aiAnalytics.refreshData === 'function') {
+                        this.$refs.aiAnalytics.refreshData();
+                        this.componentReady = true;
+                    } else {
+                        uni.showModal({
+                            title: '刷新失败',
+                            content: 'AI分析组件未正确初始化',
+                            showCancel: false
+                        });
+                    }
+                } catch (error) {
+                    console.error('刷新AI数据时出错:', error);
+                    uni.showToast({
+                        title: '数据刷新失败',
+                        icon: 'none'
+                    });
+                }
+            }
+        }
+    }
+</script>
+
+<style>
+    .ai-analytics-container {
+        background-color: #f0f2f5;
+        min-height: 100vh;
+        padding-bottom: 50rpx;
+    }
+    
+    /* 顶部控制区域样式 */
+    .top-control-area {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background-color: #f0f2f5;
+        padding: 20rpx;
+        margin-bottom: 20rpx;
+    }
+    
+    .debug-status {
+        background: linear-gradient(135deg, #1890ff, #096dd9);
+        color: white;
+        text-align: center;
+        padding: 20rpx;
+        margin-bottom: 20rpx;
+        border-radius: 10rpx;
+        box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.15);
+    }
+    
+    .debug-title {
+        display: block;
+        font-weight: bold;
+        font-size: 36rpx;
+        margin-bottom: 10rpx;
+    }
+    
+    .debug-info {
+        font-size: 24rpx;
+        margin-bottom: 10rpx;
+        opacity: 0.9;
+    }
+    
+    .action-panel {
+        display: flex;
+        justify-content: space-around;
+        padding: 20rpx;
+        background-color: #fff;
+        border-radius: 10rpx;
+        box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.1);
+    }
+    
+    .action-btn {
+        flex: 1;
+        margin: 0 10rpx;
+        font-size: 28rpx;
+    }
+    
+    /* 分隔线样式 */
+    .section-divider {
+        position: relative;
+        text-align: center;
+        margin: 30rpx 0;
+    }
+    
+    .section-divider:before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50rpx;
+        right: 50rpx;
+        height: 1px;
+        background-color: #e8e8e8;
+        z-index: 1;
+    }
+    
+    .divider-text {
+        position: relative;
+        display: inline-block;
+        padding: 0 20rpx;
+        background-color: #f0f2f5;
+        font-size: 28rpx;
+        font-weight: bold;
+        color: #1890ff;
+        z-index: 2;
+    }
+</style> 
