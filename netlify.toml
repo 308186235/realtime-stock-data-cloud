@@ -1,11 +1,9 @@
 [build]
   functions = "functions"
   publish = "."
-  command = "echo 'Functions ready for deployment'"
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["aws-sdk"]
 
 [[redirects]]
   from = "/api/*"
