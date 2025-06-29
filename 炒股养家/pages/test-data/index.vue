@@ -18,6 +18,14 @@
           <text class="btn-text">测试专业股票API</text>
         </button>
 
+        <button class="test-btn" @click="testStockQuery" :disabled="loading">
+          <text class="btn-text">测试股票查询</text>
+        </button>
+
+        <button class="test-btn" @click="testStockSubscribe" :disabled="loading">
+          <text class="btn-text">测试股票订阅</text>
+        </button>
+
         <button class="test-btn" @click="testBacktest" :disabled="loading">
           <text class="btn-text">测试回测功能</text>
         </button>
@@ -224,6 +232,95 @@ export default {
           title: '专业股票数据API测试',
           success: false,
           message: `连接失败: ${error.message}`,
+          rawData: { error: error.message }
+        });
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async testStockQuery() {
+      this.loading = true;
+      this.loadingText = '正在测试股票查询功能...';
+
+      try {
+        const symbols = this.testSymbols.split(',').map(s => s.trim());
+
+        // 测试主动查询功能
+        const queryResult = await agentDataService.getStockData(symbols);
+
+        this.addResult({
+          type: 'stock_query',
+          title: '股票主动查询测试',
+          success: queryResult.success,
+          message: queryResult.success ?
+            `成功查询 ${symbols.length} 只股票数据 (来源: ${queryResult.source})` :
+            '股票查询失败',
+          data: queryResult.data,
+          rawData: queryResult
+        });
+
+      } catch (error) {
+        this.addResult({
+          type: 'stock_query',
+          title: '股票主动查询测试',
+          success: false,
+          message: `查询失败: ${error.message}`,
+          rawData: { error: error.message }
+        });
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async testStockSubscribe() {
+      this.loading = true;
+      this.loadingText = '正在测试股票订阅功能...';
+
+      try {
+        const symbols = this.testSymbols.split(',').map(s => s.trim());
+
+        // 测试订阅功能
+        const subscribeResult = await agentDataService.subscribeStocks(symbols);
+
+        this.addResult({
+          type: 'stock_subscribe',
+          title: '股票订阅测试',
+          success: subscribeResult.success,
+          message: subscribeResult.success ?
+            `成功订阅 ${symbols.length} 只股票推送` :
+            '股票订阅失败',
+          rawData: subscribeResult
+        });
+
+        // 如果订阅成功，设置数据接收监听
+        if (subscribeResult.success) {
+          const unsubscribe = agentDataService.subscribeToProfessionalData('test_subscriber', (data) => {
+            console.log('[测试] 收到推送数据:', data);
+
+            this.addResult({
+              type: 'stock_push',
+              title: '股票推送数据',
+              success: true,
+              message: `收到 ${data.symbol} 推送数据: ¥${data.current_price}`,
+              data: data,
+              rawData: data
+            });
+          });
+
+          // 10秒后取消订阅
+          setTimeout(() => {
+            unsubscribe();
+            console.log('[测试] 已取消推送数据订阅');
+          }, 10000);
+        }
+
+      } catch (error) {
+        this.addResult({
+          type: 'stock_subscribe',
+          title: '股票订阅测试',
+          success: false,
+          message: `订阅失败: ${error.message}`,
           rawData: { error: error.message }
         });
       } finally {

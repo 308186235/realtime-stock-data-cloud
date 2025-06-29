@@ -127,10 +127,84 @@ class RealStockDataService {
    */
   handleMessage(data) {
     try {
-      // 快速处理数据，避免堆积
+      // 尝试解析为JSON（查询响应）
+      if (typeof data === 'string' && (data.startsWith('{') || data.startsWith('['))) {
+        try {
+          const jsonData = JSON.parse(data);
+
+          // 处理查询响应
+          if (jsonData.queryId && this.pendingQueries) {
+            this.handleQueryResponse(jsonData);
+            return;
+          }
+
+          // 处理JSON格式的推送数据（北交所）
+          this.processDataQuickly(data);
+          return;
+        } catch (parseError) {
+          // 不是JSON，继续按普通数据处理
+        }
+      }
+
+      // 处理普通推送数据（沪深$分隔格式）
       this.processDataQuickly(data);
     } catch (error) {
       console.error('[真实股票数据] 处理消息失败:', error);
+    }
+  }
+
+  /**
+   * 处理查询响应
+   */
+  handleQueryResponse(response) {
+    try {
+      console.log('[真实股票数据] 收到查询响应:', response);
+
+      const query = this.pendingQueries.get(response.queryId);
+      if (!query) {
+        console.warn('[真实股票数据] 未找到对应的查询请求:', response.queryId);
+        return;
+      }
+
+      // 清除超时定时器
+      clearTimeout(query.timeout);
+      this.pendingQueries.delete(response.queryId);
+
+      if (response.success) {
+        // 解析查询结果
+        const stockData = {};
+
+        if (response.data && Array.isArray(response.data)) {
+          response.data.forEach(item => {
+            let parsedData;
+
+            if (typeof item === 'string') {
+              // 沪深格式
+              parsedData = this.parseHuShenData(item);
+            } else {
+              // 北交所格式
+              parsedData = this.parseBeiJiaoSuoData(item);
+            }
+
+            if (parsedData) {
+              stockData[parsedData.symbol] = parsedData;
+            }
+          });
+        }
+
+        query.resolve({
+          success: true,
+          data: stockData,
+          symbols: query.symbols,
+          timestamp: new Date().toISOString(),
+          source: 'query'
+        });
+      } else {
+        query.reject(new Error(response.error || '查询失败'));
+      }
+
+    } catch (error) {
+      console.error('[真实股票数据] 处理查询响应失败:', error);
     }
   }
 
@@ -340,6 +414,132 @@ class RealStockDataService {
   unsubscribe(subscriberId) {
     this.subscribers.delete(subscriberId);
     console.log('[真实股票数据] 移除订阅者:', subscriberId);
+  }
+
+  /**
+   * 主动查询指定股票数据
+   */
+  async queryStockData(symbols) {
+    try {
+      console.log('[真实股票数据] 主动查询股票数据:', symbols);
+
+      if (!this.isConnected) {
+        throw new Error('未连接到股票数据服务器');
+      }
+
+      const apiKey = this.getCurrentApiKey();
+      if (!apiKey) {
+        throw new Error('没有可用的API Key');
+      }
+
+      // 发送查询请求
+      const queryMessage = {
+        action: 'query',
+        symbols: Array.isArray(symbols) ? symbols : [symbols],
+        apiKey: apiKey.key,
+        timestamp: Date.now()
+      };
+
+      return new Promise((resolve, reject) => {
+        // 设置查询超时
+        const timeout = setTimeout(() => {
+          reject(new Error('查询超时'));
+        }, 10000);
+
+        // 临时存储查询回调
+        const queryId = `query_${Date.now()}`;
+        this.pendingQueries = this.pendingQueries || new Map();
+        this.pendingQueries.set(queryId, { resolve, reject, timeout, symbols });
+
+        // 发送查询请求
+        this.socket.send({
+          data: JSON.stringify({
+            ...queryMessage,
+            queryId: queryId
+          })
+        });
+
+        console.log('[真实股票数据] 发送查询请求:', queryMessage);
+      });
+
+    } catch (error) {
+      console.error('[真实股票数据] 查询股票数据失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 订阅指定股票的实时推送
+   */
+  async subscribeStocks(symbols) {
+    try {
+      console.log('[真实股票数据] 订阅股票推送:', symbols);
+
+      if (!this.isConnected) {
+        throw new Error('未连接到股票数据服务器');
+      }
+
+      const apiKey = this.getCurrentApiKey();
+      if (!apiKey) {
+        throw new Error('没有可用的API Key');
+      }
+
+      // 发送订阅请求
+      const subscribeMessage = {
+        action: 'subscribe',
+        symbols: Array.isArray(symbols) ? symbols : [symbols],
+        apiKey: apiKey.key,
+        timestamp: Date.now()
+      };
+
+      this.socket.send({
+        data: JSON.stringify(subscribeMessage)
+      });
+
+      console.log('[真实股票数据] 发送订阅请求:', subscribeMessage);
+      return { success: true, message: '订阅请求已发送' };
+
+    } catch (error) {
+      console.error('[真实股票数据] 订阅股票失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 取消订阅指定股票
+   */
+  async unsubscribeStocks(symbols) {
+    try {
+      console.log('[真实股票数据] 取消订阅股票:', symbols);
+
+      if (!this.isConnected) {
+        return { success: false, message: '未连接到服务器' };
+      }
+
+      const apiKey = this.getCurrentApiKey();
+      if (!apiKey) {
+        throw new Error('没有可用的API Key');
+      }
+
+      // 发送取消订阅请求
+      const unsubscribeMessage = {
+        action: 'unsubscribe',
+        symbols: Array.isArray(symbols) ? symbols : [symbols],
+        apiKey: apiKey.key,
+        timestamp: Date.now()
+      };
+
+      this.socket.send({
+        data: JSON.stringify(unsubscribeMessage)
+      });
+
+      console.log('[真实股票数据] 发送取消订阅请求:', unsubscribeMessage);
+      return { success: true, message: '取消订阅请求已发送' };
+
+    } catch (error) {
+      console.error('[真实股票数据] 取消订阅失败:', error);
+      throw error;
+    }
   }
 
   /**

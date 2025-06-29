@@ -368,20 +368,39 @@ class AgentDataService {
     try {
       console.log('[Agent数据] 获取真实股票数据:', symbols);
 
-      // 首先尝试从专业股票数据服务获取
+      // 首先尝试从专业股票数据服务主动查询
       if (realStockDataService.isConnected) {
-        console.log('[Agent数据] 从专业股票数据服务获取');
+        console.log('[Agent数据] 通过专业API主动查询股票数据');
+        try {
+          const queryResult = await realStockDataService.queryStockData(symbols);
+          if (queryResult.success && Object.keys(queryResult.data).length > 0) {
+            console.log('[Agent数据] 成功查询到专业股票数据');
+            return {
+              success: true,
+              data: queryResult.data,
+              symbols: symbols,
+              period: period,
+              timestamp: new Date().toISOString(),
+              source: 'professional_query'
+            };
+          }
+        } catch (queryError) {
+          console.warn('[Agent数据] 专业API查询失败:', queryError);
+        }
+
+        // 如果查询失败，尝试从缓存获取
+        console.log('[Agent数据] 从专业API缓存获取数据');
         const stockData = realStockDataService.getLatestDataBatch(symbols);
 
         if (Object.keys(stockData).length > 0) {
-          console.log('[Agent数据] 成功获取专业股票数据');
+          console.log('[Agent数据] 成功获取专业股票缓存数据');
           return {
             success: true,
             data: stockData,
             symbols: symbols,
             period: period,
             timestamp: new Date().toISOString(),
-            source: 'professional_api'
+            source: 'professional_cache'
           };
         }
       }
@@ -572,6 +591,42 @@ class AgentDataService {
     } catch (error) {
       console.error('[Agent数据] 连接专业股票数据服务失败:', error);
       throw new Error(`连接专业股票数据服务失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 订阅指定股票的实时推送
+   */
+  async subscribeStocks(symbols) {
+    try {
+      console.log('[Agent数据] 订阅股票实时推送:', symbols);
+
+      if (realStockDataService.isConnected) {
+        return await realStockDataService.subscribeStocks(symbols);
+      } else {
+        throw new Error('专业股票数据服务未连接');
+      }
+    } catch (error) {
+      console.error('[Agent数据] 订阅股票失败:', error);
+      throw new Error(`订阅股票失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 取消订阅指定股票
+   */
+  async unsubscribeStocks(symbols) {
+    try {
+      console.log('[Agent数据] 取消订阅股票:', symbols);
+
+      if (realStockDataService.isConnected) {
+        return await realStockDataService.unsubscribeStocks(symbols);
+      } else {
+        return { success: false, message: '专业股票数据服务未连接' };
+      }
+    } catch (error) {
+      console.error('[Agent数据] 取消订阅失败:', error);
+      throw new Error(`取消订阅失败: ${error.message}`);
     }
   }
 
