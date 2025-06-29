@@ -37,8 +37,16 @@ class RealTimeDataService {
       });
 
       if (response.statusCode === 200 && response.data) {
-        console.log('[真实数据] 成功获取实时行情:', response.data);
-        
+        console.log('[真实数据] 收到实时行情响应:', response.data);
+
+        // 检查数据源是否为真实数据
+        if (response.data.source === 'mock' || response.data.source === 'simulation' ||
+            response.data.data_type === 'demo' || response.data.type === 'test') {
+          throw new Error(`拒绝模拟股票数据: 检测到模拟数据源。交易软件要求真实股票行情数据。`);
+        }
+
+        console.log('[真实数据] 验证通过，获取真实股票行情');
+
         return {
           success: true,
           data: this._formatQuoteData(response.data),
@@ -77,8 +85,16 @@ class RealTimeDataService {
       });
 
       if (response.statusCode === 200 && response.data) {
-        console.log('[真实数据] 成功获取K线数据:', response.data);
-        
+        console.log('[真实数据] 收到K线数据响应:', response.data);
+
+        // 检查K线数据源是否为真实数据
+        if (response.data.source === 'mock' || response.data.source === 'simulation' ||
+            response.data.data_type === 'demo' || response.data.type === 'test') {
+          throw new Error(`拒绝模拟K线数据: 检测到模拟数据源。交易软件要求真实历史K线数据。`);
+        }
+
+        console.log('[真实数据] 验证通过，获取真实K线数据');
+
         return {
           success: true,
           data: this._formatKLineData(response.data),

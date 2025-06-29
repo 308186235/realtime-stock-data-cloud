@@ -514,16 +514,25 @@
         <view class="floating-test-btn" @click="goToTestPage">
             <text class="floating-btn-text">🧪 测试</text>
         </view>
+
+        <!-- 真实数据错误提示 -->
+        <RealDataErrorAlert
+            :visible="showDataError"
+            :errorMessage="dataErrorMessage"
+            @close="hideDataError"
+            @retry="retryDataConnection" />
     </view>
 </template>
 
 <script>
 import BackendConnectionStatus from '@/components/BackendConnectionStatus.vue'
+import RealDataErrorAlert from '@/components/RealDataErrorAlert.vue'
 import dataService from '@/services/dataService.js'
 
 export default {
     components: {
-        BackendConnectionStatus
+        BackendConnectionStatus,
+        RealDataErrorAlert
     },
     data() {
         return {
@@ -542,7 +551,10 @@ export default {
             ],
             // 加载状态
             loading: false,
-            lastUpdateTime: null
+            lastUpdateTime: null,
+            // 真实数据错误提示
+            showDataError: false,
+            dataErrorMessage: ''
         }
     },
     onLoad() {
@@ -619,12 +631,27 @@ export default {
             } catch (error) {
                 console.error('❌ 真实数据测试失败:', error);
                 console.error('💡 请确保Agent后端服务正在运行并连接到真实数据源');
-                uni.showToast({
-                    title: '需要Agent后端服务支持',
-                    icon: 'none',
-                    duration: 3000
-                });
+
+                // 显示详细的错误提示
+                this.showDataErrorAlert(error.message);
             }
+        },
+
+        // 显示数据错误提示
+        showDataErrorAlert(message) {
+            this.dataErrorMessage = message;
+            this.showDataError = true;
+        },
+
+        // 隐藏数据错误提示
+        hideDataError() {
+            this.showDataError = false;
+        },
+
+        // 重试数据连接
+        async retryDataConnection() {
+            console.log('🔄 重试真实数据连接...');
+            await this.testDataFunctions();
         },
 
         // 加载数据
@@ -670,12 +697,13 @@ export default {
                 }
             } catch (error) {
                 console.error('加载Agent分析数据失败:', error);
-                // 使用默认数据
-                this.recommendedStocks = [
-                    { name: '贵州茅台', code: '600519', price: '1826.50', change: '+2.34%', trend: 'up' },
-                    { name: '腾讯控股', code: '00700', price: '365.80', change: '-1.25%', trend: 'down' },
-                    { name: '宁德时代', code: '300750', price: '198.50', change: '+0.85%', trend: 'up' }
-                ];
+
+                // 检查是否为模拟数据错误
+                if (error.message && error.message.includes('模拟')) {
+                    this.showDataErrorAlert(error.message);
+                } else {
+                    console.error('💡 Agent分析服务连接失败，请检查后端服务');
+                }
             }
         },
 

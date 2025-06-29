@@ -29,10 +29,22 @@ class AgentDataService {
       });
 
       if (response.statusCode === 200 && response.data) {
-        console.log('[Agent数据] 成功获取账户余额:', response.data);
-        
+        console.log('[Agent数据] 收到账户余额响应:', response.data);
+
         // 适配不同的响应格式
         const accountInfo = response.data.account_info || response.data.balance_info || response.data;
+
+        // 检查是否为模拟数据，拒绝模拟数据
+        const accountType = accountInfo?.account_type || '';
+        const accountName = accountInfo?.account_name || '';
+
+        if (accountType.includes('模拟') || accountType.includes('mock') ||
+            accountName.includes('模拟') || accountName.includes('Netlify') ||
+            accountType.includes('云端模拟') || accountType.includes('测试')) {
+          throw new Error(`拒绝模拟数据: 检测到模拟账户类型"${accountType}"或账户名称"${accountName}"。交易软件要求真实账户数据。`);
+        }
+
+        console.log('[Agent数据] 验证通过，获取真实账户余额');
 
         return {
           success: true,
@@ -43,9 +55,9 @@ class AgentDataService {
             total_assets: accountInfo?.total_assets || accountInfo?.total_value || 0,
             frozen: accountInfo?.frozen || 0,
             daily_profit: accountInfo?.daily_profit || 0,
-            account_type: accountInfo?.account_type || 'Agent智能账户',
-            account_name: accountInfo?.account_name || 'Agent账户',
-            account_id: accountInfo?.account_id || 'agent_001',
+            account_type: accountInfo?.account_type,
+            account_name: accountInfo?.account_name,
+            account_id: accountInfo?.account_id,
             last_update: new Date().toISOString()
           }
         };
@@ -75,11 +87,26 @@ class AgentDataService {
       });
 
       if (response.statusCode === 200 && response.data) {
-        console.log('[Agent数据] 成功获取持仓信息:', response.data);
-        
+        console.log('[Agent数据] 收到持仓信息响应:', response.data);
+
+        // 检查账户信息是否为模拟数据
+        const accountInfo = response.data.account_info;
+        if (accountInfo) {
+          const accountType = accountInfo.account_type || '';
+          const accountName = accountInfo.account_name || '';
+
+          if (accountType.includes('模拟') || accountType.includes('mock') ||
+              accountName.includes('模拟') || accountName.includes('Netlify') ||
+              accountType.includes('云端模拟') || accountType.includes('测试')) {
+            throw new Error(`拒绝模拟持仓数据: 检测到模拟账户类型"${accountType}"或账户名称"${accountName}"。交易软件要求真实持仓数据。`);
+          }
+        }
+
         // 适配不同的响应格式
         const positionsData = response.data.positions || response.data.data?.positions || response.data;
         const positions = Array.isArray(positionsData) ? positionsData : [];
+
+        console.log('[Agent数据] 验证通过，获取真实持仓信息');
 
         return {
           success: true,
@@ -123,21 +150,25 @@ class AgentDataService {
       });
 
       if (response.statusCode === 200 && response.data) {
-        console.log('[Agent数据] 成功获取Agent分析:', response.data);
-        
+        console.log('[Agent数据] 收到Agent分析响应:', response.data);
+
+        // 检查分析数据是否基于真实数据
+        const analysis = response.data.analysis || response.data;
+        if (analysis && (analysis.data_source === 'mock' || analysis.data_source === 'simulation' ||
+                        analysis.source === 'mock' || analysis.type === 'demo')) {
+          throw new Error(`拒绝模拟分析数据: 检测到分析基于模拟数据源。交易软件要求基于真实市场数据的分析。`);
+        }
+
+        console.log('[Agent数据] 验证通过，获取真实分析数据');
+
         return {
           success: true,
           data: {
-            learning_progress: response.data.learning_progress || {
-              accuracy: 0.75,
-              win_rate: 0.68,
-              max_drawdown: 0.12,
-              total_trades: 156,
-              profitable_trades: 106
-            },
-            recommendations: response.data.recommendations || [],
-            market_analysis: response.data.market_analysis || {},
-            risk_assessment: response.data.risk_assessment || {},
+            learning_progress: response.data.learning_progress || response.data.analysis?.learning_progress,
+            recommendations: response.data.recommendations || response.data.analysis?.recommendations || [],
+            market_analysis: response.data.market_analysis || response.data.analysis?.market_analysis || {},
+            risk_assessment: response.data.risk_assessment || response.data.analysis?.risk_assessment || {},
+            data_source: 'real',
             last_update: new Date().toISOString()
           }
         };
