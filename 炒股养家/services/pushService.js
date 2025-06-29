@@ -57,16 +57,21 @@ class PushService {
   async checkPermission() {
     return new Promise((resolve) => {
       // #ifdef APP-PLUS
-      const main = plus.android.runtimeMainActivity();
-      const pkgName = main.getPackageName();
-      const uid = main.getApplicationInfo().uid;
-      const NotificationManagerCompat = plus.android.importClass("android.support.v4.app.NotificationManagerCompat");
-      
-      if (NotificationManagerCompat.from(main).areNotificationsEnabled()) {
-        this.permissionGranted = true;
-        resolve(true);
-      } else {
-        this.requestPermission().then(resolve);
+      try {
+        const main = plus.android.runtimeMainActivity();
+        const pkgName = main.getPackageName();
+        const uid = main.getApplicationInfo().uid;
+        const NotificationManagerCompat = plus.android.importClass("android.support.v4.app.NotificationManagerCompat");
+
+        if (NotificationManagerCompat && NotificationManagerCompat.from(main).areNotificationsEnabled()) {
+          this.permissionGranted = true;
+          resolve(true);
+        } else {
+          this.requestPermission().then(resolve);
+        }
+      } catch (error) {
+        console.error('检查推送权限失败:', error);
+        resolve(false);
       }
       // #endif
       

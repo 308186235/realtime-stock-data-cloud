@@ -249,6 +249,34 @@ class GestureService {
   getSupportedGestures() {
     return Object.keys(this.callbacks);
   }
+
+  /**
+   * 快捷手势设置
+   */
+  setupQuickGestures() {
+    try {
+      // 左滑返回上一页
+      this.on('swipeRight', () => {
+        const pages = getCurrentPages();
+        if (pages.length > 1) {
+          uni.navigateBack();
+        }
+      });
+
+      // 下拉刷新
+      this.on('swipeDown', (data) => {
+        if (data.deltaY > 100) {
+          // 触发页面刷新
+          const currentPage = getCurrentPages().pop();
+          if (currentPage && currentPage.$vm && currentPage.$vm.refreshData) {
+            currentPage.$vm.refreshData();
+          }
+        }
+      });
+    } catch (error) {
+      console.error('设置快捷手势失败:', error);
+    }
+  }
 }
 
 // 创建单例实例

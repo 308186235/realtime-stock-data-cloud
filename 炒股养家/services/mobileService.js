@@ -152,8 +152,16 @@ class MobileService {
    * 设置手势服务
    */
   setupGestureService() {
-    // 设置快捷手势
-    gestureService.setupQuickGestures();
+    try {
+      // 设置快捷手势
+      if (gestureService && typeof gestureService.setupQuickGestures === 'function') {
+        gestureService.setupQuickGestures();
+      } else {
+        console.warn('gestureService.setupQuickGestures 方法不可用');
+      }
+    } catch (error) {
+      console.error('设置手势服务失败:', error);
+    }
   }
   
   /**

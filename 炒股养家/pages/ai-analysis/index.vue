@@ -626,6 +626,7 @@ import dataService from '@/services/dataService.js';
 import notificationService from '@/services/notificationService.js';
 import mobileService from '@/services/mobileService.js';
 import pushService from '@/services/pushService.js';
+import gestureService from '@/services/gestureService.js';
 
 export default {
   name: 'AgentTradingPanel',
@@ -931,25 +932,27 @@ export default {
 
     // 设置手势操作
     setupGestures() {
-      const gestureService = mobileService.gestureService;
-
-      // 双击刷新数据
-      gestureService.on('doubleTap', () => {
-        this.refreshData();
-        mobileService.vibrate('short'); // 震动反馈
-      });
-
-      // 长按显示操作菜单
-      gestureService.on('longPress', () => {
-        this.showActionMenu();
-      });
-
-      // 下滑刷新
-      gestureService.on('swipeDown', (data) => {
-        if (data.deltaY > 100) {
+      try {
+        // 双击刷新数据
+        gestureService.on('doubleTap', () => {
           this.refreshData();
-        }
-      });
+          mobileService.vibrate('short'); // 震动反馈
+        });
+
+        // 长按显示操作菜单
+        gestureService.on('longPress', () => {
+          this.showActionMenu();
+        });
+
+        // 下滑刷新
+        gestureService.on('swipeDown', (data) => {
+          if (data.deltaY > 100) {
+            this.refreshData();
+          }
+        });
+      } catch (error) {
+        console.error('设置手势操作失败:', error);
+      }
     },
 
     // 设置推送通知
