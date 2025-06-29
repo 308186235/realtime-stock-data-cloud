@@ -36,6 +36,15 @@
                 </view>
                 <view class="arrow-right"></view>
             </view>
+
+            <view class="feature-card test-feature" @click="goToTestPage">
+                <view class="feature-icon test-icon"></view>
+                <view class="feature-content">
+                    <text class="feature-title">🧪 数据测试</text>
+                    <text class="feature-desc">测试回测功能和股票数据获取</text>
+                </view>
+                <view class="arrow-right"></view>
+            </view>
         </view>
         
         <!-- 市场概览 -->
@@ -500,6 +509,11 @@
                 </view>
             </view>
         </view>
+
+        <!-- 浮动测试按钮 -->
+        <view class="floating-test-btn" @click="goToTestPage">
+            <text class="floating-btn-text">🧪 测试</text>
+        </view>
     </view>
 </template>
 
@@ -538,6 +552,9 @@ export default {
 
         // 加载数据
         this.loadData();
+
+        // 测试数据获取功能
+        this.testDataFunctions();
     },
     onShow() {
         // 每次显示页面时检查当前主题
@@ -566,6 +583,44 @@ export default {
             uni.navigateTo({
                 url: '/pages/test-data/index'
             });
+        },
+
+        // 测试数据获取功能
+        async testDataFunctions() {
+            try {
+                console.log('🧪 开始测试数据获取功能...');
+
+                // 动态导入agentDataService
+                const agentDataService = (await import('@/services/agentDataService.js')).default;
+
+                // 测试股票数据获取
+                console.log('📊 测试股票数据获取...');
+                const stockResult = await agentDataService.getStockData(['000001', '600000']);
+                console.log('📊 股票数据测试结果:', stockResult);
+
+                // 测试回测功能
+                console.log('🔄 测试回测功能...');
+                const backtestResult = await agentDataService.runBacktest({
+                    strategy: 'test',
+                    symbols: ['000001'],
+                    initial_capital: 10000
+                });
+                console.log('🔄 回测测试结果:', backtestResult);
+
+                // 显示测试完成提示
+                uni.showToast({
+                    title: '数据测试完成，请查看控制台',
+                    icon: 'success',
+                    duration: 3000
+                });
+
+            } catch (error) {
+                console.error('❌ 数据测试失败:', error);
+                uni.showToast({
+                    title: '数据测试失败',
+                    icon: 'error'
+                });
+            }
         },
 
         // 加载数据
@@ -1895,6 +1950,29 @@ export default {
 .light-theme .action-button.test {
     background-color: #ff9800;
     color: #fff;
+}
+
+/* 浮动测试按钮 */
+.floating-test-btn {
+    position: fixed;
+    bottom: 100rpx;
+    right: 30rpx;
+    width: 120rpx;
+    height: 120rpx;
+    background: linear-gradient(135deg, #ff9800, #f57c00);
+    border-radius: 60rpx;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 8rpx 20rpx rgba(255, 152, 0, 0.4);
+    z-index: 1000;
+}
+
+.floating-btn-text {
+    color: white;
+    font-size: 24rpx;
+    font-weight: bold;
+    text-align: center;
 }
 
 /* 通用样式 */
