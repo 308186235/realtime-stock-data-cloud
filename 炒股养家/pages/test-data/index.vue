@@ -29,6 +29,10 @@
         <button class="test-btn" @click="clearResults">
           <text class="btn-text">清除结果</text>
         </button>
+
+        <button class="test-btn" @click="goToApiKeyManager">
+          <text class="btn-text">🔑 API Key管理</text>
+        </button>
       </view>
     </view>
 
@@ -309,6 +313,12 @@ export default {
     
     toggleRawData(e) {
       this.showRawData = e.detail.value;
+    },
+
+    goToApiKeyManager() {
+      uni.navigateTo({
+        url: '/pages/api-key-manager/index'
+      });
     }
   },
   

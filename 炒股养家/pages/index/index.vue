@@ -45,6 +45,15 @@
                 </view>
                 <view class="arrow-right"></view>
             </view>
+
+            <view class="feature-card api-key-feature" @click="goToApiKeyManager">
+                <view class="feature-icon api-key-icon"></view>
+                <view class="feature-content">
+                    <text class="feature-title">🔑 API Key管理</text>
+                    <text class="feature-desc">管理股票数据API Key，快速切换</text>
+                </view>
+                <view class="arrow-right"></view>
+            </view>
         </view>
         
         <!-- 市场概览 -->
@@ -594,6 +603,13 @@ export default {
         goToTestPage() {
             uni.navigateTo({
                 url: '/pages/test-data/index'
+            });
+        },
+
+        // 跳转到API Key管理页面
+        goToApiKeyManager() {
+            uni.navigateTo({
+                url: '/pages/api-key-manager/index'
             });
         },
 

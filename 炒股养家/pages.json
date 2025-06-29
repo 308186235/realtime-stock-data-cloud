@@ -37,6 +37,15 @@
       }
     },
     {
+      "path": "pages/api-key-manager/index",
+      "style": {
+        "navigationBarTitleText": "API Key管理",
+        "navigationBarTextStyle": "white",
+        "navigationBarBackgroundColor": "#141414",
+        "backgroundColor": "#141414"
+      }
+    },
+    {
       "path": "pages/stock-picking/index",
       "style": {
         "navigationBarTitleText": "选股策略",

@@ -1,12 +1,14 @@
 /**
  * 真实股票数据服务
  * 连接专业股票数据推送API
- * API Key: QT_wat5QfcJ6N9pDZM5
+ * 支持多API Key管理和自动切换
  */
+
+import apiKeyManager from './apiKeyManager.js';
 
 class RealStockDataService {
   constructor() {
-    this.apiKey = 'QT_wat5QfcJ6N9pDZM5';
+    this.currentApiKey = null;
     this.host = ''; // 需要配置真实服务器地址
     this.port = 0;  // 需要配置真实服务器端口
     this.socket = null;
@@ -17,6 +19,8 @@ class RealStockDataService {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectInterval = 5000;
+    this.connectionErrors = 0;
+    this.maxConnectionErrors = 3;
   }
 
   /**
@@ -53,12 +57,21 @@ class RealStockDataService {
       this.socket.onError((error) => {
         console.error('[真实股票数据] 连接错误:', error);
         this.isConnected = false;
+        this.connectionErrors++;
+
+        // 报告API Key错误
+        const currentKey = this.getCurrentApiKey();
+        if (currentKey) {
+          apiKeyManager.reportError(currentKey.id, error);
+        }
+
         this.attemptReconnect();
       });
 
       this.socket.onClose(() => {
         console.log('[真实股票数据] 连接关闭');
         this.isConnected = false;
+        this.connectionErrors++;
         this.attemptReconnect();
       });
 
@@ -69,14 +82,43 @@ class RealStockDataService {
   }
 
   /**
+   * 获取当前API Key
+   */
+  getCurrentApiKey() {
+    if (!this.currentApiKey) {
+      this.currentApiKey = apiKeyManager.getCurrentApiKey();
+    }
+    return this.currentApiKey;
+  }
+
+  /**
+   * 切换API Key
+   */
+  switchApiKey() {
+    const oldKey = this.currentApiKey;
+    this.currentApiKey = apiKeyManager.switchToNextKey();
+
+    if (this.currentApiKey) {
+      console.log(`[真实股票数据] API Key切换: ${oldKey?.name} -> ${this.currentApiKey.name}`);
+      return true;
+    } else {
+      console.error('[真实股票数据] 没有可用的API Key');
+      return false;
+    }
+  }
+
+  /**
    * 发送认证token
    */
   authenticate() {
-    if (this.socket && this.isConnected) {
-      console.log('[真实股票数据] 发送认证token');
+    const apiKey = this.getCurrentApiKey();
+    if (this.socket && this.isConnected && apiKey) {
+      console.log('[真实股票数据] 发送认证token:', apiKey.name);
       this.socket.send({
-        data: this.apiKey
+        data: apiKey.key
       });
+    } else {
+      console.error('[真实股票数据] 无法认证: 缺少API Key或连接');
     }
   }
 
@@ -335,8 +377,21 @@ class RealStockDataService {
    */
   attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[真实股票数据] 达到最大重连次数，停止重连');
-      return;
+      console.error('[真实股票数据] 达到最大重连次数');
+
+      // 如果连接错误过多，尝试切换API Key
+      if (this.connectionErrors >= this.maxConnectionErrors) {
+        console.log('[真实股票数据] 连接错误过多，尝试切换API Key');
+        if (this.switchApiKey()) {
+          this.reconnectAttempts = 0; // 重置重连次数
+          this.connectionErrors = 0;  // 重置错误次数
+        } else {
+          console.error('[真实股票数据] 没有可用的API Key，停止重连');
+          return;
+        }
+      } else {
+        return;
+      }
     }
 
     this.reconnectAttempts++;
