@@ -10,8 +10,8 @@ from typing import List, Dict, Any, Optional
 
 from strategies import StrategyFactory
 # from utils.visualization import generate_performance_chart  # 函数不存在，暂时注释
-from backend.models.models import Backtest, Trade, Strategy, User
-from backend.services.data_service import get_historical_data
+from models.models import Backtest, Trade, Strategy, User
+from services.data_service import get_historical_data
 
 logger = logging.getLogger(__name__)
 

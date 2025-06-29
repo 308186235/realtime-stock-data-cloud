@@ -1,0 +1,17 @@
+{
+  "name": "trading-system-netlify",
+  "version": "1.0.0",
+  "description": "Trading System API on Netlify Functions",
+  "main": "netlify/functions/health.js",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'Build complete'",
+    "deploy": "netlify deploy --prod"
+  },
+  "keywords": ["trading", "api", "netlify", "stock", "finance"],
+  "author": "Trading System",
+  "license": "MIT",
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}

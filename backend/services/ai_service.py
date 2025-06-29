@@ -26,7 +26,7 @@ class AIService:
 
         Returns:
             Dict containing sentiment analysis results
-        """"""
+        """
         try:
             # Placeholder implementation
             sentiment_score = 0.5  # Neutral sentiment
@@ -51,7 +51,7 @@ class AIService:
 
         Returns:
             Dict containing price predictions
-        """"""
+        """
         try:
             # Placeholder implementation
             current_price = data['close'].iloc[-1] if not data.empty else 100.0
@@ -78,7 +78,7 @@ class AIService:
 
         Returns:
             Dict containing optimized parameters
-        """"""
+        """
         try:
             # Placeholder implementation
             optimized_params = {
@@ -108,7 +108,7 @@ class AIService:
 
         Returns:
             Dict containing risk assessment
-        """"""
+        """
         try:
             # Placeholder implementation
             total_value = sum(position.get('value', 0) for position in portfolio.get('positions', []))
@@ -133,7 +133,7 @@ class AIService:
 
         Returns:
             List of trading signals
-        """"""
+        """
         try:
             # Placeholder implementation
             signals = [
@@ -160,7 +160,7 @@ class AIService:
 
         Returns:
             Dict containing training results
-        """"""
+        """
         try:
             self.is_training = True
             logger.info("Starting AI model training")
@@ -188,7 +188,7 @@ class AIService:
 
         Returns:
             Dict containing model status information
-        """"""
+        """
         return {
             "is_training": self.is_training,
             "available_models": ["sentiment", "price_prediction", "risk_assessment"],

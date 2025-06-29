@@ -2,8 +2,8 @@ import logging
 import threading
 from typing import Dict, List, Optional, Union, Any
 
-from ..config import settings
-from .brokers import BrokerFactory
+from config import settings
+from services.brokers import BrokerFactory
 
 logger = logging.getLogger(__name__)
 

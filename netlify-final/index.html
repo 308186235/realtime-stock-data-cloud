@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 交易系统API</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 { text-align: center; margin-bottom: 30px; }
+        .status {
+            text-align: center;
+            background: #4CAF50;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .endpoints {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .endpoint {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .endpoint h3 { color: #FFD700; margin-bottom: 10px; }
+        .endpoint code {
+            background: rgba(0,0,0,0.3);
+            padding: 8px;
+            border-radius: 5px;
+            display: block;
+            margin: 10px 0;
+        }
+        .test-btn {
+            background: #FF6B6B;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .test-btn:hover { background: #FF5252; }
+        #result {
+            margin-top: 20px;
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+        #result pre {
+            background: rgba(0,0,0,0.5);
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 交易系统API</h1>
+        
+        <div class="status">
+            <strong>✅ 服务运行正常</strong><br>
+            基于 Netlify Functions 的云端API服务
+        </div>
+
+        <div class="endpoints">
+            <div class="endpoint">
+                <h3>🏥 健康检查</h3>
+                <code>GET /api/health</code>
+                <button class="test-btn" onclick="testAPI('/api/health')">测试</button>
+            </div>
+
+            <div class="endpoint">
+                <h3>💰 账户余额</h3>
+                <code>GET /api/account-balance</code>
+                <button class="test-btn" onclick="testAPI('/api/account-balance')">测试</button>
+            </div>
+
+            <div class="endpoint">
+                <h3>📊 持仓信息</h3>
+                <code>GET /api/account-positions</code>
+                <button class="test-btn" onclick="testAPI('/api/account-positions')">测试</button>
+            </div>
+
+            <div class="endpoint">
+                <h3>🤖 AI分析</h3>
+                <code>GET /api/agent-analysis</code>
+                <button class="test-btn" onclick="testAPI('/api/agent-analysis')">测试</button>
+            </div>
+        </div>
+
+        <div id="result">
+            <h3>📋 测试结果：</h3>
+            <pre id="result-content"></pre>
+        </div>
+    </div>
+
+    <script>
+        async function testAPI(endpoint) {
+            const resultDiv = document.getElementById('result');
+            const resultContent = document.getElementById('result-content');
+            
+            resultDiv.style.display = 'block';
+            resultContent.textContent = '🔄 正在测试...';
+            
+            try {
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                
+                resultContent.textContent = JSON.stringify(data, null, 2);
+                resultContent.style.color = response.ok ? '#4CAF50' : '#FF6B6B';
+            } catch (error) {
+                resultContent.textContent = `❌ 错误: ${error.message}`;
+                resultContent.style.color = '#FF6B6B';
+            }
+        }
+    </script>
+</body>
+</html>

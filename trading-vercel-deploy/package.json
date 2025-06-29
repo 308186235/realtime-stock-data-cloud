@@ -1,0 +1,19 @@
+{
+  "name": "trading-system-vercel",
+  "version": "1.0.0",
+  "description": "Complete Trading System API on Vercel",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Build complete'",
+    "start": "echo 'Start complete'",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["trading", "api", "vercel", "stock", "finance"],
+  "author": "Trading System",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
+}

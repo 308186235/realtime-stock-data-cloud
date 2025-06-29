@@ -1,7 +1,6 @@
 [build]
-  functions = "functions"
-  publish = "."
-  command = "cp -r netlify-git-deploy/functions ./functions && cp netlify-git-deploy/index.html ./index.html"
+  functions = "netlify/functions"
+  publish = "public"
 
 [functions]
   node_bundler = "esbuild"

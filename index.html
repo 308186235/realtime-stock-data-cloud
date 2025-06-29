@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 交易系统API - Netlify Functions</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 { text-align: center; margin-bottom: 30px; font-size: 2.5em; }
+        .status {
+            text-align: center;
+            background: #4CAF50;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+            font-size: 1.2em;
+        }
+        .endpoints {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        .endpoint {
+            background: rgba(255,255,255,0.1);
+            padding: 25px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s;
+        }
+        .endpoint:hover { transform: translateY(-5px); }
+        .endpoint h3 { 
+            color: #FFD700; 
+            margin-bottom: 15px; 
+            font-size: 1.3em;
+        }
+        .endpoint p {
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+        .endpoint code {
+            background: rgba(0,0,0,0.4);
+            padding: 12px;
+            border-radius: 8px;
+            display: block;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .test-btn {
+            background: #FF6B6B;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: all 0.3s;
+            width: 100%;
+        }
+        .test-btn:hover { 
+            background: #FF5252; 
+            transform: translateY(-2px);
+        }
+        #result {
+            margin-top: 30px;
+            background: rgba(0,0,0,0.3);
+            padding: 25px;
+            border-radius: 15px;
+            display: none;
+        }
+        #result h3 { color: #FFD700; margin-bottom: 15px; }
+        #result pre {
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .deploy-info {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            font-size: 0.9em;
+        }
+        .github-link {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #333;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+        .github-link:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 交易系统API</h1>
+        
+        <div class="status">
+            <strong>✅ 服务运行正常</strong><br>
+            基于 Netlify Functions 的云端API服务<br>
+            <small>通过Git连接自动部署 - Functions已启用</small>
+        </div>
+
+        <div class="endpoints">
+            <div class="endpoint">
+                <h3>🏥 健康检查</h3>
+                <p>检查API服务状态和可用端点</p>
+                <code>GET /api/health</code>
+                <button class="test-btn" onclick="testAPI('/api/health')">测试健康检查</button>
+            </div>
+
+            <div class="endpoint">
+                <h3>💰 账户余额</h3>
+                <p>获取交易账户资金信息和风险指标</p>
+                <code>GET /api/account-balance</code>
+                <button class="test-btn" onclick="testAPI('/api/account-balance')">测试账户余额</button>
+            </div>
+
+            <div class="endpoint">
+                <h3>📊 持仓信息</h3>
+                <p>查看当前股票持仓详情和盈亏情况</p>
+                <code>GET /api/account-positions</code>
+                <button class="test-btn" onclick="testAPI('/api/account-positions')">测试持仓信息</button>
+            </div>
+
+            <div class="endpoint">
+                <h3>🤖 AI分析</h3>
+                <p>获取智能交易分析、市场情绪和投资建议</p>
+                <code>GET /api/agent-analysis</code>
+                <button class="test-btn" onclick="testAPI('/api/agent-analysis')">测试AI分析</button>
+            </div>
+        </div>
+
+        <div id="result">
+            <h3>📋 测试结果：</h3>
+            <pre id="result-content"></pre>
+        </div>
+
+        <div class="deploy-info">
+            <strong>🔧 部署信息</strong><br>
+            部署方式: Git连接自动部署 | Functions目录: /functions | 构建工具: esbuild<br>
+            域名: api.aigupiao.me | API版本: v1.2.0 | 更新时间: <span id="update-time"></span><br>
+            <a href="https://github.com/308186235/Bei-fen" class="github-link" target="_blank">
+                📂 查看源代码
+            </a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('update-time').textContent = new Date().toLocaleString('zh-CN');
+        
+        async function testAPI(endpoint) {
+            const resultDiv = document.getElementById('result');
+            const resultContent = document.getElementById('result-content');
+            
+            resultDiv.style.display = 'block';
+            resultContent.textContent = '🔄 正在测试API端点...';
+            resultContent.style.color = '#FFD700';
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch(endpoint);
+                const endTime = Date.now();
+                const data = await response.json();
+                
+                const responseInfo = `
+📡 请求信息:
+- 端点: ${endpoint}
+- 状态码: ${response.status} ${response.statusText}
+- 响应时间: ${endTime - startTime}ms
+- 内容类型: ${response.headers.get('content-type')}
+- 服务器: ${data.server || 'Unknown'}
+
+📄 响应数据:
+${JSON.stringify(data, null, 2)}`;
+                
+                resultContent.textContent = responseInfo;
+                resultContent.style.color = response.ok ? '#4CAF50' : '#FF6B6B';
+                
+                // 滚动到结果区域
+                resultDiv.scrollIntoView({ behavior: 'smooth' });
+            } catch (error) {
+                resultContent.textContent = `❌ 请求失败: ${error.message}`;
+                resultContent.style.color = '#FF6B6B';
+            }
+        }
+        
+        // 页面加载时自动测试健康检查
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                console.log('🚀 交易系统API已加载完成');
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

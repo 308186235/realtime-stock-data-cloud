@@ -16,7 +16,7 @@ from api.t_trading_api import router as t_trading_router
 from api.test_endpoint import router as test_router  # 瀵煎叆娴嬭瘯璺敱
 from api.end_of_day_selection_api import router as eod_selection_router  # 瀵煎叆灏剧洏閫夎偂璺敱
 from services.websocket_manager import ConnectionManager
-from services.market_data import MarketDataService
+from services.market_data_service import MarketDataService
 from services.trading_service import TradingService
 from services.ai_service import AIService
 from services.backtest_service import BacktestService

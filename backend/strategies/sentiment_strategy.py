@@ -34,7 +34,7 @@ class SentimentStrategy(BaseStrategy):
         1. 特征工程
         2. 异常检测
         3. 生成交易信号
-        """"""
+        """
         features = self.calculate_features(market_data)
         feature_vector = list(features.values())
         
