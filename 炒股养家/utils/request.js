@@ -24,7 +24,7 @@ const DEBUG = currentEnv.logLevel === 'debug';
 const request = (options = {}) => {
   return new Promise((resolve, reject) => {
     // 如果启用了模拟数据,在有mock处理器的情况下直接返回模拟数据
-    if (USE_MOCK_DATA && typeof window.mockResponse === 'function') {
+    if (USE_MOCK_DATA && window && typeof window.mockResponse === 'function') {
       try {
         const mockData = window.mockResponse(options.url, options.method, options.data);
         if (mockData) {

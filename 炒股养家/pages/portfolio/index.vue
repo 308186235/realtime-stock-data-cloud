@@ -357,22 +357,19 @@ export default {
     },
 
     /**
-     * 从真实交易软件获取持仓数据
+     * 从Agent系统获取真实持仓数据
      */
     async loadRealPositions() {
       try {
-        // 调用后端API获取真实的持仓数据
-        const response = await uni.request({
-          url: `${this.getApiBaseUrl()}/api/agent-trading/position`,
-          method: 'GET'
-        });
+        // 首先尝试从agentDataService获取真实持仓数据
+        const agentDataService = (await import('@/services/agentDataService.js')).default;
 
-        if (response.statusCode === 200 && response.data.status === 'success') {
-          const positionsData = response.data.data.positions || [];
+        try {
+          const result = await agentDataService.getPositions();
 
-          if (positionsData.length > 0) {
+          if (result.success && result.data && result.data.length > 0) {
             // 转换数据格式
-            const realStocks = positionsData.map(position => ({
+            const realStocks = result.data.map(position => ({
               name: position.name,
               code: position.symbol,
               currentPrice: position.current_price.toFixed(2),
@@ -385,25 +382,51 @@ export default {
               isRecommended: position.profit_loss > 0,
               isWarning: position.profit_loss < -1000,
               buyDate: position.position_date || '未知',
-              tradeSource: 'real' // 真实交易数据
+              tradeSource: 'agent' // Agent真实数据
             }));
 
             // 更新持仓数据
             this.stocks = realStocks;
 
-            console.log('✅ 成功获取真实持仓数据:', realStocks.length, '只股票');
+            console.log('✅ 成功获取Agent真实持仓数据:', realStocks.length, '只股票');
             console.log('📊 总市值:', realStocks.reduce((sum, stock) => sum + parseFloat(stock.marketValue), 0).toFixed(2));
-          } else {
-            console.warn('⚠️ 当前无持仓数据');
-            this.stocks = [];
+            return;
           }
+        } catch (agentError) {
+          console.warn('从Agent获取持仓数据失败:', agentError);
+        }
+
+        // 如果Agent数据获取失败，使用tradingService的备用数据
+        const tradingService = (await import('@/services/tradingService.js')).default;
+        const positionResult = await tradingService.getPositions();
+
+        if (positionResult.success && positionResult.data && positionResult.data.length > 0) {
+          // 转换数据格式
+          const backupStocks = positionResult.data.map(position => ({
+            name: position.name,
+            code: position.symbol,
+            currentPrice: position.current_price.toFixed(2),
+            priceChange: position.price_change_pct.toFixed(2),
+            quantity: position.volume,
+            costPrice: position.cost_price.toFixed(2),
+            marketValue: position.market_value.toFixed(2),
+            profit: position.profit_loss,
+            profitRate: (position.profit_loss_ratio * 100).toFixed(2),
+            isRecommended: position.profit_loss > 0,
+            isWarning: position.profit_loss < -1000,
+            buyDate: position.position_date || '未知',
+            tradeSource: 'backup' // 备用数据
+          }));
+
+          this.stocks = backupStocks;
+          console.log('✅ 使用备用持仓数据:', backupStocks.length, '只股票');
         } else {
-          console.warn('获取持仓数据失败，使用空数据');
+          console.warn('⚠️ 当前无持仓数据');
           this.stocks = [];
         }
       } catch (error) {
-        console.error('获取真实持仓数据异常:', error);
-        console.log('网络异常，使用空持仓数据');
+        console.error('获取持仓数据异常:', error);
+        console.log('使用空持仓数据');
         this.stocks = [];
       }
     },

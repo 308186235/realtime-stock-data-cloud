@@ -30,16 +30,21 @@ class AgentDataService {
       if (response.statusCode === 200 && response.data) {
         console.log('[Agent数据] 成功获取账户余额:', response.data);
         
+        // 适配不同的响应格式
+        const accountInfo = response.data.account_info || response.data.balance_info || response.data;
+
         return {
           success: true,
           data: {
-            balance: response.data.balance_info?.available_balance || 0,
-            available: response.data.balance_info?.available_balance || 0,
-            market_value: response.data.balance_info?.market_value || 0,
-            total_assets: response.data.balance_info?.total_assets || 0,
-            frozen: response.data.balance_info?.frozen || 0,
-            daily_profit: response.data.balance_info?.daily_profit || 0,
-            account_type: 'Agent智能账户',
+            balance: accountInfo?.available_balance || accountInfo?.balance || 0,
+            available: accountInfo?.available_balance || accountInfo?.available || 0,
+            market_value: accountInfo?.market_value || 0,
+            total_assets: accountInfo?.total_assets || accountInfo?.total_value || 0,
+            frozen: accountInfo?.frozen || 0,
+            daily_profit: accountInfo?.daily_profit || 0,
+            account_type: accountInfo?.account_type || 'Agent智能账户',
+            account_name: accountInfo?.account_name || 'Agent账户',
+            account_id: accountInfo?.account_id || 'agent_001',
             last_update: new Date().toISOString()
           }
         };
@@ -71,22 +76,24 @@ class AgentDataService {
       if (response.statusCode === 200 && response.data) {
         console.log('[Agent数据] 成功获取持仓信息:', response.data);
         
-        const positions = response.data.positions || [];
-        
+        // 适配不同的响应格式
+        const positionsData = response.data.positions || response.data.data?.positions || response.data;
+        const positions = Array.isArray(positionsData) ? positionsData : [];
+
         return {
           success: true,
           data: positions.map(pos => ({
-            symbol: pos.stock_code || pos.symbol,
+            symbol: pos.stock_code || pos.symbol || pos.code,
             name: pos.stock_name || pos.name,
             volume: pos.quantity || pos.volume || 0,
             available_volume: pos.available_quantity || pos.available_volume || pos.quantity || 0,
-            cost_price: pos.cost_price || pos.avg_cost || 0,
-            current_price: pos.current_price || pos.price || 0,
-            price_change_pct: pos.change_percent || 0,
-            profit_loss: pos.profit_loss || 0,
-            profit_loss_ratio: pos.profit_loss_ratio || 0,
-            market_value: pos.market_value || (pos.quantity * pos.current_price) || 0,
-            position_date: pos.position_date || new Date().toISOString().split('T')[0]
+            cost_price: pos.cost_price || pos.avg_cost || pos.costPrice || 0,
+            current_price: pos.current_price || pos.price || pos.currentPrice || 0,
+            price_change_pct: pos.change_percent || pos.priceChange || 0,
+            profit_loss: pos.profit_loss || pos.profit || 0,
+            profit_loss_ratio: pos.profit_loss_ratio || pos.profitRate || 0,
+            market_value: pos.market_value || pos.marketValue || (pos.quantity * pos.current_price) || 0,
+            position_date: pos.position_date || pos.buyDate || new Date().toISOString().split('T')[0]
           }))
         };
       } else {
@@ -280,6 +287,43 @@ class AgentDataService {
           status: 'unhealthy',
           timestamp: new Date().toISOString()
         }
+      };
+    }
+  }
+
+  /**
+   * 测试Agent数据连接
+   */
+  async testConnection() {
+    try {
+      console.log('[Agent数据] 测试连接...');
+
+      const healthResult = await this.checkSystemStatus();
+      if (healthResult.success) {
+        console.log('[Agent数据] 连接测试成功');
+
+        // 测试获取数据
+        const testResults = await this.getBatchData(['balance', 'positions']);
+        console.log('[Agent数据] 数据获取测试结果:', testResults);
+
+        return {
+          success: true,
+          message: 'Agent数据服务连接正常',
+          data: testResults
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Agent数据服务连接失败',
+          error: healthResult.error
+        };
+      }
+    } catch (error) {
+      console.error('[Agent数据] 连接测试失败:', error);
+      return {
+        success: false,
+        message: 'Agent数据服务连接异常',
+        error: error.message
       };
     }
   }
