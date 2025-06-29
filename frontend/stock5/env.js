@@ -50,11 +50,11 @@ try {
 const envConfigs = {
   // Development environment
   [ENV_TYPE.DEV]: {
-    // API base URL - use ngrok for external access
-    apiBaseUrl: 'https://1caf-39-188-128-188.ngrok-free.app',
+    // API base URL - use domain for external access
+    apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket address
-    wsUrl: 'wss://1caf-39-188-128-188.ngrok-free.app/ws',
+    wsUrl: 'wss://api.aigupiao.me/ws',
     
     // Enable debugging
     debug: true,

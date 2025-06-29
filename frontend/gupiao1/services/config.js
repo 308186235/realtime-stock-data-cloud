@@ -4,8 +4,8 @@
 
 // API基础URL,根据环境设置
 const baseUrl = process.env.NODE_ENV === 'development'
-  ? 'http://localhost:8080'  // 开发环境 - 使用代理端口
-  : 'http://localhost:8080';  // 生产环境 - 使用代理端口
+  ? 'https://aigupiao.me'  // 开发环境 - 使用自定义域名
+  : 'https://aigupiao.me';  // 生产环境 - 使用自定义域名
 
 // 超时设置(毫秒)
 const timeout = 30000;

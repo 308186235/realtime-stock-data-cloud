@@ -32,10 +32,10 @@ const envConfigs = {
   // 开发环境
   [ENV_TYPE.DEV]: {
     // API基础URL
-    apiBaseUrl: 'https://1caf-39-188-128-188.ngrok-free.app',
+    apiBaseUrl: 'https://aigupiao.me',
 
     // WebSocket地址
-    wsUrl: 'wss://1caf-39-188-128-188.ngrok-free.app/ws',
+    wsUrl: 'wss://aigupiao.me/ws',
     
     // 是否启用调试
     debug: true,
@@ -53,10 +53,10 @@ const envConfigs = {
   // 生产环境
   [ENV_TYPE.PROD]: {
     // API基础URL
-    apiBaseUrl: '/api',
-    
+    apiBaseUrl: 'https://aigupiao.me',
+
     // WebSocket地址
-    wsUrl: 'wss://api.prod.com/股票5/ws',
+    wsUrl: 'wss://aigupiao.me/ws',
     
     // 是否启用调试
     debug: false,
