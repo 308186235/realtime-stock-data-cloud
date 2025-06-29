@@ -4,6 +4,7 @@
  */
 
 import env from '../env';
+import agentDataService from './agentDataService.js';
 
 // 基础URL
 const API_BASE_URL = env.apiBaseUrl + '/api/agent-trading';

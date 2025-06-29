@@ -2,12 +2,16 @@
  * 交易服务 - 与后端交易API通信
  */
 import { baseUrl } from './config.js';
+import agentDataService from './agentDataService.js';
 
 const API_PREFIX = `${baseUrl}/api/trading`;
 const THS_API_PREFIX = `${baseUrl}/api/ths`;
 
 class TradingService {
-  
+  constructor() {
+    this.apiBaseUrl = baseUrl;
+  }
+
   /**
    * 获取支持的券商列表
    */
@@ -104,84 +108,93 @@ class TradingService {
    */
   async getPositions() {
     try {
-      // 开发环境下使用模拟数据
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的持仓数据');
-        
-        // 模拟持仓数据
-        const mockPositions = [
-          {
-            symbol: '600519',
-            name: '贵州茅台',
-            volume: 10,
-            available_volume: 10,
-            cost_price: 1680.25,
-            current_price: 1760.88,
-            price_change_pct: 2.15,
-            market_value: 17608.80,
-            profit_loss: 806.30,
-            profit_loss_ratio: 0.048,
-            position_date: '2023-06-15'
-          },
-          {
-            symbol: '000001',
-            name: '平安银行',
-            volume: 1000,
-            available_volume: 1000,
-            cost_price: 16.05,
-            current_price: 15.23,
-            price_change_pct: -1.36,
-            market_value: 15230.00,
-            profit_loss: -820.00,
-            profit_loss_ratio: -0.0511,
-            position_date: '2023-05-22'
-          },
-          {
-            symbol: '601318',
-            name: '中国平安',
-            volume: 200,
-            available_volume: 200,
-            cost_price: 45.30,
-            current_price: 48.75,
-            price_change_pct: 0.56,
-            market_value: 9750.00,
-            profit_loss: 690.00,
-            profit_loss_ratio: 0.0761,
-            position_date: '2023-07-03'
-          },
-          {
-            symbol: '300750',
-            name: '宁德时代',
-            volume: 50,
-            available_volume: 50,
-            cost_price: 200.40,
-            current_price: 226.60,
-            price_change_pct: 4.25,
-            market_value: 11330.00,
-            profit_loss: 1310.00,
-            profit_loss_ratio: 0.1307,
-            position_date: '2023-04-18'
-          },
-          {
-            symbol: '600050',
-            name: '中国联通',
-            volume: 5000,
-            available_volume: 5000,
-            cost_price: 5.12,
-            current_price: 4.68,
-            price_change_pct: -0.21,
-            market_value: 23400.00,
-            profit_loss: -2200.00,
-            profit_loss_ratio: -0.0859,
-            position_date: '2023-01-30'
-          }
-        ];
-        
-        return Promise.resolve({
-          success: true,
-          data: mockPositions
-        });
+      // 首先尝试从Agent数据服务获取真实持仓数据
+      try {
+        const result = await agentDataService.getPositions();
+        if (result.success) {
+          console.log('[Agent真实数据] 成功获取持仓信息');
+          return result;
+        }
+      } catch (apiError) {
+        console.warn('从Agent数据服务获取持仓数据失败:', apiError);
       }
+
+      // API失败时使用模拟数据
+      console.log('[备用数据] 使用模拟的持仓数据');
+
+      // 模拟持仓数据
+      const mockPositions = [
+        {
+          symbol: '600519',
+          name: '贵州茅台',
+          volume: 10,
+          available_volume: 10,
+          cost_price: 1680.25,
+          current_price: 1760.88,
+          price_change_pct: 2.15,
+          market_value: 17608.80,
+          profit_loss: 806.30,
+          profit_loss_ratio: 0.048,
+          position_date: '2023-06-15'
+        },
+        {
+          symbol: '000001',
+          name: '平安银行',
+          volume: 1000,
+          available_volume: 1000,
+          cost_price: 16.05,
+          current_price: 15.23,
+          price_change_pct: -1.36,
+          market_value: 15230.00,
+          profit_loss: -820.00,
+          profit_loss_ratio: -0.0511,
+          position_date: '2023-05-22'
+        },
+        {
+          symbol: '601318',
+          name: '中国平安',
+          volume: 200,
+          available_volume: 200,
+          cost_price: 45.30,
+          current_price: 48.75,
+          price_change_pct: 0.56,
+          market_value: 9750.00,
+          profit_loss: 690.00,
+          profit_loss_ratio: 0.0761,
+          position_date: '2023-07-03'
+        },
+        {
+          symbol: '300750',
+          name: '宁德时代',
+          volume: 50,
+          available_volume: 50,
+          cost_price: 200.40,
+          current_price: 226.60,
+          price_change_pct: 4.25,
+          market_value: 11330.00,
+          profit_loss: 1310.00,
+          profit_loss_ratio: 0.1307,
+          position_date: '2023-04-18'
+        },
+        {
+          symbol: '600050',
+          name: '中国联通',
+          volume: 5000,
+          available_volume: 5000,
+          cost_price: 5.12,
+          current_price: 4.68,
+          price_change_pct: -0.21,
+          market_value: 23400.00,
+          profit_loss: -2200.00,
+          profit_loss_ratio: -0.0859,
+          position_date: '2023-01-30'
+        }
+      ];
+
+      return Promise.resolve({
+        success: true,
+        data: mockPositions
+      });
       
       const response = await uni.request({
         url: `${API_PREFIX}/positions`,
@@ -479,21 +492,37 @@ class TradingService {
    */
   async getDongwuXiucaiBalance() {
     try {
-      // 开发环境下使用模拟数据
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的东吴秀才账户数据');
-        return Promise.resolve({
-          success: true,
-          data: {
-            balance: 120000.00,
-            available: 80000.00,
-            market_value: 40000.00,
-            total_assets: 120000.00,
-            frozen: 0.00,
-            account_type: '东吴秀才'
-          }
-        });
+      // 首先尝试从Agent数据服务获取真实数据
+      try {
+        const result = await agentDataService.getAccountBalance();
+        if (result.success) {
+          console.log('[Agent真实数据] 成功获取账户余额');
+          // 转换为东吴秀才格式
+          return {
+            success: true,
+            data: {
+              ...result.data,
+              account_type: 'Agent智能账户'
+            }
+          };
+        }
+      } catch (apiError) {
+        console.warn('从Agent数据服务获取账户余额失败:', apiError);
       }
+
+      // API失败时使用模拟数据
+      console.log('[备用数据] 使用模拟的东吴秀才账户数据');
+      return Promise.resolve({
+        success: true,
+        data: {
+          balance: 120000.00,
+          available: 80000.00,
+          market_value: 40000.00,
+          total_assets: 120000.00,
+          frozen: 0.00,
+          account_type: '东吴秀才'
+        }
+      });
       
       // 登录同花顺并获取账户信息
       const loginResponse = await uni.request({
