@@ -114,4 +114,5 @@ const request = (options = {}) => {
   });
 };
 
-export default request; 
+export default request;
+export { request };

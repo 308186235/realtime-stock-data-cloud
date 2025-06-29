@@ -4,8 +4,8 @@
 
 // API基础URL,根据环境设置
 const baseUrl = process.env.NODE_ENV === 'development'
-  ? 'https://api.aigupiao.me'  // 开发环境也使用域名
-  : 'https://api.aigupiao.me';  // 生产环境
+  ? 'https://trading-system-api.netlify.app'  // 开发环境使用Netlify
+  : 'https://trading-system-api.netlify.app';  // 生产环境使用Netlify
 
 // 超时设置(毫秒)
 const timeout = 30000;

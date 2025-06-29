@@ -32,10 +32,10 @@ const envConfigs = {
   // 开发环境
   [ENV_TYPE.DEV]: {
     // API基础URL
-    apiBaseUrl: 'https://api.aigupiao.me',
+    apiBaseUrl: 'https://trading-system-api.netlify.app',
 
     // WebSocket地址
-    wsUrl: 'wss://api.aigupiao.me/ws',
+    wsUrl: 'wss://trading-system-api.netlify.app/ws',
     
     // 是否启用调试
     debug: true,
@@ -53,10 +53,10 @@ const envConfigs = {
   // 生产环境
   [ENV_TYPE.PROD]: {
     // API基础URL
-    apiBaseUrl: 'https://api.aigupiao.me',
+    apiBaseUrl: 'https://trading-system-api.netlify.app',
 
     // WebSocket地址
-    wsUrl: 'wss://api.aigupiao.me/ws',
+    wsUrl: 'wss://trading-system-api.netlify.app/ws',
 
     // 是否启用调试
     debug: false,

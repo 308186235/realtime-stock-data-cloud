@@ -1,8 +1,8 @@
 <template>
     <view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
         <view class="header">
-            <view class="title">AgentAgent智能交易系统</view>
-            <view class="subtitle">Agent智能选股 · Agent量化交易 · Agent分析</view>
+            <view class="title">Agent智能交易系统</view>
+            <view class="subtitle">智能选股 · 量化交易 · 数据分析</view>
         </view>
 
         <!-- 后端连接状态 -->
@@ -13,8 +13,8 @@
             <view class="feature-card ai-feature" @click="navigateTo('/pages/ai-analysis/index')">
                 <view class="feature-icon ai-icon"></view>
                 <view class="feature-content">
-                    <text class="feature-title">AgentAgent智能交易</text>
-                    <text class="feature-desc">基于智能Agent的智能决策交易系统</text>
+                    <text class="feature-title">Agent分析控制台</text>
+                    <text class="feature-desc">基于AI的智能决策交易系统</text>
                 </view>
                 <view class="arrow-right"></view>
             </view>
@@ -22,7 +22,7 @@
             <view class="feature-card trade-feature" @click="navigateTo('/pages/trade/index')">
                 <view class="feature-icon trade-icon"></view>
                 <view class="feature-content">
-                    <text class="feature-title">Agent交易中心</text>
+                    <text class="feature-title">交易中心</text>
                     <text class="feature-desc">东吴证券同花顺交易通道</text>
                 </view>
                 <view class="arrow-right"></view>
@@ -31,8 +31,8 @@
             <view class="feature-card t0-feature" @click="navigateTo('/pages/auto-trader/index')">
                 <view class="feature-icon t0-icon"></view>
                 <view class="feature-content">
-                    <text class="feature-title">Agent T+0交易</text>
-                    <text class="feature-desc">当日买卖,自动交易系统</text>
+                    <text class="feature-title">T+0交易</text>
+<parameter name="feature-desc">当日买卖,自动交易系统</text>
                 </view>
                 <view class="arrow-right"></view>
             </view>
@@ -42,22 +42,21 @@
         <view class="market-overview">
             <view class="card-title">
                 <text class="title-text">市场概览</text>
+                <view class="update-info" v-if="lastUpdateTime">
+                    <text class="update-time">{{ lastUpdateTime }}</text>
+                    <view class="loading-indicator" v-if="loading"></view>
+                </view>
             </view>
             <view class="indices">
-                <view class="index-card up">
-                    <text class="index-name">上证指数</text>
-                    <text class="index-value">3,458.23</text>
-                    <text class="index-change">+1.35%</text>
-                </view>
-                <view class="index-card up">
-                    <text class="index-name">深证成指</text>
-                    <text class="index-value">14,256.89</text>
-                    <text class="index-change">+1.62%</text>
-                </view>
-                <view class="index-card down">
-                    <text class="index-name">创业板指</text>
-                    <text class="index-value">2,876.45</text>
-                    <text class="index-change">-0.32%</text>
+                <view
+                    v-for="(index, i) in marketIndices"
+                    :key="i"
+                    class="index-card"
+                    :class="index.trend"
+                >
+                    <text class="index-name">{{ index.name }}</text>
+                    <text class="index-value">{{ index.value }}</text>
+                    <text class="index-change">{{ index.change }}</text>
                 </view>
             </view>
         </view>
@@ -65,37 +64,25 @@
         <!-- Agent智能选股 -->
         <view class="stock-recommendation">
             <view class="card-title">
-                <text class="title-text">Agent智能选股推荐</text>
+                <text class="title-text">智能选股推荐</text>
+                <text class="refresh-btn" @click="refreshData" :class="{ loading: loading }">
+                    {{ loading ? '刷新中...' : '刷新' }}
+                </text>
             </view>
             <view class="stock-list">
-                <view class="stock-item" @click="navigateTo('/pages/stock-picking/detail')">
+                <view
+                    v-for="(stock, i) in recommendedStocks"
+                    :key="i"
+                    class="stock-item"
+                    @click="navigateTo('/pages/stock-picking/detail')"
+                >
                     <view class="stock-info">
-                        <text class="stock-name">贵州茅台</text>
-                        <text class="stock-code">600519</text>
+                        <text class="stock-name">{{ stock.name }}</text>
+                        <text class="stock-code">{{ stock.code }}</text>
                     </view>
                     <view class="stock-price">
-                        <text class="price up">1826.50</text>
-                        <text class="change up">+2.34%</text>
-                    </view>
-                </view>
-                <view class="stock-item" @click="navigateTo('/pages/stock-picking/detail')">
-                    <view class="stock-info">
-                        <text class="stock-name">比亚迪</text>
-                        <text class="stock-code">002594</text>
-                    </view>
-                    <view class="stock-price">
-                        <text class="price up">241.85</text>
-                        <text class="change up">+1.58%</text>
-                    </view>
-                </view>
-                <view class="stock-item" @click="navigateTo('/pages/stock-picking/detail')">
-                    <view class="stock-info">
-                        <text class="stock-name">宁德时代</text>
-                        <text class="stock-code">300750</text>
-                    </view>
-                    <view class="stock-price">
-                        <text class="price down">187.36</text>
-                        <text class="change down">-0.75%</text>
+                        <text class="price" :class="stock.trend">{{ stock.price }}</text>
+                        <text class="change" :class="stock.trend">{{ stock.change }}</text>
                     </view>
                 </view>
             </view>
@@ -517,6 +504,7 @@
 
 <script>
 import BackendConnectionStatus from '@/components/BackendConnectionStatus.vue'
+import dataService from '@/services/dataService.js'
 
 export default {
     components: {
@@ -524,19 +512,45 @@ export default {
     },
     data() {
         return {
-            isDarkMode: false
-            // 页面数据
+            isDarkMode: false,
+            // 市场数据
+            marketIndices: [
+                { name: '上证指数', value: '3,458.23', change: '+1.35%', trend: 'up' },
+                { name: '深证成指', value: '14,256.89', change: '+1.62%', trend: 'up' },
+                { name: '创业板指', value: '2,876.45', change: '-0.32%', trend: 'down' }
+            ],
+            // 推荐股票
+            recommendedStocks: [
+                { name: '贵州茅台', code: '600519', price: '1826.50', change: '+2.34%', trend: 'up' },
+                { name: '比亚迪', code: '002594', price: '241.85', change: '+1.58%', trend: 'up' },
+                { name: '宁德时代', code: '300750', price: '187.36', change: '-0.75%', trend: 'down' }
+            ],
+            // 加载状态
+            loading: false,
+            lastUpdateTime: null
         }
     },
     onLoad() {
         // 获取当前主题设置
         const app = getApp();
         this.isDarkMode = app.globalData.isDarkMode;
+
+        // 加载数据
+        this.loadData();
     },
     onShow() {
         // 每次显示页面时检查当前主题
         const app = getApp();
         this.isDarkMode = app.globalData.isDarkMode;
+
+        // 刷新数据
+        this.refreshData();
+    },
+    onPullDownRefresh() {
+        // 下拉刷新
+        this.refreshData().finally(() => {
+            uni.stopPullDownRefresh();
+        });
     },
     methods: {
         // 页面导航
@@ -544,6 +558,66 @@ export default {
             uni.navigateTo({
                 url: url
             });
+        },
+
+        // 加载数据
+        async loadData() {
+            this.loading = true;
+            try {
+                await Promise.all([
+                    this.loadAgentAnalysis(),
+                    this.loadAccountBalance()
+                ]);
+                this.lastUpdateTime = new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                uni.showToast({
+                    title: '数据加载失败',
+                    icon: 'none'
+                });
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        // 刷新数据
+        async refreshData() {
+            if (this.loading) return;
+            await this.loadData();
+        },
+
+        // 加载Agent分析数据
+        async loadAgentAnalysis() {
+            try {
+                const response = await dataService.getAgentAnalysis();
+
+                if (response && response.recommendations) {
+                    // 更新推荐股票数据
+                    this.recommendedStocks = response.recommendations.slice(0, 3).map(stock => ({
+                        name: stock.name,
+                        code: stock.symbol,
+                        price: stock.target_price ? stock.target_price.toFixed(2) : '0.00',
+                        change: '+0.00%', // 这里可以根据实际数据计算
+                        trend: stock.action === '买入' ? 'up' : stock.action === '卖出' ? 'down' : 'neutral'
+                    }));
+                }
+            } catch (error) {
+                console.error('加载Agent分析数据失败:', error);
+            }
+        },
+
+        // 加载账户余额数据
+        async loadAccountBalance() {
+            try {
+                const response = await dataService.getAccountBalance();
+
+                if (response && response.balance_info) {
+                    // 这里可以根据需要更新相关数据
+                    console.log('账户余额数据:', response.balance_info);
+                }
+            } catch (error) {
+                console.error('加载账户余额数据失败:', error);
+            }
         }
     }
 }
@@ -1804,6 +1878,46 @@ export default {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15rpx;
+}
+
+.update-info {
+    display: flex;
+    align-items: center;
+    gap: 10rpx;
+}
+
+.update-time {
+    font-size: 22rpx;
+    color: #888888;
+}
+
+.loading-indicator {
+    width: 20rpx;
+    height: 20rpx;
+    border: 2rpx solid #333333;
+    border-top: 2rpx solid #1989fa;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.refresh-btn {
+    font-size: 24rpx;
+    color: #1989fa;
+    padding: 8rpx 16rpx;
+    border-radius: 16rpx;
+    background-color: rgba(25, 137, 250, 0.1);
+    cursor: pointer;
+}
+
+.refresh-btn.loading {
+    color: #888888;
+    background-color: rgba(136, 136, 136, 0.1);
+    cursor: not-allowed;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 .up {

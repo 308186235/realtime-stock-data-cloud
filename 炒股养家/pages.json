@@ -12,7 +12,7 @@
     {
       "path": "pages/trade/index",
       "style": {
-        "navigationBarTitleText": "Agent交易中心",
+        "navigationBarTitleText": "交易中心",
         "navigationBarTextStyle": "white",
         "navigationBarBackgroundColor": "#141414",
         "backgroundColor": "#141414"
@@ -21,7 +21,7 @@
     {
       "path": "pages/market-tracking/index",
       "style": {
-        "navigationBarTitleText": "Agent市场追踪",
+        "navigationBarTitleText": "市场追踪",
         "navigationBarTextStyle": "white",
         "navigationBarBackgroundColor": "#141414",
         "backgroundColor": "#141414"
@@ -192,7 +192,7 @@
     {
       "path": "pages/ai-analysis/index",
       "style": {
-        "navigationBarTitleText": "Agent智能分析控制台",
+        "navigationBarTitleText": "Agent分析控制台",
         "navigationBarTextStyle": "white",
         "navigationBarBackgroundColor": "#141414",
         "backgroundColor": "#141414"
@@ -201,7 +201,7 @@
     {
       "path": "pages/ai-training/index",
       "style": {
-        "navigationBarTitleText": "Agent学习训练",
+        "navigationBarTitleText": "学习训练",
         "navigationBarTextStyle": "white",
         "navigationBarBackgroundColor": "#141414",
         "backgroundColor": "#141414"
@@ -237,7 +237,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "white",
-    "navigationBarTitleText": "Agent智能交易",
+    "navigationBarTitleText": "智能交易",
     "navigationBarBackgroundColor": "#141414",
     "backgroundColor": "#141414"
   },

@@ -7,7 +7,7 @@
         <view class="ai-status-indicator" :class="{ active: isRunning }"></view>
       </view>
       <view class="ai-info">
-        <text class="ai-name">Agent智能交易助手</text>
+        <text class="ai-name">智能交易助手</text>
         <text class="ai-status">{{ isRunning ? '正在为您执行交易决策' : '交易系统待命中' }}</text>
       </view>
       <view class="ai-controls">
@@ -18,8 +18,17 @@
     </view>
     
     <view class="panel-header">
-      <text class="panel-title">Agent智能分析控制台</text>
-      <text class="panel-subtitle">基于人工智能的交易决策学习系统</text>
+      <view class="header-top">
+        <view class="title-section">
+          <text class="panel-title">Agent分析控制台</text>
+          <text class="panel-subtitle">基于人工智能的交易决策学习系统</text>
+        </view>
+        <view class="header-actions">
+          <button class="refresh-btn" @click="refreshData" :disabled="isLoading">
+            {{ isLoading ? '刷新中...' : '刷新数据' }}
+          </button>
+        </view>
+      </view>
       
       <!-- 数据源延迟显示 -->
       <view class="data-source-delay">
@@ -613,6 +622,10 @@
 
 <script>
 import agentTradingService from '@/services/agentTradingService.js';
+import dataService from '@/services/dataService.js';
+import notificationService from '@/services/notificationService.js';
+import mobileService from '@/services/mobileService.js';
+import pushService from '@/services/pushService.js';
 
 export default {
   name: 'AgentTradingPanel',
@@ -621,6 +634,7 @@ export default {
       // 系统状态
       isRunning: false,
       isConnected: false,
+      isLoading: false,
       brokerName: '',
       runningTime: '00:00:00',
       tradeCount: 0,
@@ -780,12 +794,250 @@ export default {
     // 初始化其他数据
     this.initTradeData();
 
+    // 加载实时数据
+    this.loadRealTimeData();
+
+    // 初始化移动端特性
+    this.initMobileFeatures();
+
     // 检查资金使用情况
     this.$nextTick(() => {
       this.checkFundUsageWarning();
     });
   },
+
+  onShow() {
+    // 页面显示时刷新数据
+    this.refreshData();
+  },
   methods: {
+    // 加载实时数据
+    async loadRealTimeData(forceRefresh = false) {
+      if (this.isLoading) return;
+
+      this.isLoading = true;
+      try {
+        // 使用数据服务批量获取数据
+        const results = await dataService.getBatchData([
+          'agent-analysis',
+          'account-balance',
+          'account-positions'
+        ], forceRefresh);
+
+        // 处理结果
+        results.forEach(result => {
+          if (result.success) {
+            switch (result.endpoint) {
+              case 'agent-analysis':
+                this.processAgentAnalysisData(result.data);
+                break;
+              case 'account-balance':
+                this.processAccountBalanceData(result.data);
+                break;
+              case 'account-positions':
+                this.processAccountPositionsData(result.data);
+                break;
+            }
+          } else {
+            console.error(`加载${result.endpoint}数据失败:`, result.error);
+          }
+        });
+
+        this.updateLastDataTime();
+
+        if (forceRefresh) {
+          notificationService.success('数据更新成功');
+        }
+      } catch (error) {
+        console.error('加载实时数据失败:', error);
+        notificationService.handleApiError(error, '数据加载');
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    // 刷新数据
+    async refreshData() {
+      await this.loadRealTimeData(true); // 强制刷新
+    },
+
+    // 处理Agent分析数据
+    processAgentAnalysisData(response) {
+      if (!response) return;
+
+      // 更新学习进度数据
+      if (response.learning_progress) {
+        this.accuracy = response.learning_progress.accuracy || this.accuracy;
+        this.winRate = response.learning_progress.win_rate * 100 || this.winRate;
+        this.maxDrawdown = response.learning_progress.max_drawdown * 100 || this.maxDrawdown;
+      }
+
+      // 更新推荐决策
+      if (response.recommendations) {
+        this.decisions = response.recommendations.slice(0, 5).map(rec => ({
+          time: new Date().toLocaleTimeString(),
+          action: rec.action,
+          stock: rec.name,
+          code: rec.symbol,
+          confidence: Math.round(rec.confidence * 100),
+          reason: rec.reason
+        }));
+      }
+    },
+
+    // 处理账户余额数据
+    processAccountBalanceData(response) {
+      if (!response || !response.balance_info) return;
+
+      // 更新资金相关数据
+      this.aiControlFunds = response.balance_info.available_balance || this.aiControlFunds;
+      this.dailyProfit = response.balance_info.daily_profit || this.dailyProfit;
+    },
+
+    // 处理持仓数据
+    processAccountPositionsData(response) {
+      if (!response || !response.positions) return;
+
+      this.currentHoldings = response.positions.slice(0, 10).map(pos => ({
+        stock: pos.stock_name,
+        code: pos.stock_code,
+        quantity: pos.quantity,
+        cost: pos.cost_price,
+        current: pos.current_price,
+        profit: pos.profit_loss,
+        profitRate: pos.profit_loss_ratio
+      }));
+    },
+
+    // 更新最后数据时间
+    updateLastDataTime() {
+      this.lastMarketDataUpdate = new Date().toLocaleTimeString();
+      this.marketDataConnected = true;
+    },
+
+    // 初始化移动端特性
+    initMobileFeatures() {
+      // 设置手势操作
+      this.setupGestures();
+
+      // 设置推送通知
+      this.setupPushNotifications();
+
+      // 设置屏幕常亮（交易时段）
+      if (this.isInTradingHours()) {
+        mobileService.keepScreenOn(true);
+      }
+    },
+
+    // 设置手势操作
+    setupGestures() {
+      const gestureService = mobileService.gestureService;
+
+      // 双击刷新数据
+      gestureService.on('doubleTap', () => {
+        this.refreshData();
+        mobileService.vibrate('short'); // 震动反馈
+      });
+
+      // 长按显示操作菜单
+      gestureService.on('longPress', () => {
+        this.showActionMenu();
+      });
+
+      // 下滑刷新
+      gestureService.on('swipeDown', (data) => {
+        if (data.deltaY > 100) {
+          this.refreshData();
+        }
+      });
+    },
+
+    // 设置推送通知
+    setupPushNotifications() {
+      // 检查推送权限
+      const pushStatus = pushService.getStatus();
+      if (!pushStatus.permissionGranted) {
+        // 提示用户开启推送权限
+        setTimeout(() => {
+          uni.showModal({
+            title: '开启推送通知',
+            content: '开启推送通知以接收重要的交易提醒和AI决策通知',
+            confirmText: '开启',
+            success: (res) => {
+              if (res.confirm) {
+                pushService.requestPermission();
+              }
+            }
+          });
+        }, 2000);
+      }
+    },
+
+    // 显示操作菜单
+    async showActionMenu() {
+      const result = await notificationService.showActionSheet({
+        itemList: ['刷新数据', '复制链接', '分享页面', '设置提醒', '查看帮助']
+      });
+
+      if (result.success) {
+        switch (result.tapIndex) {
+          case 0: // 刷新数据
+            this.refreshData();
+            break;
+          case 1: // 复制链接
+            mobileService.copyToClipboard('https://aigupiao.me/pages/ai-analysis/index');
+            break;
+          case 2: // 分享页面
+            this.sharePage();
+            break;
+          case 3: // 设置提醒
+            this.setupAlerts();
+            break;
+          case 4: // 查看帮助
+            this.showHelp();
+            break;
+        }
+      }
+    },
+
+    // 分享页面
+    sharePage() {
+      mobileService.share({
+        title: 'Agent智能交易分析',
+        summary: '查看我的AI交易分析结果',
+        href: 'https://aigupiao.me/pages/ai-analysis/index',
+        imageUrl: '/static/app-logo.png'
+      });
+    },
+
+    // 设置提醒
+    setupAlerts() {
+      uni.navigateTo({
+        url: '/pages/settings/notification'
+      });
+    },
+
+    // 显示帮助
+    showHelp() {
+      uni.showModal({
+        title: '操作帮助',
+        content: '双击屏幕：刷新数据\n长按屏幕：显示操作菜单\n下滑屏幕：刷新数据',
+        showCancel: false
+      });
+    },
+
+    // 检查是否在交易时间
+    isInTradingHours() {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      const currentTime = hour * 100 + minute;
+
+      // A股交易时间：9:30-11:30, 13:00-15:00
+      return (currentTime >= 930 && currentTime <= 1130) ||
+             (currentTime >= 1300 && currentTime <= 1500);
+    },
+
     // 初始化数据
     async initData() {
       try {
@@ -2005,9 +2257,40 @@ export default {
 
 /* 面板头部 */
 .panel-header {
-  text-align: center;
   padding: 30rpx;
   margin-bottom: 30rpx;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 30rpx;
+}
+
+.title-section {
+  flex: 1;
+  text-align: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.refresh-btn {
+  background-color: #1989fa;
+  color: white;
+  border: none;
+  border-radius: 20rpx;
+  padding: 12rpx 24rpx;
+  font-size: 24rpx;
+  min-width: 120rpx;
+}
+
+.refresh-btn:disabled {
+  background-color: #cccccc;
+  color: #666666;
 }
 
 .panel-title {

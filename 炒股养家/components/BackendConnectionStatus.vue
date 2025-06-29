@@ -111,7 +111,7 @@ export default {
       }
 
       // 使用环境配置的默认地址
-      return env.apiBaseUrl || 'https://aigupiao.me';
+      return env.apiBaseUrl || 'https://trading-system-api.netlify.app';
     },
     
     // 测试连接
@@ -124,7 +124,7 @@ export default {
         
         // 测试健康检查接口
         const response = await uni.request({
-          url: `${this.apiBaseUrl}/health`,
+          url: `${this.apiBaseUrl}/api/health`,
           method: 'GET',
           timeout: 10000,
           header: {
