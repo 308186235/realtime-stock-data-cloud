@@ -32,7 +32,7 @@
                 <view class="feature-icon t0-icon"></view>
                 <view class="feature-content">
                     <text class="feature-title">T+0交易</text>
-<parameter name="feature-desc">当日买卖,自动交易系统</text>
+                    <text class="feature-desc">当日买卖,自动交易系统</text>
                 </view>
                 <view class="arrow-right"></view>
             </view>
@@ -93,7 +93,7 @@
             <view class="shortcut-row">
                 <view class="shortcut-item" @click="navigateTo('/pages/ai-analysis/index')">
                     <view class="shortcut-icon ai-icon"></view>
-                    <text class="shortcut-text">AgentAgent智能交易</text>
+                    <text class="shortcut-text">Agent智能交易</text>
                 </view>
                 <view class="shortcut-item" @click="navigateTo('/pages/portfolio/index')">
                     <view class="shortcut-icon portfolio-icon"></view>
