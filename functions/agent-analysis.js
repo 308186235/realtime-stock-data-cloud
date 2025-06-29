@@ -1,15 +1,71 @@
-exports.handler = async (event, context) => {
+const { withErrorHandling, validateRequest, checkRateLimit, ERROR_TYPES } = require('./utils/error-handler');
+const { validateQueryParams, containsDangerousContent } = require('./utils/validators');
+
+// 缓存变量 - 在函数外部定义，利用Netlify Functions的容器复用
+let cachedData = null;
+let cacheTimestamp = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
+
+// 主处理函数
+async function handleAgentAnalysis(event, context, requestId) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Cache-Control': 'public, max-age=300', // 5分钟浏览器缓存
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY'
   };
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
   }
 
+  // 检查请求方法
+  if (event.httpMethod !== 'GET') {
+    throw new Error(`不支持的请求方法: ${event.httpMethod}`);
+  }
+
+  // 频率限制检查
+  const clientIP = event.headers['x-forwarded-for'] || event.headers['x-real-ip'] || 'unknown';
+  if (checkRateLimit(clientIP, 60, 3600)) { // 每小时60次
+    const error = new Error('请求过于频繁，请稍后再试');
+    error.name = 'RateLimitError';
+    throw error;
+  }
+
+  // 验证查询参数
+  const queryParams = event.queryStringParameters || {};
+  const paramValidation = validateQueryParams(queryParams);
+
+  if (!paramValidation.isValid) {
+    const error = new Error(`查询参数错误: ${paramValidation.errors.join('; ')}`);
+    error.name = 'ValidationError';
+    throw error;
+  }
+
+  // 检查查询参数中的危险内容
+  for (const [key, value] of Object.entries(queryParams)) {
+    if (typeof value === 'string' && containsDangerousContent(value)) {
+      const error = new Error(`查询参数 ${key} 包含不安全内容`);
+      error.name = 'ValidationError';
+      throw error;
+    }
+  }
+
+  // 检查缓存
+  const now = Date.now();
+  if (cachedData && cacheTimestamp && (now - cacheTimestamp) < CACHE_DURATION) {
+    return {
+      statusCode: 200,
+      headers: { ...headers, 'X-Cache': 'HIT', 'X-Request-ID': requestId },
+      body: JSON.stringify(cachedData, null, 2)
+    };
+  }
+
+  // 生成新数据
+  const currentTime = new Date();
   const analysisData = {
     analysis: {
       market_trend: "震荡上涨",
@@ -78,13 +134,27 @@ exports.handler = async (event, context) => {
     ],
     server: "netlify-functions",
     deployment: "git-connected",
-    timestamp: new Date().toISOString(),
-    next_update: new Date(Date.now() + 4*60*60*1000).toISOString()
+    timestamp: currentTime.toISOString(),
+    next_update: new Date(currentTime.getTime() + 4*60*60*1000).toISOString(),
+    cache_info: {
+      cached: false,
+      cache_duration: CACHE_DURATION / 1000 + 's',
+      generated_at: currentTime.toISOString()
+    }
   };
+
+  // 更新缓存
+  cachedData = analysisData;
+  cacheTimestamp = now;
 
   return {
     statusCode: 200,
-    headers,
+    headers: { ...headers, 'X-Cache': 'MISS', 'X-Request-ID': requestId },
     body: JSON.stringify(analysisData, null, 2)
   };
+}
+
+// 导出包装后的处理函数
+exports.handler = async (event, context) => {
+  return withErrorHandling(handleAgentAnalysis, event, context);
 };

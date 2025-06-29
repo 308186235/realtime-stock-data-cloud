@@ -1,13 +1,22 @@
-exports.handler = async (event, context) => {
+const { withErrorHandling } = require('./utils/error-handler');
+
+async function handleHealth(event, context, requestId) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Cache-Control': 'public, max-age=60', // 1分钟缓存
+    'X-Request-ID': requestId
   };
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
+  }
+
+  // 检查请求方法
+  if (event.httpMethod !== 'GET') {
+    throw new Error(`不支持的请求方法: ${event.httpMethod}`);
   }
 
   const healthData = {
@@ -34,4 +43,9 @@ exports.handler = async (event, context) => {
     headers,
     body: JSON.stringify(healthData, null, 2)
   };
+}
+
+// 导出包装后的处理函数
+exports.handler = async (event, context) => {
+  return withErrorHandling(handleHealth, event, context);
 };

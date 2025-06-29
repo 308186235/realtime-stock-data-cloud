@@ -1,13 +1,45 @@
-exports.handler = async (event, context) => {
+const { withErrorHandling, validateRequest, checkRateLimit } = require('./utils/error-handler');
+
+// 缓存机制
+let cachedBalance = null;
+let balanceCacheTime = null;
+const BALANCE_CACHE_DURATION = 2 * 60 * 1000; // 2分钟缓存（余额更新频率较高）
+
+async function handleAccountBalance(event, context, requestId) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Cache-Control': 'public, max-age=120', // 2分钟浏览器缓存
+    'X-Content-Type-Options': 'nosniff'
   };
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
+  }
+
+  // 检查请求方法
+  if (event.httpMethod !== 'GET') {
+    throw new Error(`不支持的请求方法: ${event.httpMethod}`);
+  }
+
+  // 频率限制检查
+  const clientIP = event.headers['x-forwarded-for'] || event.headers['x-real-ip'] || 'unknown';
+  if (checkRateLimit(clientIP, 120, 3600)) { // 每小时120次（余额查询频率较高）
+    const error = new Error('请求过于频繁，请稍后再试');
+    error.name = 'RateLimitError';
+    throw error;
+  }
+
+  // 检查缓存
+  const now = Date.now();
+  if (cachedBalance && balanceCacheTime && (now - balanceCacheTime) < BALANCE_CACHE_DURATION) {
+    return {
+      statusCode: 200,
+      headers: { ...headers, 'X-Cache': 'HIT', 'X-Request-ID': requestId },
+      body: JSON.stringify(cachedBalance, null, 2)
+    };
   }
 
   const balanceData = {
@@ -43,12 +75,25 @@ exports.handler = async (event, context) => {
     server: "netlify-functions",
     deployment: "git-connected",
     timestamp: new Date().toISOString(),
-    last_update: new Date().toISOString()
+    last_update: new Date().toISOString(),
+    cache_info: {
+      cache_duration: BALANCE_CACHE_DURATION / 1000 + 's',
+      cached: false
+    }
   };
+
+  // 更新缓存
+  cachedBalance = balanceData;
+  balanceCacheTime = now;
 
   return {
     statusCode: 200,
-    headers,
+    headers: { ...headers, 'X-Cache': 'MISS', 'X-Request-ID': requestId },
     body: JSON.stringify(balanceData, null, 2)
   };
+}
+
+// 导出包装后的处理函数
+exports.handler = async (event, context) => {
+  return withErrorHandling(handleAccountBalance, event, context);
 };
