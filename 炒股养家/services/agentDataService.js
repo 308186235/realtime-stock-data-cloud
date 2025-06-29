@@ -5,6 +5,7 @@
 
 import { baseUrl } from './config.js';
 import realTimeDataService from './realTimeDataService.js';
+import realStockDataService from './realStockDataService.js';
 
 class AgentDataService {
   constructor() {
@@ -361,20 +362,42 @@ class AgentDataService {
   }
 
   /**
-   * 获取真实股票数据 (通过Agent后端)
+   * 获取真实股票数据 (优先使用专业股票数据API)
    */
   async getStockData(symbols = ['000001', '600000', '600519'], period = '1d') {
     try {
-      console.log('[Agent数据] 通过Agent后端获取真实股票数据:', symbols);
+      console.log('[Agent数据] 获取真实股票数据:', symbols);
 
-      // 首先尝试获取实时行情
-      const realtimeResult = await realTimeDataService.getRealTimeQuotes(symbols);
-      if (realtimeResult.success) {
-        console.log('[Agent数据] 成功获取实时股票数据');
-        return realtimeResult;
+      // 首先尝试从专业股票数据服务获取
+      if (realStockDataService.isConnected) {
+        console.log('[Agent数据] 从专业股票数据服务获取');
+        const stockData = realStockDataService.getLatestDataBatch(symbols);
+
+        if (Object.keys(stockData).length > 0) {
+          console.log('[Agent数据] 成功获取专业股票数据');
+          return {
+            success: true,
+            data: stockData,
+            symbols: symbols,
+            period: period,
+            timestamp: new Date().toISOString(),
+            source: 'professional_api'
+          };
+        }
       }
 
-      // 如果实时数据失败，尝试通过Agent API获取
+      // 如果专业API没有数据，尝试实时数据服务
+      try {
+        const realtimeResult = await realTimeDataService.getRealTimeQuotes(symbols);
+        if (realtimeResult.success) {
+          console.log('[Agent数据] 成功获取实时股票数据');
+          return realtimeResult;
+        }
+      } catch (realtimeError) {
+        console.warn('[Agent数据] 实时数据服务失败:', realtimeError);
+      }
+
+      // 最后尝试通过Agent API获取
       const response = await uni.request({
         url: `${this.apiBaseUrl}/api/stock/quotes`,
         method: 'GET',
@@ -382,7 +405,7 @@ class AgentDataService {
           symbols: symbols.join(','),
           period: period,
           limit: 100,
-          source: 'agent' // 明确指定使用Agent数据源
+          source: 'real' // 明确要求真实数据
         },
         timeout: this.timeout,
         header: {
@@ -399,14 +422,14 @@ class AgentDataService {
           symbols: symbols,
           period: period,
           timestamp: new Date().toISOString(),
-          source: 'agent'
+          source: 'agent_api'
         };
       } else {
         throw new Error(`Agent API响应错误: ${response.statusCode}`);
       }
     } catch (error) {
       console.error('[Agent数据] 获取真实股票数据失败:', error);
-      throw new Error(`无法获取真实股票数据: ${error.message}。请确保Agent后端服务正在运行并连接到真实股票数据源。`);
+      throw new Error(`无法获取真实股票数据: ${error.message}。请确保专业股票数据API (QT_wat5QfcJ6N9pDZM5) 或Agent后端服务正在运行。`);
     }
   }
 
@@ -530,6 +553,45 @@ class AgentDataService {
       console.error('[Agent数据] 移除订阅者失败:', error);
       throw new Error(`移除订阅者失败: ${error.message}`);
     }
+  }
+
+  /**
+   * 连接专业股票数据服务
+   */
+  async connectProfessionalStockData(host, port) {
+    try {
+      console.log('[Agent数据] 连接专业股票数据服务:', host, port);
+
+      await realStockDataService.connect(host, port);
+
+      return {
+        success: true,
+        message: '专业股票数据服务连接成功',
+        apiKey: realStockDataService.apiKey
+      };
+    } catch (error) {
+      console.error('[Agent数据] 连接专业股票数据服务失败:', error);
+      throw new Error(`连接专业股票数据服务失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 订阅专业股票数据推送
+   */
+  subscribeToProfessionalData(subscriberId, callback) {
+    try {
+      return realStockDataService.subscribe(subscriberId, callback);
+    } catch (error) {
+      console.error('[Agent数据] 订阅专业股票数据失败:', error);
+      throw new Error(`订阅专业股票数据失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取专业股票数据服务状态
+   */
+  getProfessionalDataStatus() {
+    return realStockDataService.getStatus();
   }
 
   /**

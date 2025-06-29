@@ -13,15 +13,19 @@
         <button class="test-btn" @click="testStockData" :disabled="loading">
           <text class="btn-text">测试股票数据获取</text>
         </button>
-        
+
+        <button class="test-btn" @click="testProfessionalData" :disabled="loading">
+          <text class="btn-text">测试专业股票API</text>
+        </button>
+
         <button class="test-btn" @click="testBacktest" :disabled="loading">
           <text class="btn-text">测试回测功能</text>
         </button>
-        
+
         <button class="test-btn" @click="testAgentConnection" :disabled="loading">
           <text class="btn-text">测试Agent连接</text>
         </button>
-        
+
         <button class="test-btn" @click="clearResults">
           <text class="btn-text">清除结果</text>
         </button>
@@ -97,6 +101,16 @@
         <text class="setting-label">测试股票代码</text>
         <input class="setting-input" v-model="testSymbols" placeholder="000001,600000,600519" />
       </view>
+
+      <view class="setting-item">
+        <text class="setting-label">专业API服务器</text>
+        <input class="setting-input" v-model="apiHost" placeholder="服务器地址" />
+      </view>
+
+      <view class="setting-item">
+        <text class="setting-label">专业API端口</text>
+        <input class="setting-input" v-model="apiPort" placeholder="端口号" type="number" />
+      </view>
     </view>
   </view>
 </template>
@@ -111,7 +125,9 @@ export default {
       loadingText: '',
       results: [],
       showRawData: false,
-      testSymbols: '000001,600000,600519'
+      testSymbols: '000001,600000,600519',
+      apiHost: '',
+      apiPort: ''
     };
   },
   
@@ -146,7 +162,71 @@ export default {
         this.loading = false;
       }
     },
-    
+
+    async testProfessionalData() {
+      this.loading = true;
+      this.loadingText = '正在测试专业股票数据API...';
+
+      try {
+        if (!this.apiHost || !this.apiPort) {
+          throw new Error('请先配置专业API服务器地址和端口');
+        }
+
+        // 连接专业股票数据服务
+        const connectResult = await agentDataService.connectProfessionalStockData(this.apiHost, parseInt(this.apiPort));
+
+        this.addResult({
+          type: 'professional',
+          title: '专业股票数据API测试',
+          success: connectResult.success,
+          message: connectResult.success ?
+            `成功连接专业股票数据API (Key: ${connectResult.apiKey})` :
+            '专业股票数据API连接失败',
+          rawData: connectResult
+        });
+
+        // 如果连接成功，测试数据获取
+        if (connectResult.success) {
+          setTimeout(async () => {
+            try {
+              const symbols = this.testSymbols.split(',').map(s => s.trim());
+              const stockResult = await agentDataService.getStockData(symbols);
+
+              this.addResult({
+                type: 'professional_data',
+                title: '专业API股票数据获取',
+                success: stockResult.success,
+                message: stockResult.success ?
+                  `成功获取 ${symbols.length} 只股票的专业数据` :
+                  '专业API股票数据获取失败',
+                data: stockResult.data,
+                rawData: stockResult
+              });
+            } catch (error) {
+              this.addResult({
+                type: 'professional_data',
+                title: '专业API股票数据获取',
+                success: false,
+                message: `获取失败: ${error.message}`,
+                rawData: { error: error.message }
+              });
+            }
+          }, 2000); // 等待2秒让连接稳定
+        }
+
+      } catch (error) {
+        this.addResult({
+          type: 'professional',
+          title: '专业股票数据API测试',
+          success: false,
+          message: `连接失败: ${error.message}`,
+          rawData: { error: error.message }
+        });
+      } finally {
+        this.loading = false;
+      }
+    },
+
     async testBacktest() {
       this.loading = true;
       this.loadingText = '正在运行回测...';

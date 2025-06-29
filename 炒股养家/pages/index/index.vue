@@ -605,6 +605,19 @@ export default {
                 // 动态导入agentDataService
                 const agentDataService = (await import('@/services/agentDataService.js')).default;
 
+                // 检查专业股票数据API状态
+                const professionalStatus = agentDataService.getProfessionalDataStatus();
+                console.log('📡 专业股票数据API状态:', professionalStatus);
+
+                if (!professionalStatus.connected) {
+                    console.log('⚠️ 专业股票数据API未连接，建议配置专业数据源');
+                    uni.showToast({
+                        title: '建议配置专业股票数据API',
+                        icon: 'none',
+                        duration: 3000
+                    });
+                }
+
                 // 测试真实股票数据获取
                 console.log('📊 测试真实股票数据获取...');
                 const stockResult = await agentDataService.getStockData(['000001', '600000']);
@@ -630,7 +643,7 @@ export default {
 
             } catch (error) {
                 console.error('❌ 真实数据测试失败:', error);
-                console.error('💡 请确保Agent后端服务正在运行并连接到真实数据源');
+                console.error('💡 请确保专业股票数据API (QT_wat5QfcJ6N9pDZM5) 或Agent后端服务正在运行');
 
                 // 显示详细的错误提示
                 this.showDataErrorAlert(error.message);

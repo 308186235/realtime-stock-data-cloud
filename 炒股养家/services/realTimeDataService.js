@@ -24,11 +24,12 @@ class RealTimeDataService {
       console.log('[真实数据] 获取实时行情:', symbols);
       
       const response = await uni.request({
-        url: `${this.apiBaseUrl}/api/stock/realtime`,
+        url: `${this.apiBaseUrl}/api/market-data`,
         method: 'GET',
-        data: { 
+        data: {
           symbols: Array.isArray(symbols) ? symbols.join(',') : symbols,
-          source: 'agent' // 指定使用Agent数据源
+          source: 'real', // 明确要求真实数据
+          type: 'realtime'
         },
         timeout: 10000,
         header: {
