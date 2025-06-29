@@ -496,6 +496,7 @@
                     <view class="action-button buy">买入</view>
                     <view class="action-button sell">卖出</view>
                     <view class="action-button analyze">分析</view>
+                    <view class="action-button test" @click="goToTestPage">数据测试</view>
                 </view>
             </view>
         </view>
@@ -557,6 +558,13 @@ export default {
         navigateTo(url) {
             uni.navigateTo({
                 url: url
+            });
+        },
+
+        // 跳转到数据测试页面
+        goToTestPage() {
+            uni.navigateTo({
+                url: '/pages/test-data/index'
             });
         },
 
@@ -1227,13 +1235,13 @@ export default {
 }
 
 .dark-theme .action-button {
-    width: 31%;
+    width: 23%;
     height: 60rpx;
     display: flex;
     justify-content: center;
     align-items: center;
     border-radius: 6rpx;
-    font-size: 26rpx;
+    font-size: 24rpx;
     font-weight: bold;
 }
 
@@ -1249,6 +1257,11 @@ export default {
 
 .dark-theme .action-button.analyze {
     background-color: #1989fa;
+    color: #fff;
+}
+
+.dark-theme .action-button.test {
+    background-color: #ff9800;
     color: #fff;
 }
 
@@ -1854,13 +1867,13 @@ export default {
 }
 
 .light-theme .action-button {
-    width: 31%;
+    width: 23%;
     height: 60rpx;
     display: flex;
     justify-content: center;
     align-items: center;
     border-radius: 6rpx;
-    font-size: 26rpx;
+    font-size: 24rpx;
     font-weight: bold;
 }
 
@@ -1876,6 +1889,11 @@ export default {
 
 .light-theme .action-button.analyze {
     background-color: #1989fa;
+    color: #fff;
+}
+
+.light-theme .action-button.test {
+    background-color: #ff9800;
     color: #fff;
 }
 

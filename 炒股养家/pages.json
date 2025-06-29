@@ -28,6 +28,15 @@
       }
     },
     {
+      "path": "pages/test-data/index",
+      "style": {
+        "navigationBarTitleText": "数据测试",
+        "navigationBarTextStyle": "white",
+        "navigationBarBackgroundColor": "#141414",
+        "backgroundColor": "#141414"
+      }
+    },
+    {
       "path": "pages/stock-picking/index",
       "style": {
         "navigationBarTitleText": "选股策略",

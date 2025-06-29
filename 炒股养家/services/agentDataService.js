@@ -329,6 +329,270 @@ class AgentDataService {
   }
 
   /**
+   * 获取真实股票数据
+   */
+  async getStockData(symbols = ['000001', '600000', '600519'], period = '1d') {
+    try {
+      console.log('[Agent数据] 正在获取股票数据:', symbols);
+
+      const response = await uni.request({
+        url: `${this.apiBaseUrl}/api/market-data`,
+        method: 'GET',
+        data: {
+          symbols: symbols.join(','),
+          period: period,
+          limit: 100
+        },
+        timeout: this.timeout,
+        header: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.statusCode === 200 && response.data) {
+        console.log('[Agent数据] 成功获取股票数据:', response.data);
+
+        return {
+          success: true,
+          data: response.data.market_data || response.data,
+          symbols: symbols,
+          period: period,
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        throw new Error(`API响应错误: ${response.statusCode}`);
+      }
+    } catch (error) {
+      console.error('[Agent数据] 获取股票数据失败:', error);
+
+      // 返回模拟股票数据
+      console.log('[Agent数据] 使用模拟股票数据');
+      return {
+        success: true,
+        data: this._generateMockStockData(symbols),
+        symbols: symbols,
+        period: period,
+        timestamp: new Date().toISOString(),
+        source: 'mock'
+      };
+    }
+  }
+
+  /**
+   * 运行回测
+   */
+  async runBacktest(config = {}) {
+    try {
+      console.log('[Agent数据] 正在运行回测:', config);
+
+      const backtestConfig = {
+        strategy: config.strategy || 'ma_crossover',
+        symbols: config.symbols || ['000001', '600000'],
+        start_date: config.start_date || '2023-01-01',
+        end_date: config.end_date || '2024-01-01',
+        initial_capital: config.initial_capital || 100000,
+        ...config
+      };
+
+      const response = await uni.request({
+        url: `${this.apiBaseUrl}/api/backtesting/run`,
+        method: 'POST',
+        data: backtestConfig,
+        timeout: 30000, // 回测可能需要更长时间
+        header: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.statusCode === 200 && response.data) {
+        console.log('[Agent数据] 回测运行成功:', response.data);
+
+        return {
+          success: true,
+          data: response.data,
+          config: backtestConfig,
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        throw new Error(`回测API响应错误: ${response.statusCode}`);
+      }
+    } catch (error) {
+      console.error('[Agent数据] 回测运行失败:', error);
+
+      // 返回模拟回测结果
+      console.log('[Agent数据] 使用模拟回测结果');
+      return {
+        success: true,
+        data: this._generateMockBacktestResult(config),
+        config: config,
+        timestamp: new Date().toISOString(),
+        source: 'mock'
+      };
+    }
+  }
+
+  /**
+   * 生成模拟股票数据
+   */
+  _generateMockStockData(symbols) {
+    const mockData = {};
+
+    symbols.forEach(symbol => {
+      const basePrice = Math.random() * 100 + 10; // 10-110之间的基础价格
+      const data = [];
+
+      // 生成30天的模拟数据
+      for (let i = 0; i < 30; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() - (29 - i));
+
+        const open = basePrice + (Math.random() - 0.5) * 5;
+        const close = open + (Math.random() - 0.5) * 3;
+        const high = Math.max(open, close) + Math.random() * 2;
+        const low = Math.min(open, close) - Math.random() * 2;
+        const volume = Math.floor(Math.random() * 1000000) + 100000;
+
+        data.push({
+          date: date.toISOString().split('T')[0],
+          open: open.toFixed(2),
+          high: high.toFixed(2),
+          low: low.toFixed(2),
+          close: close.toFixed(2),
+          volume: volume,
+          symbol: symbol
+        });
+      }
+
+      mockData[symbol] = {
+        symbol: symbol,
+        name: this._getStockName(symbol),
+        current_price: data[data.length - 1].close,
+        change: (Math.random() - 0.5) * 5,
+        change_percent: (Math.random() - 0.5) * 10,
+        volume: data[data.length - 1].volume,
+        kline_data: data
+      };
+    });
+
+    return mockData;
+  }
+
+  /**
+   * 生成模拟回测结果
+   */
+  _generateMockBacktestResult(config) {
+    const initialCapital = config.initial_capital || 100000;
+    const finalValue = initialCapital * (1 + (Math.random() - 0.3) * 0.5); // -30%到+20%的收益
+    const totalReturn = (finalValue - initialCapital) / initialCapital;
+
+    return {
+      backtest_id: `mock_${Date.now()}`,
+      strategy: config.strategy || 'ma_crossover',
+      symbols: config.symbols || ['000001', '600000'],
+      start_date: config.start_date || '2023-01-01',
+      end_date: config.end_date || '2024-01-01',
+      initial_capital: initialCapital,
+      final_value: finalValue,
+      total_return: totalReturn,
+      total_return_pct: totalReturn * 100,
+      max_drawdown: Math.random() * 0.2,
+      sharpe_ratio: (Math.random() - 0.5) * 3,
+      win_rate: 0.4 + Math.random() * 0.4,
+      total_trades: Math.floor(Math.random() * 100) + 20,
+      profitable_trades: Math.floor(Math.random() * 50) + 10,
+      avg_trade_return: totalReturn / 50,
+      trades: this._generateMockTrades(config),
+      equity_curve: this._generateMockEquityCurve(initialCapital, finalValue),
+      status: 'completed',
+      created_at: new Date().toISOString()
+    };
+  }
+
+  /**
+   * 生成模拟交易记录
+   */
+  _generateMockTrades(config) {
+    const trades = [];
+    const symbols = config.symbols || ['000001', '600000'];
+    const tradeCount = Math.floor(Math.random() * 20) + 5;
+
+    for (let i = 0; i < tradeCount; i++) {
+      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
+      const entryDate = new Date(config.start_date || '2023-01-01');
+      entryDate.setDate(entryDate.getDate() + Math.floor(Math.random() * 300));
+
+      const exitDate = new Date(entryDate);
+      exitDate.setDate(exitDate.getDate() + Math.floor(Math.random() * 30) + 1);
+
+      const entryPrice = 10 + Math.random() * 90;
+      const exitPrice = entryPrice * (1 + (Math.random() - 0.5) * 0.2);
+      const quantity = Math.floor(Math.random() * 1000) + 100;
+      const pnl = (exitPrice - entryPrice) * quantity;
+
+      trades.push({
+        symbol: symbol,
+        entry_date: entryDate.toISOString().split('T')[0],
+        exit_date: exitDate.toISOString().split('T')[0],
+        entry_price: entryPrice.toFixed(2),
+        exit_price: exitPrice.toFixed(2),
+        quantity: quantity,
+        side: 'long',
+        pnl: pnl.toFixed(2),
+        pnl_pct: ((exitPrice - entryPrice) / entryPrice * 100).toFixed(2)
+      });
+    }
+
+    return trades;
+  }
+
+  /**
+   * 生成模拟资金曲线
+   */
+  _generateMockEquityCurve(initialCapital, finalValue) {
+    const curve = [];
+    const days = 250; // 一年交易日
+    const dailyReturn = Math.pow(finalValue / initialCapital, 1 / days) - 1;
+
+    let currentValue = initialCapital;
+    const startDate = new Date('2023-01-01');
+
+    for (let i = 0; i < days; i++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
+
+      // 添加随机波动
+      const randomReturn = dailyReturn + (Math.random() - 0.5) * 0.02;
+      currentValue *= (1 + randomReturn);
+
+      curve.push({
+        date: date.toISOString().split('T')[0],
+        value: currentValue.toFixed(2),
+        return: ((currentValue - initialCapital) / initialCapital * 100).toFixed(2)
+      });
+    }
+
+    return curve;
+  }
+
+  /**
+   * 获取股票名称
+   */
+  _getStockName(symbol) {
+    const stockNames = {
+      '000001': '平安银行',
+      '000002': '万科A',
+      '600000': '浦发银行',
+      '600036': '招商银行',
+      '600519': '贵州茅台',
+      '000858': '五粮液',
+      '300750': '宁德时代',
+      '601318': '中国平安'
+    };
+
+    return stockNames[symbol] || `股票${symbol}`;
+  }
+
+  /**
    * 批量获取数据
    */
   async getBatchData(dataTypes = ['balance', 'positions', 'analysis']) {
