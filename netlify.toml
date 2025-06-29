@@ -1,9 +1,11 @@
 [build]
-  functions = "functions"
+  functions = "netlify/functions"
   publish = "."
+  command = "echo 'Functions build complete'"
 
 [functions]
   node_bundler = "esbuild"
+  directory = "netlify/functions"
 
 [[redirects]]
   from = "/api/*"
