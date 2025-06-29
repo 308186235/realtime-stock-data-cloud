@@ -14,7 +14,7 @@ exports.handler = async (event, context) => {
     status: "healthy",
     server: "netlify-functions",
     timestamp: new Date().toISOString(),
-    message: "🎉 交易系统API运行正常！",
+    message: "🎉 交易系统API运行正常！[MCP修复版本]",
     api_version: "1.2.0",
     deployment: "git-connected",
     uptime: process.uptime(),
