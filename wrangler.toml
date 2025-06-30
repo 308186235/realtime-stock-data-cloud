@@ -1,0 +1,11 @@
+name = "aigupiao-subdomain-router"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[routes]]
+pattern = "aigupiao.me/*"
+zone_name = "aigupiao.me"
+
+[[routes]]
+pattern = "*.aigupiao.me/*"
+zone_name = "aigupiao.me"
