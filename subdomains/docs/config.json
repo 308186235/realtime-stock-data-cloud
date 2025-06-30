@@ -1,0 +1,9 @@
+{
+  "name": "docs.aigupiao.me",
+  "type": "static",
+  "description": "API文档中心",
+  "tech_stack": "Static/Markdown",
+  "priority": 3,
+  "status": "development",
+  "created_at": "2024-12-30"
+}

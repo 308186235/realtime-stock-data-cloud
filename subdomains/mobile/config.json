@@ -1,0 +1,9 @@
+{
+  "name": "mobile.aigupiao.me",
+  "type": "frontend",
+  "description": "移动端H5应用",
+  "tech_stack": "uni-app/H5",
+  "priority": 2,
+  "status": "development",
+  "created_at": "2024-12-30"
+}

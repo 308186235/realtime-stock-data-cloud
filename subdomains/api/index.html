@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后端API服务 - API服务</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 2rem; }
+        .terminal { background: #000; padding: 1rem; border-radius: 5px; border: 1px solid #333; }
+        .api-info { background: #222; padding: 1rem; margin: 1rem 0; border-radius: 5px; }
+        .endpoint { color: #00aaff; }
+        .method { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="terminal">
+        <h1>🔧 后端API服务</h1>
+        <p>域名: api.aigupiao.me</p>
+        <p>状态: 🚧 开发中</p>
+        
+        <div class="api-info">
+            <h3>📡 API端点 (计划中)</h3>
+            <p><span class="method">GET</span> <span class="endpoint">/api/health</span> - 健康检查</p>
+            <p><span class="method">GET</span> <span class="endpoint">/api/stocks</span> - 股票数据</p>
+            <p><span class="method">POST</span> <span class="endpoint">/api/trade</span> - 交易接口</p>
+            <p><span class="method">GET</span> <span class="endpoint">/api/account</span> - 账户信息</p>
+        </div>
+        
+        <div class="api-info">
+            <h3>🔒 认证方式</h3>
+            <p>Bearer Token / JWT</p>
+        </div>
+        
+        <div class="api-info">
+            <h3>📊 技术栈</h3>
+            <p>FastAPI/Python</p>
+        </div>
+    </div>
+</body>
+</html>

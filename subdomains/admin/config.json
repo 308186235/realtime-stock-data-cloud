@@ -1,0 +1,9 @@
+{
+  "name": "admin.aigupiao.me",
+  "type": "frontend",
+  "description": "管理后台",
+  "tech_stack": "Vue3/React",
+  "priority": 3,
+  "status": "development",
+  "created_at": "2024-12-30"
+}

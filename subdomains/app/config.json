@@ -1,0 +1,9 @@
+{
+  "name": "app.aigupiao.me",
+  "type": "frontend",
+  "description": "主前端应用",
+  "tech_stack": "Vue3/uni-app",
+  "priority": 1,
+  "status": "development",
+  "created_at": "2024-12-30"
+}
