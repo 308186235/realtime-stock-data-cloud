@@ -1,14 +1,10 @@
 {
-  "name": "trading-system-api",
+  "name": "aigupiao-subdomain-router",
   "version": "1.0.0",
-  "description": "交易系统API - Netlify Functions",
-  "main": "index.html",
+  "description": "Cloudflare Worker for aigupiao.me subdomain routing",
+  "main": "worker.js",
   "scripts": {
-    "build": "echo 'Build completed - Netlify Functions ready'"
-  },
-  "dependencies": {},
-  "devDependencies": {
-    "wrangler": "^3.0.0"
+    "deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -1,11 +1,6 @@
 name = "aigupiao-subdomain-router"
 main = "worker.js"
 compatibility_date = "2024-01-01"
-compatibility_flags = ["nodejs_compat"]
-
-# 兼容性设置
-[build]
-command = ""
 
 [[routes]]
 pattern = "aigupiao.me/*"
