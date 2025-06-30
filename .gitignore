@@ -62,3 +62,38 @@ frontend/股票5/node_modules/
 
 # Generated files
 app-logo.png
+
+# Stock data files (runtime data, not source code)
+stock_data/
+*.dat
+*.pkl
+
+# Backup files (keep source clean)
+*.backup_*
+*.bak
+*_backup_*
+*.syntax_backup_*
+
+# Build outputs and cache
+unpackage/
+dist/
+build/
+.cache/
+
+# Additional uni-app specific
+炒股养家/node_modules/
+炒股养家/unpackage/
+frontend/*/node_modules/
+frontend/*/unpackage/
+frontend/*/dist/
+
+# Duplicate project directories (keep only main)
+炒股养家_complete/
+炒股养家_old/
+炒股养家_template_backup/
+1/
+11/
+
+# Test and temporary files
+backup_deleted_*/
+*.bundle

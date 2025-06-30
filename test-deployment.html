@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI股票交易系统 - 测试页面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 600px;
+            width: 90%;
+        }
+        
+        .logo {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fff, #f0f0f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        
+        .status {
+            display: flex;
+            justify-content: space-around;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .status-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+            border-radius: 10px;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .status-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .status-text {
+            font-size: 0.9rem;
+        }
+        
+        .features {
+            margin-top: 2rem;
+            text-align: left;
+        }
+        
+        .feature {
+            display: flex;
+            align-items: center;
+            margin: 1rem 0;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .feature-icon {
+            margin-right: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            margin: 1rem 0.5rem;
+            transition: transform 0.3s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .footer {
+            margin-top: 2rem;
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .status {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🚀</div>
+        <h1>AI股票交易系统</h1>
+        <p class="subtitle">智能化A股交易平台</p>
+
+        <div class="status">
+            <div class="status-item">
+                <div class="status-icon">✅</div>
+                <div class="status-text">域名配置成功</div>
+            </div>
+            <div class="status-item">
+                <div class="status-icon">🌐</div>
+                <div class="status-text">DNS解析正常</div>
+            </div>
+            <div class="status-item">
+                <div class="status-icon">⚠️</div>
+                <div class="status-text">前端构建中</div>
+            </div>
+        </div>
+
+        <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 10px; padding: 1rem; margin: 1rem 0;">
+            <h3 style="color: #ffc107; margin-bottom: 0.5rem;">🚧 部署状态说明</h3>
+            <p style="font-size: 0.9rem; line-height: 1.5;">
+                当前显示的是临时测试页面。实际的uni-app前端应用需要正确构建后部署。
+                <br><br>
+                <strong>问题分析：</strong><br>
+                • Cloudflare Pages部署了根目录，但前端应用在 <code>炒股养家</code> 目录<br>
+                • uni-app构建失败，需要修复构建配置<br>
+                • 需要将构建输出正确部署到Pages
+            </p>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">🤖</div>
+                <div>AI智能分析与决策</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📊</div>
+                <div>实时股票数据监控</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <div>自动化交易执行</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📱</div>
+                <div>移动端完美适配</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <div>安全可靠的交易环境</div>
+            </div>
+        </div>
+        
+        <button class="btn" onclick="testBackend()">测试后端连接</button>
+        <button class="btn" onclick="showSystemInfo()">系统信息</button>
+        
+        <div class="footer">
+            <p>🎯 域名: aigupiao.me | 🚀 部署平台: Cloudflare Pages</p>
+            <p>📅 部署时间: <span id="deployTime"></span></p>
+        </div>
+    </div>
+
+    <script>
+        // 显示部署时间
+        document.getElementById('deployTime').textContent = new Date().toLocaleString('zh-CN');
+        
+        // 测试后端连接
+        function testBackend() {
+            alert('🔄 正在测试后端连接...\n\n这是一个演示页面，实际的后端连接功能需要完整的前端应用。');
+        }
+        
+        // 显示系统信息
+        function showSystemInfo() {
+            const info = `
+🖥️ 系统信息:
+• 用户代理: ${navigator.userAgent.substring(0, 50)}...
+• 屏幕分辨率: ${screen.width}x${screen.height}
+• 浏览器语言: ${navigator.language}
+• 在线状态: ${navigator.onLine ? '在线' : '离线'}
+• 当前时间: ${new Date().toLocaleString('zh-CN')}
+• 域名: ${window.location.hostname}
+• 协议: ${window.location.protocol}
+            `;
+            alert(info);
+        }
+        
+        // 添加一些动画效果
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.querySelector('.container');
+            container.style.opacity = '0';
+            container.style.transform = 'translateY(20px)';
+            
+            setTimeout(() => {
+                container.style.transition = 'all 0.8s ease';
+                container.style.opacity = '1';
+                container.style.transform = 'translateY(0)';
+            }, 100);
+        });
+        
+        // 检测移动设备
+        if (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            document.body.style.padding = '1rem';
+        }
+    </script>
+</body>
+</html>
