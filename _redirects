@@ -1,4 +1,23 @@
-# Netlify Functions Redirects
+# Subdomain-based routing for aigupiao.me
+# API subdomain - handle API requests
+https://api.aigupiao.me/health /.netlify/functions/health 200
+https://api.aigupiao.me/test /.netlify/functions/test 200
+https://api.aigupiao.me/account-balance /.netlify/functions/account-balance 200
+https://api.aigupiao.me/account-positions /.netlify/functions/account-positions 200
+https://api.aigupiao.me/agent-analysis /.netlify/functions/agent-analysis 200
+https://api.aigupiao.me/index /.netlify/functions/index 200
+https://api.aigupiao.me/* /.netlify/functions/:splat 200
+
+# Mobile subdomain - serve mobile app
+https://mobile.aigupiao.me/* /mobile.html 200
+
+# Admin subdomain - serve admin interface
+https://admin.aigupiao.me/* /admin.html 200
+
+# App subdomain - serve main web app
+https://app.aigupiao.me/* /app.html 200
+
+# Legacy API routes (for backward compatibility)
 /api/health /.netlify/functions/health 200
 /api/test /.netlify/functions/test 200
 /api/account-balance /.netlify/functions/account-balance 200
@@ -7,5 +26,5 @@
 /api/index /.netlify/functions/index 200
 /api/* /.netlify/functions/:splat 200
 
-# Fallback
+# Default fallback
 /* /index.html 200

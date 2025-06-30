@@ -1,0 +1,48 @@
+{
+  "domain": "aigupiao.me",
+  "recommended_ip": "104.18.21.135",
+  "dns_records": [
+    {
+      "type": "A",
+      "name": "app",
+      "content": "104.18.21.135",
+      "proxy": true,
+      "ttl": "Auto"
+    },
+    {
+      "type": "A",
+      "name": "api",
+      "content": "104.18.21.135",
+      "proxy": true,
+      "ttl": "Auto"
+    },
+    {
+      "type": "A",
+      "name": "mobile",
+      "content": "104.18.21.135",
+      "proxy": true,
+      "ttl": "Auto"
+    },
+    {
+      "type": "A",
+      "name": "admin",
+      "content": "104.18.21.135",
+      "proxy": true,
+      "ttl": "Auto"
+    },
+    {
+      "type": "A",
+      "name": "ws",
+      "content": "104.18.21.135",
+      "proxy": true,
+      "ttl": "Auto"
+    },
+    {
+      "type": "A",
+      "name": "docs",
+      "content": "104.18.21.135",
+      "proxy": true,
+      "ttl": "Auto"
+    }
+  ]
+}

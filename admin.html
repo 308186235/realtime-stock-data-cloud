@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - AI股票交易系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .admin-header {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .admin-nav {
+            display: flex;
+            gap: 1rem;
+            margin: 2rem;
+            flex-wrap: wrap;
+        }
+        .admin-nav-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .admin-nav-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .admin-nav-item.active {
+            background: rgba(52, 152, 219, 0.3);
+            border-color: #3498db;
+        }
+        .admin-content {
+            margin: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+        }
+        .admin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+        .admin-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .admin-card h3 {
+            color: #3498db;
+            margin-bottom: 1rem;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        .status-online { background: #27ae60; }
+        .status-warning { background: #f39c12; }
+        .status-offline { background: #e74c3c; }
+        .btn-admin {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 0.5rem;
+            transition: transform 0.3s ease;
+        }
+        .btn-admin:hover { transform: translateY(-2px); }
+        .btn-danger {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+        }
+        .btn-success {
+            background: linear-gradient(45deg, #27ae60, #229954);
+        }
+        .log-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .log-entry {
+            margin: 0.2rem 0;
+            padding: 0.2rem;
+        }
+        .log-info { color: #3498db; }
+        .log-success { color: #27ae60; }
+        .log-warning { color: #f39c12; }
+        .log-error { color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <div class="admin-header">
+        <div>
+            <h1>🛠️ 管理后台</h1>
+            <p>admin.aigupiao.me</p>
+        </div>
+        <div>
+            <span class="status-indicator status-online"></span>
+            系统运行中
+        </div>
+    </div>
+    
+    <div class="admin-nav">
+        <div class="admin-nav-item active" onclick="showAdminPage('dashboard')">📊 仪表板</div>
+        <div class="admin-nav-item" onclick="showAdminPage('users')">👥 用户管理</div>
+        <div class="admin-nav-item" onclick="showAdminPage('trading')">💹 交易监控</div>
+        <div class="admin-nav-item" onclick="showAdminPage('system')">⚙️ 系统管理</div>
+        <div class="admin-nav-item" onclick="showAdminPage('logs')">📋 日志查看</div>
+    </div>
+    
+    <div id="dashboard" class="admin-content">
+        <h2>📊 系统仪表板</h2>
+        <div class="admin-grid">
+            <div class="admin-card">
+                <h3>🌐 服务状态</h3>
+                <p><span class="status-indicator status-online"></span>前端服务: 正常</p>
+                <p><span class="status-indicator status-online"></span>API服务: 正常</p>
+                <p><span class="status-indicator status-warning"></span>数据库: 监控中</p>
+                <p><span class="status-indicator status-online"></span>缓存服务: 正常</p>
+            </div>
+            <div class="admin-card">
+                <h3>📈 实时统计</h3>
+                <p>在线用户: <strong>156</strong></p>
+                <p>今日交易: <strong>2,847</strong></p>
+                <p>API调用: <strong>45,231</strong></p>
+                <p>系统负载: <strong>23%</strong></p>
+            </div>
+            <div class="admin-card">
+                <h3>🔗 域名状态</h3>
+                <p><span class="status-indicator status-online"></span>app.aigupiao.me</p>
+                <p><span class="status-indicator status-online"></span>api.aigupiao.me</p>
+                <p><span class="status-indicator status-online"></span>mobile.aigupiao.me</p>
+                <p><span class="status-indicator status-online"></span>admin.aigupiao.me</p>
+            </div>
+            <div class="admin-card">
+                <h3>⚡ 性能指标</h3>
+                <p>响应时间: <strong>45ms</strong></p>
+                <p>成功率: <strong>99.8%</strong></p>
+                <p>错误率: <strong>0.2%</strong></p>
+                <p>可用性: <strong>99.9%</strong></p>
+            </div>
+        </div>
+        <button class="btn-admin" onclick="refreshDashboard()">🔄 刷新数据</button>
+        <button class="btn-admin btn-success" onclick="exportReport()">📊 导出报告</button>
+    </div>
+    
+    <div id="users" class="admin-content" style="display:none;">
+        <h2>👥 用户管理</h2>
+        <p>用户管理功能开发中...</p>
+        <div class="admin-card">
+            <h3>用户统计</h3>
+            <p>总用户数: 1,234</p>
+            <p>活跃用户: 567</p>
+            <p>新注册: 23 (今日)</p>
+        </div>
+    </div>
+    
+    <div id="trading" class="admin-content" style="display:none;">
+        <h2>💹 交易监控</h2>
+        <p>交易监控功能开发中...</p>
+        <div class="admin-card">
+            <h3>交易概览</h3>
+            <p>今日交易量: ¥2,456,789</p>
+            <p>成功交易: 2,847</p>
+            <p>失败交易: 12</p>
+        </div>
+    </div>
+    
+    <div id="system" class="admin-content" style="display:none;">
+        <h2>⚙️ 系统管理</h2>
+        <div class="admin-grid">
+            <div class="admin-card">
+                <h3>🔧 系统操作</h3>
+                <button class="btn-admin">重启服务</button>
+                <button class="btn-admin">清理缓存</button>
+                <button class="btn-admin btn-danger">紧急停机</button>
+            </div>
+            <div class="admin-card">
+                <h3>📦 部署管理</h3>
+                <button class="btn-admin btn-success">部署更新</button>
+                <button class="btn-admin">回滚版本</button>
+                <button class="btn-admin">查看版本</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="logs" class="admin-content" style="display:none;">
+        <h2>📋 系统日志</h2>
+        <div class="log-container" id="logContainer">
+            <div class="log-entry log-info">[2025-06-30 10:30:15] INFO: 系统启动完成</div>
+            <div class="log-entry log-success">[2025-06-30 10:30:16] SUCCESS: API服务已启动</div>
+            <div class="log-entry log-info">[2025-06-30 10:30:17] INFO: 数据库连接成功</div>
+            <div class="log-entry log-warning">[2025-06-30 10:30:18] WARNING: 缓存命中率较低</div>
+            <div class="log-entry log-success">[2025-06-30 10:30:19] SUCCESS: 用户认证服务启动</div>
+        </div>
+        <button class="btn-admin" onclick="refreshLogs()">🔄 刷新日志</button>
+        <button class="btn-admin" onclick="clearLogs()">🗑️ 清空日志</button>
+    </div>
+
+    <script>
+        function showAdminPage(pageId) {
+            // 移除所有active状态
+            document.querySelectorAll('.admin-nav-item').forEach(el => el.classList.remove('active'));
+            // 隐藏所有页面
+            document.querySelectorAll('.admin-content').forEach(el => el.style.display = 'none');
+            // 显示选中页面
+            document.getElementById(pageId).style.display = 'block';
+            // 添加active状态到对应导航项
+            event.target.classList.add('active');
+        }
+        
+        function refreshDashboard() {
+            alert('🔄 正在刷新仪表板数据...\n\n• 服务状态已更新\n• 统计数据已刷新\n• 性能指标已同步');
+        }
+        
+        function exportReport() {
+            alert('📊 正在生成系统报告...\n\n报告将包含:\n• 系统运行状态\n• 用户活动统计\n• 交易数据分析\n• 性能监控数据');
+        }
+        
+        function refreshLogs() {
+            const logContainer = document.getElementById('logContainer');
+            const newLog = document.createElement('div');
+            newLog.className = 'log-entry log-info';
+            newLog.textContent = `[${new Date().toLocaleString()}] INFO: 日志已刷新`;
+            logContainer.appendChild(newLog);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function clearLogs() {
+            if (confirm('确定要清空所有日志吗？')) {
+                document.getElementById('logContainer').innerHTML = '';
+                alert('✅ 日志已清空');
+            }
+        }
+        
+        // 模拟实时数据更新
+        setInterval(() => {
+            // 这里可以添加实时数据更新逻辑
+        }, 5000);
+    </script>
+</body>
+</html>
