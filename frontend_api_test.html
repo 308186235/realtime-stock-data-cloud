@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端API连接测试</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 10px;
+            font-size: 14px;
+            transition: transform 0.3s ease;
+        }
+        .btn:hover { transform: translateY(-2px); }
+        .result {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status { 
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        .success { background: rgba(76, 175, 80, 0.3); }
+        .error { background: rgba(244, 67, 54, 0.3); }
+        .warning { background: rgba(255, 193, 7, 0.3); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 前端API连接测试</h1>
+            <p>测试前端与后端API的连接状态</p>
+        </div>
+
+        <div class="test-section">
+            <h3>🏥 健康检查测试</h3>
+            <button class="btn" onclick="testHealth()">测试健康检查</button>
+            <button class="btn" onclick="testApiHealth()">测试API健康检查</button>
+            <div id="health-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>💰 投资组合API测试</h3>
+            <button class="btn" onclick="testPortfolio()">获取投资组合</button>
+            <button class="btn" onclick="testPortfolioDetail()">获取组合详情</button>
+            <div id="portfolio-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 股票数据API测试</h3>
+            <button class="btn" onclick="testMarketData()">获取市场数据</button>
+            <button class="btn" onclick="testStockList()">获取股票列表</button>
+            <div id="stock-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🤖 AI分析API测试</h3>
+            <button class="btn" onclick="testAIAnalysis()">获取AI分析</button>
+            <div id="ai-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📈 策略API测试</h3>
+            <button class="btn" onclick="testStrategies()">获取策略列表</button>
+            <div id="strategy-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🌐 连接状态</h3>
+            <div id="connection-status" class="status warning">等待测试...</div>
+            <button class="btn" onclick="testAllAPIs()">测试所有API</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        let testResults = {};
+
+        async function makeRequest(url, resultElementId) {
+            const resultElement = document.getElementById(resultElementId);
+            resultElement.textContent = '🔄 请求中...';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                const result = {
+                    status: response.status,
+                    statusText: response.statusText,
+                    data: data,
+                    timestamp: new Date().toISOString()
+                };
+                
+                resultElement.textContent = JSON.stringify(result, null, 2);
+                
+                if (response.ok) {
+                    resultElement.style.background = 'rgba(76, 175, 80, 0.3)';
+                    return true;
+                } else {
+                    resultElement.style.background = 'rgba(244, 67, 54, 0.3)';
+                    return false;
+                }
+            } catch (error) {
+                const errorResult = {
+                    error: error.message,
+                    timestamp: new Date().toISOString()
+                };
+                resultElement.textContent = JSON.stringify(errorResult, null, 2);
+                resultElement.style.background = 'rgba(244, 67, 54, 0.3)';
+                return false;
+            }
+        }
+
+        async function testHealth() {
+            const success = await makeRequest(`${API_BASE}/health`, 'health-result');
+            testResults.health = success;
+            updateConnectionStatus();
+        }
+
+        async function testApiHealth() {
+            const success = await makeRequest(`${API_BASE}/api/health`, 'health-result');
+            testResults.apiHealth = success;
+            updateConnectionStatus();
+        }
+
+        async function testPortfolio() {
+            const success = await makeRequest(`${API_BASE}/api/portfolio/`, 'portfolio-result');
+            testResults.portfolio = success;
+            updateConnectionStatus();
+        }
+
+        async function testPortfolioDetail() {
+            const success = await makeRequest(`${API_BASE}/api/portfolio/portfolio-001`, 'portfolio-result');
+            testResults.portfolioDetail = success;
+            updateConnectionStatus();
+        }
+
+        async function testMarketData() {
+            const success = await makeRequest(`${API_BASE}/api/stock/market-data`, 'stock-result');
+            testResults.marketData = success;
+            updateConnectionStatus();
+        }
+
+        async function testStockList() {
+            const success = await makeRequest(`${API_BASE}/api/stock/list`, 'stock-result');
+            testResults.stockList = success;
+            updateConnectionStatus();
+        }
+
+        async function testAIAnalysis() {
+            const success = await makeRequest(`${API_BASE}/api/ai/analysis`, 'ai-result');
+            testResults.aiAnalysis = success;
+            updateConnectionStatus();
+        }
+
+        async function testStrategies() {
+            const success = await makeRequest(`${API_BASE}/api/strategy/`, 'strategy-result');
+            testResults.strategies = success;
+            updateConnectionStatus();
+        }
+
+        async function testAllAPIs() {
+            document.getElementById('connection-status').textContent = '🔄 正在测试所有API...';
+            document.getElementById('connection-status').className = 'status warning';
+            
+            await testHealth();
+            await testPortfolio();
+            await testMarketData();
+            await testAIAnalysis();
+            await testStrategies();
+            
+            updateConnectionStatus();
+        }
+
+        function updateConnectionStatus() {
+            const statusElement = document.getElementById('connection-status');
+            const successCount = Object.values(testResults).filter(result => result === true).length;
+            const totalTests = Object.keys(testResults).length;
+            
+            if (totalTests === 0) {
+                statusElement.textContent = '⏳ 等待测试...';
+                statusElement.className = 'status warning';
+            } else if (successCount === totalTests) {
+                statusElement.textContent = `✅ 所有API连接正常 (${successCount}/${totalTests})`;
+                statusElement.className = 'status success';
+            } else if (successCount > 0) {
+                statusElement.textContent = `⚠️ 部分API连接正常 (${successCount}/${totalTests})`;
+                statusElement.className = 'status warning';
+            } else {
+                statusElement.textContent = `❌ API连接失败 (${successCount}/${totalTests})`;
+                statusElement.className = 'status error';
+            }
+        }
+
+        // 页面加载时自动测试健康检查
+        window.addEventListener('load', function() {
+            setTimeout(testHealth, 1000);
+        });
+    </script>
+</body>
+</html>

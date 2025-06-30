@@ -8,8 +8,8 @@
     "frontend/gupiao1/env.js"
   ],
   "used_ports": [
-    8000
+    8000,
+    8080
   ],
-  "ngrok_tunnel": "https://1caf-39-188-128-188.ngrok-free.app",
-  "cloudflare_tunnel": true
+  "cloudflare_tunnel": false
 }

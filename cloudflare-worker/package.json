@@ -1,0 +1,40 @@
+{
+  "name": "trading-system-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker for Trading System API Proxy",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:production": "wrangler deploy --env production",
+    "deploy:development": "wrangler deploy --env development",
+    "build": "echo 'No build step required'",
+    "test": "echo 'No tests specified'",
+    "kv:create": "npm run kv:create:stock && npm run kv:create:market && npm run kv:create:user && npm run kv:create:rate",
+    "kv:create:stock": "wrangler kv:namespace create STOCK_CACHE",
+    "kv:create:market": "wrangler kv:namespace create MARKET_DATA", 
+    "kv:create:user": "wrangler kv:namespace create USER_SESSIONS",
+    "kv:create:rate": "wrangler kv:namespace create API_RATE_LIMIT",
+    "kv:list": "wrangler kv:namespace list",
+    "logs": "wrangler tail",
+    "logs:production": "wrangler tail --env production"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker",
+    "api-proxy",
+    "trading",
+    "stock",
+    "cache",
+    "supabase"
+  ],
+  "author": "Trading System",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

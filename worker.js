@@ -11,14 +11,14 @@ async function handleRequest(request) {
   const url = new URL(request.url)
   const hostname = url.hostname
   const pathname = url.pathname
-  
+
   // 添加CORS头
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
   }
-  
+
   // 处理预检请求
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -26,14 +26,14 @@ async function handleRequest(request) {
       headers: corsHeaders
     })
   }
-  
+
   try {
-    // 路由处理
+    // 域名路由处理
     switch(hostname) {
-      case 'app.aigupiao.me':
-        return handleAppDomain(pathname, request, corsHeaders)
       case 'api.aigupiao.me':
         return handleAPIDomain(pathname, request, corsHeaders)
+      case 'app.aigupiao.me':
+        return handleAppDomain(pathname, request, corsHeaders)
       case 'mobile.aigupiao.me':
         return handleMobileDomain(pathname, request, corsHeaders)
       case 'admin.aigupiao.me':
@@ -49,17 +49,19 @@ async function handleRequest(request) {
   }
 }
 
+// 处理 api.aigupiao.me - 后端API
+async function handleAPIDomain(pathname, request, corsHeaders) {
+  const backendUrl = 'https://trading-system-api.netlify.app'
+  return proxyRequest(backendUrl + pathname, request, corsHeaders)
+}
+
 // 处理 app.aigupiao.me - 前端应用
 async function handleAppDomain(pathname, request, corsHeaders) {
   const frontendUrl = 'https://trading-system-frontend.netlify.app'
   return proxyRequest(frontendUrl + pathname, request, corsHeaders)
 }
 
-// 处理 api.aigupiao.me - 后端API
-async function handleAPIDomain(pathname, request, corsHeaders) {
-  const backendUrl = 'https://trading-system-api.netlify.app'
-  return proxyRequest(backendUrl + pathname, request, corsHeaders)
-}
+
 
 // 处理 mobile.aigupiao.me - 移动端
 async function handleMobileDomain(pathname, request, corsHeaders) {
@@ -158,12 +160,18 @@ async function proxyRequest(targetUrl, request, corsHeaders) {
 }
 
 // 创建响应函数
-function createResponse(message, status = 200, headers = {}) {
-  return new Response(JSON.stringify({
-    message: message,
+function createResponse(data, status = 200, headers = {}) {
+  // 如果data是字符串，包装成对象
+  const responseData = typeof data === 'string' ? {
+    message: data,
     timestamp: new Date().toISOString(),
     status: status
-  }), {
+  } : {
+    ...data,
+    timestamp: data.timestamp || new Date().toISOString()
+  }
+
+  return new Response(JSON.stringify(responseData), {
     status: status,
     headers: {
       'Content-Type': 'application/json',

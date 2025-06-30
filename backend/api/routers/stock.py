@@ -1,11 +1,22 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from typing import Optional, List, Dict, Any
 import logging
+import sys
+import os
+
+# 添加路径以导入适配器
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from adapters.simple_database_adapter import simple_db_adapter
+from services.market_data_service import MarketDataService
 
 # 初始化日志
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# 初始化服务
+market_data_service = MarketDataService()
 
 @router.get("/")
 async def get_stocks(
@@ -15,47 +26,93 @@ async def get_stocks(
 ):
     """获取股票列表"""
     try:
-        # 实际应用中这里应该根据参数查询数据库或数据源
+        # 构建过滤条件
+        filters = {}
+        if market:
+            filters['market'] = market
+        if industry:
+            filters['industry'] = industry
+
+        # 从数据库获取股票列表
+        stocks = simple_db_adapter.get_stocks(filters, limit)
+
+        # 如果数据库中没有数据，返回示例数据
+        if not stocks:
+            stocks = [
+                {"code": "600000", "name": "浦发银行", "market": "SH", "industry": "银行", "is_active": True},
+                {"code": "600036", "name": "招商银行", "market": "SH", "industry": "银行", "is_active": True},
+                {"code": "000001", "name": "平安银行", "market": "SZ", "industry": "银行", "is_active": True},
+                {"code": "002415", "name": "海康威视", "market": "SZ", "industry": "电子", "is_active": True}
+            ]
+
         return {
             "success": True,
-            "data": [
-                {"code": "600000", "name": "浦发银行", "market": "SH", "industry": "银行"},
-                {"code": "600036", "name": "招商银行", "market": "SH", "industry": "银行"},
-                {"code": "000001", "name": "平安银行", "market": "SZ", "industry": "银行"},
-                {"code": "002415", "name": "海康威视", "market": "SZ", "industry": "电子"}
-            ],
-            "total": 4
+            "data": stocks,
+            "total": len(stocks)
         }
     except Exception as e:
         logger.error(f"获取股票列表出错: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/")
+async def create_stock(stock_data: Dict[str, Any] = Body(...)):
+    """创建股票信息"""
+    try:
+        result = simple_db_adapter.create_stock(stock_data)
+        if result['success']:
+            return {
+                "success": True,
+                "data": result['data'],
+                "message": "股票信息创建成功"
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result.get('error', '创建股票信息失败'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建股票信息出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"创建股票信息失败: {str(e)}")
+
 @router.get("/{stock_code}")
 async def get_stock_info(stock_code: str):
     """获取指定股票的基本信息"""
     try:
-        # 实际应用中这里应该从数据源获取股票详情
-        return {
-            "success": True,
-            "data": {
-                "code": stock_code,
-                "name": "示例股票",
-                "market": "SH" if stock_code.startswith("6") else "SZ",
-                "industry": "示例行业",
-                "price": 15.67,
-                "change": 0.45,
-                "change_pct": 2.96,
-                "open": 15.32,
-                "high": 15.89,
-                "low": 15.28,
-                "volume": 12568900,
-                "amount": 196358620,
-                "market_cap": 15672000000,
-                "pe_ratio": 12.5,
-                "pb_ratio": 1.35,
-                "dividend_yield": 2.3
+        # 从数据库获取股票基本信息
+        result = simple_db_adapter.get_stock(stock_code)
+        if result['success']:
+            stock_info = result['data']
+
+            # 尝试获取实时价格数据
+            try:
+                price_data = market_data_service.get_real_time_data(stock_code)
+                if price_data:
+                    stock_info.update(price_data)
+            except Exception as e:
+                logger.warning(f"获取实时价格失败: {str(e)}")
+                # 使用默认价格数据
+                stock_info.update({
+                    "price": 15.67,
+                    "change": 0.45,
+                    "change_pct": 2.96,
+                    "open": 15.32,
+                    "high": 15.89,
+                    "low": 15.28,
+                    "volume": 12568900,
+                    "amount": 196358620,
+                    "market_cap": 15672000000,
+                    "pe_ratio": 12.5,
+                    "pb_ratio": 1.35,
+                    "dividend_yield": 2.3
+                })
+
+            return {
+                "success": True,
+                "data": stock_info
             }
-        }
+        else:
+            raise HTTPException(status_code=404, detail="股票不存在")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取股票信息出错: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

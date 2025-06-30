@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>技术指标计算测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .control-group label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .control-group input, .control-group select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        .btn-info { background: #17a2b8; color: white; }
+        .results {
+            margin-top: 20px;
+        }
+        .indicator-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: white;
+        }
+        .indicator-header {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .indicator-values {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .value-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+        }
+        .value-label {
+            font-weight: bold;
+            color: #666;
+        }
+        .value-number {
+            color: #007bff;
+            font-family: monospace;
+        }
+        .chart-container {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .chart-placeholder {
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            border: 2px dashed #ddd;
+            border-radius: 4px;
+            color: #666;
+            font-size: 16px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .data-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        .data-table tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 技术指标计算测试</h1>
+            <p>测试MA、MACD、RSI、布林带、KDJ等技术指标计算功能</p>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="controls">
+            <div class="control-group">
+                <label for="stockCode">股票代码</label>
+                <select id="stockCode">
+                    <option value="000001">000001 - 平安银行</option>
+                    <option value="600000">600000 - 浦发银行</option>
+                    <option value="600519">600519 - 贵州茅台</option>
+                    <option value="000858">000858 - 五粮液</option>
+                    <option value="002415">002415 - 海康威视</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="period">数据周期（天）</label>
+                <input type="number" id="period" value="60" min="20" max="250">
+            </div>
+            <div class="control-group">
+                <label for="indicatorType">指标类型</label>
+                <select id="indicatorType">
+                    <option value="all">所有指标</option>
+                    <option value="ma">移动平均线</option>
+                    <option value="macd">MACD</option>
+                    <option value="rsi">RSI</option>
+                    <option value="bollinger">布林带</option>
+                    <option value="kdj">KDJ</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div style="text-align: center; margin-bottom: 20px;">
+            <button class="btn btn-primary" onclick="calculateIndicators()">计算指标</button>
+            <button class="btn btn-success" onclick="getLatestValues()">获取最新值</button>
+            <button class="btn btn-warning" onclick="testAllStocks()">测试所有股票</button>
+            <button class="btn btn-info" onclick="testAPI()">测试API</button>
+        </div>
+
+        <!-- 结果显示区域 -->
+        <div id="results" class="results"></div>
+
+        <!-- 图表显示区域 -->
+        <div class="chart-container">
+            <h3>📈 指标图表</h3>
+            <div class="chart-placeholder">
+                点击"计算指标"按钮查看图表数据
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8001';
+
+        // 显示加载状态
+        function showLoading(message = '正在计算...') {
+            document.getElementById('results').innerHTML = `
+                <div class="loading">
+                    <div>⏳ ${message}</div>
+                </div>
+            `;
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            document.getElementById('results').innerHTML = `
+                <div class="error">
+                    ❌ 错误: ${message}
+                </div>
+            `;
+        }
+
+        // 显示成功信息
+        function showSuccess(message) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <div class="success">
+                    ✅ ${message}
+                </div>
+            ` + resultsDiv.innerHTML;
+        }
+
+        // 计算技术指标
+        async function calculateIndicators() {
+            const stockCode = document.getElementById('stockCode').value;
+            const period = document.getElementById('period').value;
+            const indicatorType = document.getElementById('indicatorType').value;
+
+            showLoading('正在计算技术指标...');
+
+            try {
+                let url = `${API_BASE}/api/technical/indicators/${stockCode}?period=${period}`;
+                
+                if (indicatorType !== 'all') {
+                    // 根据选择的指标类型构建参数
+                    const indicatorMap = {
+                        'ma': 'ma5,ma10,ma20,ma60',
+                        'macd': 'macd,signal,histogram',
+                        'rsi': 'rsi',
+                        'bollinger': 'boll_upper,boll_middle,boll_lower',
+                        'kdj': 'k,d,j'
+                    };
+                    url += `&indicators=${indicatorMap[indicatorType]}`;
+                }
+
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.success) {
+                    displayIndicators(result);
+                } else {
+                    showError('计算失败: ' + (result.message || '未知错误'));
+                }
+            } catch (error) {
+                showError('网络请求失败: ' + error.message);
+            }
+        }
+
+        // 显示指标结果
+        function displayIndicators(result) {
+            const resultsDiv = document.getElementById('results');
+            
+            let html = `
+                <div class="indicator-card">
+                    <div class="indicator-header">📊 ${result.stock_code} - 技术指标计算结果</div>
+                    <div class="indicator-values">
+                        <div class="value-item">
+                            <span class="value-label">数据点数:</span>
+                            <span class="value-number">${result.data_points}</span>
+                        </div>
+                        <div class="value-item">
+                            <span class="value-label">计算周期:</span>
+                            <span class="value-number">${result.period}天</span>
+                        </div>
+                        <div class="value-item">
+                            <span class="value-label">指标数量:</span>
+                            <span class="value-number">${Object.keys(result.indicators).length}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 显示最新指标值
+            if (result.latest_values) {
+                html += `
+                    <div class="indicator-card">
+                        <div class="indicator-header">📈 最新指标值</div>
+                        <div class="indicator-values">
+                `;
+                
+                for (const [key, value] of Object.entries(result.latest_values)) {
+                    if (value !== null) {
+                        html += `
+                            <div class="value-item">
+                                <span class="value-label">${key.toUpperCase()}:</span>
+                                <span class="value-number">${value}</span>
+                            </div>
+                        `;
+                    }
+                }
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 显示详细数据表格
+            html += createDataTable(result.indicators);
+
+            resultsDiv.innerHTML = html;
+        }
+
+        // 创建数据表格
+        function createDataTable(indicators) {
+            if (!indicators || Object.keys(indicators).length === 0) {
+                return '<div class="error">没有指标数据</div>';
+            }
+
+            const indicatorNames = Object.keys(indicators);
+            const dataLength = indicators[indicatorNames[0]].length;
+            
+            let html = `
+                <div class="indicator-card">
+                    <div class="indicator-header">📋 详细数据 (最后10个数据点)</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>序号</th>
+            `;
+            
+            // 表头
+            indicatorNames.forEach(name => {
+                html += `<th>${name.toUpperCase()}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // 数据行（只显示最后10行）
+            const startIndex = Math.max(0, dataLength - 10);
+            for (let i = startIndex; i < dataLength; i++) {
+                html += `<tr><td>${i + 1}</td>`;
+                indicatorNames.forEach(name => {
+                    const value = indicators[name][i];
+                    const displayValue = isNaN(value) ? '-' : Number(value).toFixed(4);
+                    html += `<td>${displayValue}</td>`;
+                });
+                html += '</tr>';
+            }
+            
+            html += '</tbody></table></div>';
+            return html;
+        }
+
+        // 获取最新指标值
+        async function getLatestValues() {
+            const stockCode = document.getElementById('stockCode').value;
+            showLoading('正在获取最新指标值...');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/technical/indicators/${stockCode}/latest`);
+                const result = await response.json();
+
+                if (result.success) {
+                    displayLatestValues(result);
+                } else {
+                    showError('获取失败: ' + (result.message || '未知错误'));
+                }
+            } catch (error) {
+                showError('网络请求失败: ' + error.message);
+            }
+        }
+
+        // 显示最新指标值
+        function displayLatestValues(result) {
+            const resultsDiv = document.getElementById('results');
+            
+            let html = `
+                <div class="indicator-card">
+                    <div class="indicator-header">🎯 ${result.stock_code} - 最新指标值</div>
+                    <div class="indicator-values">
+            `;
+            
+            for (const [key, value] of Object.entries(result.latest_indicators)) {
+                if (value !== null) {
+                    html += `
+                        <div class="value-item">
+                            <span class="value-label">${key.toUpperCase()}:</span>
+                            <span class="value-number">${value}</span>
+                        </div>
+                    `;
+                }
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML = html;
+        }
+
+        // 测试所有股票
+        async function testAllStocks() {
+            const stocks = ['000001', '600000', '600519', '000858', '002415'];
+            showLoading('正在测试所有股票...');
+
+            let results = [];
+            
+            for (const stock of stocks) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/technical/indicators/${stock}/latest`);
+                    const result = await response.json();
+                    results.push({
+                        stock: stock,
+                        success: result.success,
+                        indicators: result.latest_indicators || {}
+                    });
+                } catch (error) {
+                    results.push({
+                        stock: stock,
+                        success: false,
+                        error: error.message
+                    });
+                }
+            }
+
+            displayAllStocksResults(results);
+        }
+
+        // 显示所有股票测试结果
+        function displayAllStocksResults(results) {
+            const resultsDiv = document.getElementById('results');
+            
+            let html = `
+                <div class="indicator-card">
+                    <div class="indicator-header">🔍 所有股票测试结果</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>股票代码</th>
+                                <th>状态</th>
+                                <th>MA5</th>
+                                <th>MA20</th>
+                                <th>RSI</th>
+                                <th>MACD</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            results.forEach(result => {
+                const status = result.success ? '✅ 成功' : '❌ 失败';
+                const ma5 = result.indicators?.ma5 || '-';
+                const ma20 = result.indicators?.ma20 || '-';
+                const rsi = result.indicators?.rsi || '-';
+                const macd = result.indicators?.macd || '-';
+                
+                html += `
+                    <tr>
+                        <td>${result.stock}</td>
+                        <td>${status}</td>
+                        <td>${ma5}</td>
+                        <td>${ma20}</td>
+                        <td>${rsi}</td>
+                        <td>${macd}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table></div>';
+            resultsDiv.innerHTML = html;
+        }
+
+        // 测试API
+        async function testAPI() {
+            showLoading('正在测试API...');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/technical/test`);
+                const result = await response.json();
+
+                if (result.success) {
+                    showSuccess('API测试成功');
+                    displayIndicators(result);
+                } else {
+                    showError('API测试失败: ' + (result.message || '未知错误'));
+                }
+            } catch (error) {
+                showError('API测试失败: ' + error.message);
+            }
+        }
+
+        // 页面加载完成后的初始化
+        window.onload = function() {
+            console.log('技术指标测试页面加载完成');
+        };
+    </script>
+</body>
+</html>

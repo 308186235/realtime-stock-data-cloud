@@ -1,0 +1,67 @@
+# Cloudflare Worker配置文件
+name = "trading-system-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Worker类型
+type = "javascript"
+
+# 环境变量
+[env.production.vars]
+ENVIRONMENT = "production"
+API_BASE_URL = "https://trading-system-api.netlify.app"
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw"
+
+[env.development.vars]
+ENVIRONMENT = "development"
+API_BASE_URL = "http://localhost:8000"
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw"
+
+# KV命名空间绑定
+[[kv_namespaces]]
+binding = "STOCK_CACHE"
+id = "stock_cache_namespace_id"
+preview_id = "stock_cache_preview_id"
+
+[[kv_namespaces]]
+binding = "MARKET_DATA"
+id = "market_data_namespace_id"
+preview_id = "market_data_preview_id"
+
+[[kv_namespaces]]
+binding = "USER_SESSIONS"
+id = "user_sessions_namespace_id"
+preview_id = "user_sessions_preview_id"
+
+[[kv_namespaces]]
+binding = "API_RATE_LIMIT"
+id = "api_rate_limit_namespace_id"
+preview_id = "api_rate_limit_preview_id"
+
+# 路由配置
+[env.production]
+routes = [
+    { pattern = "api.aigupiao.me/*", zone_name = "aigupiao.me" }
+]
+
+# 开发环境路由
+[env.development]
+routes = [
+    { pattern = "localhost:8787/*" }
+]
+
+# 兼容性标志
+[compatibility_flags]
+nodejs_compat = true
+
+# 构建配置
+[build]
+command = "npm run build"
+cwd = "."
+watch_dir = "src"
+
+# 部署配置
+[triggers]
+crons = ["0 */5 * * *"]  # 每5分钟执行一次清理任务

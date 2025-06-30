@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -20,80 +19,112 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-venv/
-.venv/
+MANIFEST
 
-# Node
-node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-package-lock.json
-.pnpm-debug.log
+# PyInstaller
+*.manifest
+*.spec
 
-# Logs
-logs/
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
 *.log
-log/
+local_settings.py
+db.sqlite3
 
-# Environment variables
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.development
+.env.production
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# 项目特定
+data/
+logs/
+*.log
+temp/
+tmp/
 
-# Frontend build
-frontend/股票5/unpackage/
-frontend/股票5/dist/
-frontend/股票5/node_modules/
-
-# Generated files
-app-logo.png
-
-# Stock data files (runtime data, not source code)
-stock_data/
-*.dat
-*.pkl
-
-# Backup files (keep source clean)
-*.backup_*
-*.bak
-*_backup_*
-*.syntax_backup_*
-
-# Build outputs and cache
-unpackage/
-dist/
-build/
-.cache/
-
-# Additional uni-app specific
-炒股养家/node_modules/
-炒股养家/unpackage/
-frontend/*/node_modules/
-frontend/*/unpackage/
-frontend/*/dist/
-
-# Duplicate project directories (keep only main)
-炒股养家_complete/
-炒股养家_old/
-炒股养家_template_backup/
-1/
-11/
-
-# Test and temporary files
-backup_deleted_*/
-*.bundle
+# 敏感信息
+config/secrets.py
+.env.secret

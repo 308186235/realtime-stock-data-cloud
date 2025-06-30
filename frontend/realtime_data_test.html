@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时股票数据测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .status {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .status-item {
+            text-align: center;
+        }
+        .status-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .status-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 8px;
+        }
+        .btn {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        .stock-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stock-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+        .stock-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .stock-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .stock-code {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .stock-name {
+            color: #666;
+            font-size: 14px;
+        }
+        .stock-price {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .price-up { color: #dc3545; }
+        .price-down { color: #28a745; }
+        .price-flat { color: #666; }
+        .stock-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 12px;
+        }
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        .logs {
+            height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        .log-info { color: #007bff; }
+        .log-success { color: #28a745; }
+        .log-error { color: #dc3545; }
+        .log-warning { color: #ffc107; }
+        .connected { color: #28a745; }
+        .disconnected { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 实时股票数据测试</h1>
+            <p>测试新的实时数据管理器和WebSocket推送功能</p>
+        </div>
+
+        <!-- 状态显示 -->
+        <div class="status">
+            <div class="status-item">
+                <div class="status-value" id="connectionStatus">断开</div>
+                <div class="status-label">连接状态</div>
+            </div>
+            <div class="status-item">
+                <div class="status-value" id="messageCount">0</div>
+                <div class="status-label">接收消息数</div>
+            </div>
+            <div class="status-item">
+                <div class="status-value" id="stockCount">0</div>
+                <div class="status-label">股票数量</div>
+            </div>
+            <div class="status-item">
+                <div class="status-value" id="updateTime">--</div>
+                <div class="status-label">最后更新</div>
+            </div>
+        </div>
+
+        <!-- 控制按钮 -->
+        <div class="controls">
+            <button class="btn btn-primary" onclick="connectWebSocket()">连接WebSocket</button>
+            <button class="btn btn-danger" onclick="disconnectWebSocket()">断开连接</button>
+            <button class="btn btn-success" onclick="subscribeAllStocks()">订阅所有股票</button>
+            <button class="btn btn-warning" onclick="testAPI()">测试API</button>
+            <button class="btn btn-primary" onclick="clearLogs()">清空日志</button>
+        </div>
+
+        <!-- 股票数据显示 -->
+        <div id="stockGrid" class="stock-grid">
+            <!-- 股票卡片将在这里动态生成 -->
+        </div>
+
+        <!-- 日志显示 -->
+        <div>
+            <h3>📋 实时日志</h3>
+            <div id="logs" class="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let messageCount = 0;
+        let stockData = {};
+        let isConnected = false;
+
+        // API基础URL
+        const API_BASE = window.location.origin;
+        const WS_URL = `${API_BASE.replace('http', 'ws')}/api/realtime-data/ws`;
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logs.appendChild(logEntry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        // 更新状态显示
+        function updateStatus() {
+            document.getElementById('connectionStatus').textContent = isConnected ? '已连接' : '断开';
+            document.getElementById('connectionStatus').className = isConnected ? 'status-value connected' : 'status-value disconnected';
+            document.getElementById('messageCount').textContent = messageCount;
+            document.getElementById('stockCount').textContent = Object.keys(stockData).length;
+            document.getElementById('updateTime').textContent = new Date().toLocaleTimeString();
+        }
+
+        // 连接WebSocket
+        function connectWebSocket() {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                log('WebSocket已经连接', 'warning');
+                return;
+            }
+
+            log(`正在连接WebSocket: ${WS_URL}`, 'info');
+            websocket = new WebSocket(WS_URL);
+
+            websocket.onopen = function(event) {
+                isConnected = true;
+                log('WebSocket连接成功', 'success');
+                updateStatus();
+            };
+
+            websocket.onmessage = function(event) {
+                messageCount++;
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+                updateStatus();
+            };
+
+            websocket.onclose = function(event) {
+                isConnected = false;
+                log('WebSocket连接关闭', 'warning');
+                updateStatus();
+            };
+
+            websocket.onerror = function(error) {
+                log(`WebSocket错误: ${error}`, 'error');
+            };
+        }
+
+        // 断开WebSocket
+        function disconnectWebSocket() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+                isConnected = false;
+                log('WebSocket连接已断开', 'info');
+                updateStatus();
+            }
+        }
+
+        // 处理WebSocket消息
+        function handleWebSocketMessage(data) {
+            log(`收到消息: ${data.type}`, 'info');
+
+            switch(data.type) {
+                case 'stock_data':
+                    updateStockData(data.stock_code, data.data);
+                    break;
+                case 'subscription_confirmed':
+                    log(`订阅确认: ${data.stock_code}`, 'success');
+                    break;
+                case 'unsubscription_confirmed':
+                    log(`取消订阅确认: ${data.stock_code}`, 'success');
+                    break;
+                case 'pong':
+                    log('心跳响应', 'info');
+                    break;
+                default:
+                    log(`未知消息类型: ${data.type}`, 'warning');
+            }
+        }
+
+        // 更新股票数据
+        function updateStockData(stockCode, data) {
+            stockData[stockCode] = data;
+            renderStockCard(stockCode, data);
+        }
+
+        // 渲染股票卡片
+        function renderStockCard(stockCode, data) {
+            const stockGrid = document.getElementById('stockGrid');
+            let card = document.getElementById(`stock-${stockCode}`);
+
+            if (!card) {
+                card = document.createElement('div');
+                card.id = `stock-${stockCode}`;
+                card.className = 'stock-card';
+                stockGrid.appendChild(card);
+            }
+
+            const priceClass = data.change > 0 ? 'price-up' : (data.change < 0 ? 'price-down' : 'price-flat');
+            const changeSymbol = data.change > 0 ? '+' : '';
+
+            card.innerHTML = `
+                <div class="stock-header">
+                    <div>
+                        <div class="stock-code">${data.code}</div>
+                        <div class="stock-name">${data.name}</div>
+                    </div>
+                    <button class="btn btn-danger" onclick="unsubscribeStock('${stockCode}')">取消订阅</button>
+                </div>
+                <div class="stock-price ${priceClass}">
+                    ¥${data.price.toFixed(2)}
+                </div>
+                <div class="stock-details">
+                    <div class="detail-item">
+                        <span>涨跌:</span>
+                        <span class="${priceClass}">${changeSymbol}${data.change.toFixed(2)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>涨跌幅:</span>
+                        <span class="${priceClass}">${changeSymbol}${data.change_percent.toFixed(2)}%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>开盘:</span>
+                        <span>¥${data.open.toFixed(2)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>最高:</span>
+                        <span>¥${data.high.toFixed(2)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>最低:</span>
+                        <span>¥${data.low.toFixed(2)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>昨收:</span>
+                        <span>¥${data.last_close.toFixed(2)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>成交量:</span>
+                        <span>${(data.volume / 10000).toFixed(1)}万</span>
+                    </div>
+                    <div class="detail-item">
+                        <span>成交额:</span>
+                        <span>${(data.amount / 100000000).toFixed(2)}亿</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 订阅所有股票
+        function subscribeAllStocks() {
+            if (!isConnected) {
+                log('请先连接WebSocket', 'error');
+                return;
+            }
+
+            // 预定义的股票列表
+            const stocks = ['000001', '000002', '600000', '600036', '600519', '000858', '002415', '300059', '002594', '300750'];
+            
+            stocks.forEach(stockCode => {
+                websocket.send(JSON.stringify({
+                    type: 'subscribe',
+                    stock_code: stockCode
+                }));
+                log(`订阅股票: ${stockCode}`, 'info');
+            });
+        }
+
+        // 取消订阅股票
+        function unsubscribeStock(stockCode) {
+            if (!isConnected) {
+                log('WebSocket未连接', 'error');
+                return;
+            }
+
+            websocket.send(JSON.stringify({
+                type: 'unsubscribe',
+                stock_code: stockCode
+            }));
+
+            // 移除股票卡片
+            const card = document.getElementById(`stock-${stockCode}`);
+            if (card) {
+                card.remove();
+            }
+
+            delete stockData[stockCode];
+            updateStatus();
+        }
+
+        // 测试API
+        async function testAPI() {
+            try {
+                log('测试API接口...', 'info');
+                
+                const response = await fetch(`${API_BASE}/api/realtime-data/test`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    log('API测试成功', 'success');
+                    log(`测试数据: ${Object.keys(result.test_data).length}只股票`, 'info');
+                } else {
+                    log('API测试失败', 'error');
+                }
+            } catch (error) {
+                log(`API测试错误: ${error.message}`, 'error');
+            }
+        }
+
+        // 清空日志
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+            messageCount = 0;
+            updateStatus();
+        }
+
+        // 页面加载完成后初始化
+        window.onload = function() {
+            log('页面加载完成', 'info');
+            updateStatus();
+        };
+
+        // 页面关闭时断开连接
+        window.onbeforeunload = function() {
+            if (websocket) {
+                websocket.close();
+            }
+        };
+    </script>
+</body>
+</html>
