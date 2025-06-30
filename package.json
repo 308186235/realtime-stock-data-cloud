@@ -7,11 +7,10 @@
     "build": "echo 'Build completed - Netlify Functions ready'"
   },
   "dependencies": {},
-  "devDependencies": {},
-  "engines": {
-    "node": ">=20.0.0"
-  },
   "devDependencies": {
     "wrangler": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
