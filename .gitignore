@@ -128,3 +128,25 @@ tmp/
 # 敏感信息
 config/secrets.py
 .env.secret
+
+# 安全文件 - 私钥和证书
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*_rsa_*
+*_dsa_*
+*_ecdsa_*
+*privkey*
+*private*
+
+# Node modules (如果存在)
+node_modules/
+*/node_modules/
+
+# 股票数据文件
+stock_data/
+*.dat
+*.pkl
