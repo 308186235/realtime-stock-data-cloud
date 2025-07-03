@@ -1,5 +1,5 @@
 services:
-- buildCommand: pip install -r backend/requirements.txt
+- buildCommand: pip install -r requirements.txt
   envVars:
   - key: PORT
     value: '10000'
@@ -9,9 +9,9 @@ services:
     value: production
   - key: REALTIME_DATA_ENABLED
     value: 'true'
-  healthCheckPath: /api/health
-  name: realtime-stock-test
+  healthCheckPath: /
+  name: cloud-agent-system
   plan: free
   runtime: python3
-  startCommand: python backend/app.py
+  startCommand: python cloud-agent-system.py
   type: web
