@@ -15,8 +15,18 @@ from api.routers.supabase_portfolio import router as supabase_portfolio_router
 from api.routers.realtime_stock_simple import router as realtime_stock_router
 from api.routers.realtime_data_api import router as realtime_data_router
 from api.routers.technical_indicators_api import router as technical_indicators_router
+from api.routers.chagubang_api import router as chagubang_router  # 茶股帮API
+from api.routers.agent_analysis import router as agent_analysis_router  # Agent分析API
+from api.routers.account_balance import router as account_balance_router  # 账户余额API
+from api.routers.config_api import router as config_router  # 配置管理API
+from api.cloud_local_trading_api import router as cloud_local_router  # 云端本地交易API
+from api.websocket_routes import router as websocket_router  # WebSocket路由
 from api.trading_api import router as trading_router
 from api.t_trading_api import router as t_trading_router
+
+# 导入服务组件
+from services.unified_websocket_manager import UnifiedWebSocketManager
+from services.data_flow_manager import DataFlowManager
 from api.test_endpoint import router as test_router  # 瀵煎叆娴嬭瘯璺敱
 from api.end_of_day_selection_api import router as eod_selection_router  # 瀵煎叆灏剧洏閫夎偂璺敱
 from services.websocket_manager import ConnectionManager
@@ -56,16 +66,15 @@ app = FastAPI(
 
 # Configure CORS
 origins = [
-    "http://localhost:8080",     # Uni-app dev server
-    "http://localhost:3000",     # Alternate frontend dev server
-    "http://localhost",
-    "https://localhost",
-    "http://localhost:9000",     # Uni-app preview server
-    "capacitor://localhost",     # For mobile app
-    "ionic://localhost",
-    "https://aigupiao.me",       # Production domain
-    "http://aigupiao.me",        # Production domain (HTTP fallback)
-    "*"                          # Allow all origins in development (remove in production)
+    "https://aigupiao.me",
+    "https://api.aigupiao.me",
+    "https://app.aigupiao.me",
+    "https://mobile.aigupiao.me",
+    "https://admin.aigupiao.me",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "capacitor://localhost",
+    "ionic://localhost"
 ]
 
 app.add_middleware(
@@ -120,6 +129,12 @@ app.include_router(supabase_portfolio_router, prefix="/api/supabase", tags=["sup
 app.include_router(realtime_stock_router, prefix="/api/realtime", tags=["realtime-stock"])
 app.include_router(realtime_data_router, prefix="/api/realtime-data", tags=["realtime-data"])  # 新的实时数据API
 app.include_router(technical_indicators_router, prefix="/api/technical", tags=["technical-indicators"])  # 技术指标API
+app.include_router(chagubang_router, prefix="/api/chagubang", tags=["chagubang"])  # 茶股帮实时数据API
+app.include_router(agent_analysis_router, prefix="/api/agent-analysis", tags=["agent-analysis"])  # Agent分析API
+app.include_router(account_balance_router, prefix="/api/account-balance", tags=["account-balance"])  # 账户余额API
+app.include_router(config_router, prefix="/api", tags=["config"])  # 配置管理API
+app.include_router(cloud_local_router, prefix="/api/cloud-local", tags=["cloud-local"])  # 云端本地交易API
+app.include_router(websocket_router, prefix="/ws", tags=["websocket"])  # WebSocket路由
 app.include_router(stock.router, prefix="/api/stock", tags=["stock"])  # Updated with Supabase
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])
@@ -260,20 +275,52 @@ app.include_router(enhanced_analysis_router, prefix="/api/enhanced-analysis", ta
 async def startup_event():
     """应用启动时的初始化"""
     try:
+        logger.info("🚀 应用启动中...")
+
+        # 初始化WebSocket管理器
+        global websocket_manager, data_flow_manager
+        websocket_manager = UnifiedWebSocketManager()
+
+        # 设置WebSocket管理器到相关模块
+        try:
+            from api.websocket_routes import set_websocket_manager
+            from api.cloud_local_trading_api import set_websocket_manager as set_cloud_local_manager
+            set_websocket_manager(websocket_manager)
+            set_cloud_local_manager(websocket_manager)
+            logger.info("✅ WebSocket管理器已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️ WebSocket管理器设置失败: {e}")
+
+        # 初始化数据流管理器
+        try:
+            config = {
+                "chagubang_host": "l1.chagubang.com",
+                "chagubang_port": 6380,
+                "chagubang_token": "QT_wat5QfcJ6N9pDZM5",
+                "enable_beijing_exchange": False,
+                "analysis_interval": 40
+            }
+            data_flow_manager = DataFlowManager(config, websocket_manager)
+            logger.info("✅ 数据流管理器已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️ 数据流管理器初始化失败: {e}")
+
         # 启动实时数据管理器
         await realtime_data_manager.start()
-        logger.info("实时数据管理器已启动")
+        logger.info("✅ 实时数据管理器已启动")
 
         # 启动原有的实时数据模拟（作为备用）
         try:
             from api.routers.realtime_stock_simple import start_simulation
             await start_simulation()
-            logger.info("备用实时数据模拟已启动")
+            logger.info("✅ 备用实时数据模拟已启动")
         except Exception as e:
-            logger.warning(f"备用实时数据模拟启动失败: {str(e)}")
+            logger.warning(f"⚠️ 备用实时数据模拟启动失败: {str(e)}")
+
+        logger.info("🎉 应用启动完成")
 
     except Exception as e:
-        logger.error(f"启动事件失败: {str(e)}")
+        logger.error(f"❌ 启动事件失败: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -306,3 +353,4 @@ if __name__ == "__main__":
         access_log=True
     )
 
+\nfrom port_manager import port_manager

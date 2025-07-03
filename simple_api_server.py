@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # 模拟数据存储
-mock_backtest_results = {}
+# 模拟数据已禁用
 
 # 模型定义
 class StrategyConfig(BaseModel):

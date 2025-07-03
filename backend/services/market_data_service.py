@@ -518,26 +518,37 @@ class MarketDataService:
     def is_using_simulated_data(self) -> bool:
         """
         检查是否正在使用模拟数据
-        
+        🚨 系统已禁用所有模拟数据，只允许真实数据源
+
         Returns:
-            bool: 如果正在使用模拟数据返回True,否则返回False
+            bool: 如果无法获取真实数据返回True，表示数据不可用
         """
         try:
-            # 尝试获取一个指数数据作为测试
+            # 检查淘宝股票数据推送服务
+            if self._check_taobao_data_service():
+                return False
+
+            # 检查通达信数据源
             test_code = '000001'  # 上证指数
             test_data = self.tdx_crawler.get_realtime_quotes([test_code])
-            
-            # 如果能获取到实际数据,则不是使用模拟数据
             if not test_data.empty:
                 return False
-                
-            # 再尝试同花顺数据源
+
+            # 检查同花顺数据源
             test_data = self.ths_crawler.get_realtime_quotes([test_code])
             if not test_data.empty:
                 return False
-            
-            # 两个数据源都无法获取数据,使用的是模拟数据
+
+            # 所有真实数据源都无法获取数据
+            logger.error("❌ 所有真实数据源都不可用，拒绝提供模拟数据")
             return True
-        except Exception:
-            # 发生异常,说明可能使用的是模拟数据
-            return True 
+        except Exception as e:
+            logger.error(f"❌ 真实数据源检查失败: {e}")
+            return True
+
+    def _check_taobao_data_service(self) -> bool:
+        """检查淘宝股票数据推送服务是否可用"""
+        # TODO: 实现淘宝股票数据推送服务检查
+        # API_KEY = "QT_wat5QfcJ6N9pDZM5"
+        logger.warning("⚠️ 淘宝股票数据推送服务尚未配置")
+        return False

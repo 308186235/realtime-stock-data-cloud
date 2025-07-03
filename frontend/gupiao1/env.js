@@ -31,42 +31,42 @@ const baseConfig = {
 const envConfigs = {
   // 开发环境
   [ENV_TYPE.DEV]: {
-    // API基础URL
-    apiBaseUrl: 'https://aigupiao.me',
+    // API基础URL - 使用本地Agent后端
+    apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket地址
-    wsUrl: 'wss://aigupiao.me/ws',
-    
+    wsUrl: 'wss://api.aigupiao.me/ws',
+
     // 是否启用调试
     debug: true,
-    
-    // 是否使用模拟数据
-    useMockData: true,
-    
+
+    // 🚨 禁用模拟数据 - 只允许真实数据
+    useMockData: false,
+
     // 默认主题
     defaultTheme: 'light',
-    
+
     // 日志级别
     logLevel: 'debug'
   },
-  
+
   // 生产环境
   [ENV_TYPE.PROD]: {
-    // API基础URL
-    apiBaseUrl: 'https://aigupiao.me',
+    // API基础URL - 使用本地Agent后端
+    apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket地址
-    wsUrl: 'wss://aigupiao.me/ws',
-    
+    wsUrl: 'wss://api.aigupiao.me/ws',
+
     // 是否启用调试
     debug: false,
-    
-    // 是否使用模拟数据
+
+    // 🚨 禁用模拟数据 - 只允许真实数据
     useMockData: false,
-    
+
     // 默认主题
     defaultTheme: 'light',
-    
+
     // 日志级别
     logLevel: 'error'
   }

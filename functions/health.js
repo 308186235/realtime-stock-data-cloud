@@ -1,51 +1,48 @@
-const { withErrorHandling } = require('./utils/error-handler');
-
-async function handleHealth(event, context, requestId) {
+// Cloudflare Pages Functions - Health Check
+export async function onRequest(context) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Content-Type': 'application/json',
-    'Cache-Control': 'public, max-age=60', // 1分钟缓存
-    'X-Request-ID': requestId
+    'Cache-Control': 'public, max-age=60' // 1分钟缓存
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
+  if (context.request.method === 'OPTIONS') {
+    return new Response('', { headers });
   }
 
   // 检查请求方法
-  if (event.httpMethod !== 'GET') {
-    throw new Error(`不支持的请求方法: ${event.httpMethod}`);
+  if (context.request.method !== 'GET') {
+    return new Response(JSON.stringify({
+      error: `不支持的请求方法: ${context.request.method}`
+    }), {
+      status: 405,
+      headers
+    });
   }
 
   const healthData = {
     status: "healthy",
-    server: "netlify-functions",
+    server: "cloudflare-pages",
     timestamp: new Date().toISOString(),
-    message: "🎉 交易系统API运行正常！[MCP修复版本]",
-    api_version: "1.2.0",
-    deployment: "git-connected",
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
+    message: "🎉 交易系统API运行正常！[Cloudflare Pages版本]",
+    api_version: "2.1.0",
+    deployment: "cloudflare-pages",
     endpoints: {
       health: "/api/health",
       account_balance: "/api/account-balance",
       account_positions: "/api/account-positions",
-      agent_analysis: "/api/agent-analysis"
+      agent_analysis: "/api/agent-analysis",
+      real_stock_api: "/api/real-stock-api",
+      quotes: "/api/quotes"
     },
     cors_enabled: true,
-    last_updated: new Date().toISOString()
+    last_updated: new Date().toISOString(),
+    platform: "Cloudflare Pages Functions"
   };
 
-  return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify(healthData, null, 2)
-  };
+  return new Response(JSON.stringify(healthData, null, 2), {
+    headers
+  });
 }
-
-// 导出包装后的处理函数
-exports.handler = async (event, context) => {
-  return withErrorHandling(handleHealth, event, context);
-};

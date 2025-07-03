@@ -1,0 +1,106 @@
+{
+  "timestamp": "2025-07-02T05:04:23.977559",
+  "test_type": "前端后端通信测试",
+  "configuration": {
+    "api_base_url": "https://api.aigupiao.me",
+    "frontend_urls": [
+      "https://app.aigupiao.me",
+      "https://mobile.aigupiao.me",
+      "https://admin.aigupiao.me"
+    ]
+  },
+  "summary": {
+    "total_tests": 13,
+    "passed_tests": 5,
+    "failed_tests": 8,
+    "success_rate": "38.5%"
+  },
+  "test_results": [
+    {
+      "test_name": "后端API健康检查",
+      "success": true,
+      "message": "API正常响应 (状态码: 200)",
+      "timestamp": "2025-07-02T05:04:12.180751"
+    },
+    {
+      "test_name": "CORS配置 (https://app.aigupiao.me)",
+      "success": true,
+      "message": "CORS配置正确",
+      "timestamp": "2025-07-02T05:04:12.949904"
+    },
+    {
+      "test_name": "CORS配置 (https://mobile.aigupiao.me)",
+      "success": true,
+      "message": "CORS配置正确",
+      "timestamp": "2025-07-02T05:04:13.741135"
+    },
+    {
+      "test_name": "CORS配置 (https://admin.aigupiao.me)",
+      "success": true,
+      "message": "CORS配置正确",
+      "timestamp": "2025-07-02T05:04:14.442947"
+    },
+    {
+      "test_name": "API端点 /api/health",
+      "success": true,
+      "message": "健康检查正常",
+      "timestamp": "2025-07-02T05:04:16.946269"
+    },
+    {
+      "test_name": "API端点 /api/market/status",
+      "success": false,
+      "message": "端点不存在",
+      "timestamp": "2025-07-02T05:04:17.804993"
+    },
+    {
+      "test_name": "API端点 /api/agent/status",
+      "success": false,
+      "message": "端点不存在",
+      "timestamp": "2025-07-02T05:04:18.608359"
+    },
+    {
+      "test_name": "API端点 /api/trading/status",
+      "success": false,
+      "message": "端点不存在",
+      "timestamp": "2025-07-02T05:04:19.493372"
+    },
+    {
+      "test_name": "API端点 /api/data/status",
+      "success": false,
+      "message": "端点不存在",
+      "timestamp": "2025-07-02T05:04:20.798604"
+    },
+    {
+      "test_name": "WebSocket连接",
+      "success": false,
+      "message": "WebSocket测试异常: WebSocketApp.run_forever() got an unexpected keyword argument 'timeout'",
+      "timestamp": "2025-07-02T05:04:20.810339"
+    },
+    {
+      "test_name": "前端页面 (https://app.aigupiao.me)",
+      "success": false,
+      "message": "页面加载但API配置可能不正确",
+      "timestamp": "2025-07-02T05:04:21.998399"
+    },
+    {
+      "test_name": "前端页面 (https://mobile.aigupiao.me)",
+      "success": false,
+      "message": "页面加载但API配置可能不正确",
+      "timestamp": "2025-07-02T05:04:22.925638"
+    },
+    {
+      "test_name": "前端页面 (https://admin.aigupiao.me)",
+      "success": false,
+      "message": "页面加载但API配置可能不正确",
+      "timestamp": "2025-07-02T05:04:23.977182"
+    }
+  ],
+  "recommendations": [
+    "确认Cloudflare Pages配置",
+    "确认防火墙设置",
+    "检查后端服务是否正常运行",
+    "检查WebSocket服务配置",
+    "确认API路由配置正确",
+    "检查前端部署状态"
+  ]
+}

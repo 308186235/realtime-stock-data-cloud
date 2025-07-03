@@ -247,43 +247,35 @@ class AppAPIRequestHandler(BaseHTTPRequestHandler):
         self._send_json_response(response)
     
     def _handle_stock_quote(self, code):
-        """股票报价"""
-        client_info = self._get_client_info()
-        
-        response = {
+        """股票报价 - 禁用模拟数据"""
+        error_response = {
+            "error": "REAL_DATA_REQUIRED",
+            "message": "❌ 系统禁止返回模拟股票数据",
             "code": code,
-            "name": f"股票{code}",
-            "current_price": round(random.uniform(10, 100), 2),
-            "change": round(random.uniform(-5, 5), 2),
-            "change_percent": f"{round(random.uniform(-10, 10), 2)}%",
-            "volume": random.randint(1000000, 10000000),
-            "turnover": round(random.uniform(100000000, 1000000000), 2),
-            "timestamp": datetime.now().isoformat(),
-            "client_info": client_info
+            "required_action": "请配置真实数据源",
+            "data_sources": [
+                "淘宝股票数据推送服务 (API_KEY: QT_wat5QfcJ6N9pDZM5)",
+                "同花顺实时数据API",
+                "通达信数据接口"
+            ],
+            "timestamp": datetime.now().isoformat()
         }
-        self._send_json_response(response)
+        self._send_json_response(error_response)
     
     def _handle_stock_list(self):
-        """股票列表"""
-        client_info = self._get_client_info()
-        
-        stocks = []
-        for i in range(10):
-            code = f"00000{i+1}"
-            stocks.append({
-                "code": code,
-                "name": f"股票{code}",
-                "price": round(random.uniform(10, 100), 2),
-                "change": round(random.uniform(-5, 5), 2)
-            })
-        
-        response = {
-            "stocks": stocks,
-            "total": len(stocks),
-            "timestamp": datetime.now().isoformat(),
-            "client_info": client_info
+        """股票列表 - 禁用模拟数据"""
+        error_response = {
+            "error": "REAL_DATA_REQUIRED",
+            "message": "❌ 系统禁止返回模拟股票列表",
+            "required_action": "请配置真实数据源",
+            "data_sources": [
+                "淘宝股票数据推送服务 (API_KEY: QT_wat5QfcJ6N9pDZM5)",
+                "同花顺实时数据API",
+                "通达信数据接口"
+            ],
+            "timestamp": datetime.now().isoformat()
         }
-        self._send_json_response(response)
+        self._send_json_response(error_response)
     
     def _handle_trading_buy(self, data):
         """买入交易"""

@@ -1,0 +1,45 @@
+name = "aigupiao-trading-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 路由配置
+routes = [
+  { pattern = "api.aigupiao.me/*", zone_name = "aigupiao.me" }
+]
+
+# 生产环境配置
+[env.production]
+name = "aigupiao-trading-api-prod"
+
+# KV存储配置
+[[kv_namespaces]]
+binding = "TRADING_KV"
+id = "f79cfa7a4c1940e885ea0aaac3976a78"
+preview_id = "684659f4de11457dae7d1d5a02ab071d"
+
+# 环境变量
+[vars]
+ENVIRONMENT = "production"
+API_VERSION = "2.0.0"
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+
+# 密钥配置（需要通过wrangler secret命令设置）
+# wrangler secret put SUPABASE_SERVICE_KEY
+# wrangler secret put STOCK_API_KEY
+# wrangler secret put JWT_SECRET
+
+# 开发环境配置
+[env.development]
+name = "aigupiao-trading-api-dev"
+kv_namespaces = [
+  { binding = "TRADING_KV", id = "your-dev-kv-namespace-id" }
+]
+
+[vars.development]
+ENVIRONMENT = "development"
+API_VERSION = "2.0.0-dev"
+
+# 构建配置
+[build]
+command = ""

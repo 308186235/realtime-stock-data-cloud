@@ -6,14 +6,7 @@
     </view>
     
     <uni-forms ref="form" :model="formData" validateTrigger="bind">
-      <uni-forms-item label="券商类型" name="broker_type">
-        <uni-data-select
-          v-model="formData.broker_type"
-          :localdata="brokerOptions"
-          :clear="false"
-          @change="handleBrokerChange"
-        />
-      </uni-forms-item>
+      <!-- 券商选择已删除 - 直接使用Agent智能交易 -->
       
       <uni-forms-item label="账号" name="account_id" v-if="!isConnected">
         <uni-easyinput 
@@ -138,10 +131,8 @@ export default {
       isConnecting: false,
       connectionError: null,
       showAdvanced: false,
-      brokers: [],
       accountInfo: null,
       formData: {
-        broker_type: 'THS_DONGWU',
         account_id: '',
         account_pwd: '',
         verification_code: '',
@@ -150,16 +141,7 @@ export default {
     };
   },
   computed: {
-    brokerOptions() {
-      if (!Array.isArray(this.brokers)) {
-        return [];
-      }
-      return this.brokers.map(broker => ({
-        value: broker.id,
-        text: broker.name,
-        disabled: !broker.available
-      }));
-    },
+    // 券商选择功能已删除
     connectionStatus() {
       if (this.isConnecting) return 'connecting';
       if (this.isConnected) return 'connected';
@@ -180,54 +162,11 @@ export default {
     }
   },
   mounted() {
-    this.fetchBrokers();
+    // 券商列表功能已删除，无需初始化
   },
   methods: {
-    async fetchBrokers() {
-      try {
-        const result = await tradingService.getSupportedBrokers();
-        
-        this.brokers = Array.isArray(result) ? result : [];
-        
-        if (process.env.NODE_ENV === 'development' && this.brokers.length === 0) {
-          this.brokers = [
-            { id: 'THS_DONGWU', name: '东吴证券-同花顺', available: true },
-            { id: 'QMT_DONGWU', name: '东吴证券-QMT', available: true },
-            { id: 'MANUAL', name: '手动交易', available: true }
-          ];
-        }
-        
-        if (Array.isArray(this.brokers) && this.brokers.length > 0) {
-          const availableBroker = this.brokers.find(broker => broker.available);
-          if (availableBroker) {
-            const currentSelected = this.brokers.find(broker => 
-              broker.id === this.formData.broker_type && broker.available
-            );
-            
-            if (!currentSelected) {
-              this.formData.broker_type = availableBroker.id;
-            }
-          }
-        }
-      } catch (error) {
-        console.error('获取券商列表失败:', error);
-        
-        this.brokers = [
-          { id: 'THS_DONGWU', name: '东吴证券-同花顺', available: true },
-          { id: 'QMT_DONGWU', name: '东吴证券-QMT', available: true },
-          { id: 'MANUAL', name: '手动交易', available: true }
-        ];
-        
-        uni.showToast({
-          title: '获取券商列表失败',
-          icon: 'none'
-        });
-      }
-    },
-    
-    handleBrokerChange(value) {
-      this.formData.broker_type = value;
-    },
+    // 券商列表功能已删除
+
     
     toggleAdvanced() {
       this.showAdvanced = !this.showAdvanced;

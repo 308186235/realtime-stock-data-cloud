@@ -1,24 +1,26 @@
-// Vercel Edge Function - 账户余额
-export default function handler(req, res) {
-  // 设置CORS头
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+// 禁用模拟数据的API函数
+exports.handler = async (event, context) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
 
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' };
   }
 
-  const balanceData = {
-    total_assets: 100000.00,
-    available_cash: 50000.00,
-    market_value: 50000.00,
-    profit_loss: 5000.00,
-    profit_loss_rate: 5.26,
-    server: "vercel-edge",
+  const errorResponse = {
+    error: "REAL_DATA_REQUIRED",
+    message: "❌ 系统禁止返回模拟数据",
+    required_action: "请配置真实交易数据源",
     timestamp: new Date().toISOString()
   };
 
-  res.status(200).json(balanceData);
-}
+  return {
+    statusCode: 400,
+    headers,
+    body: JSON.stringify(errorResponse, null, 2)
+  };
+};

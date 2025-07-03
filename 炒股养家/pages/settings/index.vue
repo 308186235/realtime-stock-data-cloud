@@ -49,7 +49,17 @@
             <switch :checked="riskControl" @change="toggleRiskControl" color="#4c8dff" />
           </view>
         </view>
-        
+
+        <view class="setting-item">
+          <text class="setting-label">北交所交易权限</text>
+          <view class="setting-value">
+            <view class="beijing-status" :class="beijingExchangeEnabled ? 'enabled' : 'disabled'">
+              <text class="status-text">{{ beijingExchangeEnabled ? '已开启' : '未开启' }}</text>
+            </view>
+            <switch :checked="beijingExchangeEnabled" @change="toggleBeijingExchange" color="#4c8dff" />
+          </view>
+        </view>
+
         <view class="setting-item">
           <text class="setting-label">提醒设置</text>
           <view class="setting-value">
@@ -154,6 +164,7 @@ export default {
     return {
       isDarkMode: false,
       riskControl: true,
+      beijingExchangeEnabled: false,
       language: '简体中文',
       lastBackupTime: null
     }
@@ -162,14 +173,21 @@ export default {
     // 获取当前主题设置
     const app = getApp();
     this.isDarkMode = app.globalData.isDarkMode;
-    
+
     // 获取最后备份时间
     try {
       this.lastBackupTime = uni.getStorageSync('lastBackupTime') || null;
     } catch (e) {
       console.error('获取备份时间失败', e);
     }
-    
+
+    // 获取北交所权限设置
+    try {
+      this.beijingExchangeEnabled = uni.getStorageSync('beijingExchangeEnabled') || false;
+    } catch (e) {
+      console.error('获取北交所权限设置失败', e);
+    }
+
     // 监听设备迁移选项事件
     uni.$on('showDeviceTransferOptions', this.showDeviceTransferOptions);
   },
@@ -234,6 +252,93 @@ export default {
       uni.showToast({
         title: this.riskControl ? '已开启风险控制' : '已关闭风险控制',
         icon: 'none'
+      });
+    },
+    toggleBeijingExchange(e) {
+      const newValue = e.detail.value;
+
+      if (newValue) {
+        // 开启北交所权限时显示确认对话框
+        uni.showModal({
+          title: '开启北交所交易权限',
+          content: '开启后，Agent将能够分析和推荐北交所股票。\n\n注意：请确保您的证券账户已开通北交所交易权限，否则无法实际交易北交所股票。',
+          confirmText: '确认开启',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) {
+              this.beijingExchangeEnabled = true;
+              this.saveBeijingExchangeConfig(true);
+              uni.showToast({
+                title: '北交所权限已开启',
+                icon: 'success'
+              });
+            } else {
+              // 用户取消，保持开关状态不变
+              this.beijingExchangeEnabled = false;
+            }
+          }
+        });
+      } else {
+        // 关闭北交所权限
+        uni.showModal({
+          title: '关闭北交所交易权限',
+          content: '关闭后，Agent将不再分析和推荐北交所股票。',
+          confirmText: '确认关闭',
+          cancelText: '取消',
+          success: (res) => {
+            if (res.confirm) {
+              this.beijingExchangeEnabled = false;
+              this.saveBeijingExchangeConfig(false);
+              uni.showToast({
+                title: '北交所权限已关闭',
+                icon: 'none'
+              });
+            } else {
+              // 用户取消，保持开关状态不变
+              this.beijingExchangeEnabled = true;
+            }
+          }
+        });
+      }
+    },
+    saveBeijingExchangeConfig(enabled) {
+      try {
+        // 保存到本地存储
+        uni.setStorageSync('beijingExchangeEnabled', enabled);
+
+        // 发送到后端API更新配置
+        this.updateBackendConfig('enable_beijing_exchange', enabled);
+      } catch (e) {
+        console.error('保存北交所权限配置失败', e);
+        uni.showToast({
+          title: '配置保存失败',
+          icon: 'none'
+        });
+      }
+    },
+    updateBackendConfig(key, value) {
+      // 获取后端API地址
+      const apiBaseUrl = uni.getStorageSync('apiBaseUrl') || 'https://app.aigupiao.me';
+
+      uni.request({
+        url: `${apiBaseUrl}/api/config`,
+        method: 'POST',
+        data: {
+          [key]: value
+        },
+        header: {
+          'Content-Type': 'application/json'
+        },
+        success: (res) => {
+          if (res.statusCode === 200) {
+            console.log('后端配置更新成功:', key, value);
+          } else {
+            console.error('后端配置更新失败:', res);
+          }
+        },
+        fail: (err) => {
+          console.error('后端配置更新请求失败:', err);
+        }
       });
     },
     showLanguageOptions() {
@@ -964,5 +1069,58 @@ export default {
 /* 确保暗黑模式设置项可点击 */
 .dark-mode-item {
   cursor: pointer;
+}
+
+/* 北交所状态样式 */
+.beijing-status {
+  margin-right: 20rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 20rpx;
+  min-width: 80rpx;
+  text-align: center;
+}
+
+.beijing-status.enabled {
+  background-color: #e8f5e8;
+  border: 1px solid #4caf50;
+}
+
+.beijing-status.disabled {
+  background-color: #ffeaa7;
+  border: 1px solid #fdcb6e;
+}
+
+.light-theme .beijing-status.enabled .status-text {
+  color: #2e7d32;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.light-theme .beijing-status.disabled .status-text {
+  color: #e17055;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.dark-theme .beijing-status.enabled {
+  background-color: rgba(76, 175, 80, 0.2);
+  border: 1px solid #4caf50;
+}
+
+.dark-theme .beijing-status.disabled {
+  background-color: rgba(253, 203, 110, 0.2);
+  border: 1px solid #fdcb6e;
+}
+
+.dark-theme .beijing-status.enabled .status-text {
+  color: #81c784;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.dark-theme .beijing-status.disabled .status-text {
+  color: #ffb74d;
+  font-size: 24rpx;
+  font-weight: 500;
 }
 </style> 

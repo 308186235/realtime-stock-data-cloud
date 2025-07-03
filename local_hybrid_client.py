@@ -48,31 +48,31 @@ class LocalTradingClient:
             logger.info("✅ 本地交易模块加载成功")
         except Exception as e:
             logger.error(f"❌ 本地交易模块加载失败: {e}")
-            logger.info("💡 将使用模拟交易模式")
-            self._setup_mock_functions()
-    
-    def _setup_mock_functions(self):
-        """设置模拟交易函数"""
-        def mock_buy_stock(code, price, quantity):
-            logger.info(f"🔄 模拟买入: {code} 价格:{price} 数量:{quantity}")
-            return {"success": True, "message": "模拟买入成功"}
-        
-        def mock_sell_stock(code, price, quantity):
-            logger.info(f"🔄 模拟卖出: {code} 价格:{price} 数量:{quantity}")
-            return {"success": True, "message": "模拟卖出成功"}
-        
-        def mock_export_holdings():
-            logger.info("🔄 模拟导出持仓")
-            return {"success": True, "data": "模拟持仓数据"}
-        
-        def mock_get_balance():
-            logger.info("🔄 模拟获取余额")
-            return {"balance": 100000, "available": 80000}
-        
-        self.buy_stock = mock_buy_stock
-        self.sell_stock = mock_sell_stock
-        self.export_holdings = mock_export_holdings
-        self.get_account_balance = mock_get_balance
+            logger.error("❌ 本地交易模块不可用，系统拒绝使用模拟交易")
+            self._setup_real_only_functions()
+
+    def _setup_real_only_functions(self):
+        """设置真实交易函数 - 禁用模拟交易"""
+        def require_real_trading(operation_name):
+            def real_function(*args, **kwargs):
+                error_msg = f"""
+                ❌ 错误：{operation_name}操作需要真实交易接口
+
+                请配置以下真实交易系统之一：
+                1. working-trader-FIXED本地交易模块
+                2. 券商API接口
+                3. 第三方交易平台API
+
+                系统拒绝执行模拟交易操作！
+                """
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            return real_function
+
+        self.buy_stock = require_real_trading("买入")
+        self.sell_stock = require_real_trading("卖出")
+        self.export_holdings = require_real_trading("导出持仓")
+        self.get_account_balance = require_real_trading("获取余额")
     
     async def connect_and_run(self):
         """连接并运行客户端"""

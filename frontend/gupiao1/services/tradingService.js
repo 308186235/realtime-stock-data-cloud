@@ -104,11 +104,12 @@ class TradingService {
    */
   async getPositions() {
     try {
-      // 开发环境下使用模拟数据
+      // 开发环境下拒绝模拟数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的持仓数据');
-        
-        // 模拟持仓数据
+        console.log('[开发模式] 拒绝返回模拟数据');
+
+        // ❌ 拒绝返回模拟持仓数据
+        throw new Error('❌ 拒绝返回模拟数据！系统要求使用真实数据源');
         const mockPositions = [
           {
             symbol: '600519',
@@ -290,11 +291,12 @@ class TradingService {
    */
   async getTrades(params = {}) {
     try {
-      // 开发环境下使用模拟数据
+      // 开发环境下拒绝模拟数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的交易数据');
-        
-        // 模拟交易数据
+        console.log('[开发模式] 拒绝返回模拟数据');
+
+        // ❌ 拒绝返回模拟交易数据
+        throw new Error('❌ 拒绝返回模拟数据！系统要求使用真实数据源');
         const mockTrades = [
           {
             id: 'trade001',
@@ -479,9 +481,12 @@ class TradingService {
    */
   async getDongwuXiucaiBalance() {
     try {
-      // 开发环境下使用模拟数据
+      // 开发环境下拒绝模拟数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的东吴秀才账户数据');
+        console.log('[开发模式] 拒绝返回模拟数据');
+
+        // ❌ 拒绝返回模拟东吴秀才账户数据
+        throw new Error('❌ 拒绝返回模拟数据！系统要求使用真实数据源');
         return Promise.resolve({
           success: true,
           data: {
@@ -556,11 +561,12 @@ class TradingService {
    */
   async getBalanceHistory(params = {}) {
     try {
-      // 开发环境下使用模拟数据
+      // 开发环境下拒绝模拟数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的余额历史数据');
-        
-        // 生成一个月的模拟余额变化数据
+        console.log('[开发模式] 拒绝返回模拟数据');
+
+        // ❌ 拒绝生成模拟余额变化数据
+        throw new Error('❌ 拒绝返回模拟数据！系统要求使用真实数据源');
         const endDate = params.end_date ? new Date(params.end_date) : new Date();
         const startDate = params.start_date ? new Date(params.start_date) : new Date(endDate);
         startDate.setMonth(startDate.getMonth() - 1);

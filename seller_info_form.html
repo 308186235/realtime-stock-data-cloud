@@ -1,0 +1,156 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票数据服务配置信息收集</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { background: #f0f8ff; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input, textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        .template { background: #f9f9f9; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .checklist { background: #fff3cd; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛒 股票数据服务配置信息</h1>
+        <p><strong>API Key:</strong> QT_wat5QfcJ6N9pDZM5</p>
+        <p><strong>卖家:</strong> HU591</p>
+        <p><strong>商品链接:</strong> <a href="https://m.tb.cn/h.hUlnKE6Pk6brYcw" target="_blank">点击查看</a></p>
+    </div>
+    
+    <h2>📝 从卖家获取的信息</h2>
+    <form id="configForm">
+        <div class="form-group">
+            <label for="host">服务器地址 (IP或域名):</label>
+            <input type="text" id="host" name="host" placeholder="如: 192.168.1.100 或 api.example.com">
+        </div>
+        
+        <div class="form-group">
+            <label for="port">端口号:</label>
+            <input type="number" id="port" name="port" placeholder="如: 8080, 9999">
+        </div>
+        
+        <div class="form-group">
+            <label for="token">认证Token:</label>
+            <input type="text" id="token" name="token" placeholder="卖家提供的认证密钥">
+        </div>
+        
+        <div class="form-group">
+            <label for="schedule">服务时间:</label>
+            <input type="text" id="schedule" name="schedule" placeholder="如: 9:00-15:00 工作日">
+        </div>
+        
+        <div class="form-group">
+            <label for="format">数据格式:</label>
+            <input type="text" id="format" name="format" placeholder="如: JSON, 二进制">
+        </div>
+        
+        <div class="form-group">
+            <label for="frequency">推送频率:</label>
+            <input type="text" id="frequency" name="frequency" placeholder="如: 每3秒">
+        </div>
+        
+        <div class="form-group">
+            <label for="support">技术支持联系方式:</label>
+            <textarea id="support" name="support" rows="3" placeholder="QQ群、微信、电话等"></textarea>
+        </div>
+        
+        <button type="button" class="btn" onclick="saveConfig()">💾 保存配置</button>
+        <button type="button" class="btn" onclick="generateConfigFile()">🔧 生成配置文件</button>
+    </form>
+    
+    <div class="template">
+        <h3>📋 询问模板 (复制发送给卖家)</h3>
+        <textarea readonly rows="8" style="width: 100%;">您好！我购买了您家的股票数据推送服务。
+
+我的API Key: QT_wat5QfcJ6N9pDZM5
+
+请提供以下连接信息：
+1. 推送服务器地址 (IP或域名)
+2. 连接端口号  
+3. 认证Token
+
+另外请告知：
+- 服务运行时间
+- 数据推送格式
+- 技术支持联系方式
+
+谢谢！</textarea>
+    </div>
+    
+    <div class="checklist">
+        <h3>✅ 信息完整性检查</h3>
+        <ul>
+            <li>□ 服务器地址已获取</li>
+            <li>□ 端口号已确认</li>
+            <li>□ 认证Token已提供</li>
+            <li>□ 服务时间已明确</li>
+            <li>□ 数据格式已说明</li>
+            <li>□ 技术支持方式已知</li>
+        </ul>
+    </div>
+    
+    <script>
+        function saveConfig() {
+            const config = {
+                api_key: 'QT_wat5QfcJ6N9pDZM5',
+                host: document.getElementById('host').value,
+                port: document.getElementById('port').value,
+                token: document.getElementById('token').value,
+                schedule: document.getElementById('schedule').value,
+                format: document.getElementById('format').value,
+                frequency: document.getElementById('frequency').value,
+                support: document.getElementById('support').value,
+                timestamp: new Date().toISOString()
+            };
+            
+            localStorage.setItem('stockApiConfig', JSON.stringify(config));
+            alert('✅ 配置已保存到浏览器本地存储');
+        }
+        
+        function generateConfigFile() {
+            const config = JSON.parse(localStorage.getItem('stockApiConfig') || '{}');
+            if (!config.host || !config.port || !config.token) {
+                alert('❌ 请先填写完整的服务器地址、端口和Token');
+                return;
+            }
+            
+            const configText = `# 股票数据服务配置
+API_KEY = "QT_wat5QfcJ6N9pDZM5"
+HOST = "${config.host}"
+PORT = ${config.port}
+TOKEN = "${config.token}"
+SCHEDULE = "${config.schedule}"
+FORMAT = "${config.format}"
+FREQUENCY = "${config.frequency}"
+SUPPORT = "${config.support}"`;
+            
+            const blob = new Blob([configText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'stock_api_config.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // 加载已保存的配置
+        window.onload = function() {
+            const saved = localStorage.getItem('stockApiConfig');
+            if (saved) {
+                const config = JSON.parse(saved);
+                Object.keys(config).forEach(key => {
+                    const element = document.getElementById(key);
+                    if (element) element.value = config[key];
+                });
+            }
+        };
+    </script>
+</body>
+</html>

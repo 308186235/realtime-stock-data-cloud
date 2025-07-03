@@ -106,40 +106,24 @@
             </view>
         </view>
         
-        <!-- 功能快捷方式 -->
-        <view class="feature-shortcuts">
-            <view class="shortcut-row">
-                <view class="shortcut-item" @click="navigateTo('/pages/ai-analysis/index')">
-                    <view class="shortcut-icon ai-icon"></view>
-                    <text class="shortcut-text">Agent智能交易</text>
+        <!-- 快速访问 -->
+        <view class="quick-access">
+            <view class="quick-row">
+                <view class="quick-item" @click="navigateTo('/pages/portfolio/index')">
+                    <view class="quick-icon portfolio-icon"></view>
+                    <text class="quick-text">我的持仓</text>
                 </view>
-                <view class="shortcut-item" @click="navigateTo('/pages/portfolio/index')">
-                    <view class="shortcut-icon portfolio-icon"></view>
-                    <text class="shortcut-text">我的持仓</text>
+                <view class="quick-item" @click="navigateTo('/pages/indicators/index')">
+                    <view class="quick-icon indicator-icon"></view>
+                    <text class="quick-text">技术指标</text>
                 </view>
-            </view>
-            <view class="shortcut-row">
-                <view class="shortcut-item" @click="navigateTo('/pages/device-test/index')">
-                    <view class="shortcut-icon test-icon"></view>
-                    <text class="shortcut-text">设备测试</text>
-                </view>
-            </view>
-            <view class="shortcut-row">
-                <view class="shortcut-item" @click="navigateTo('/pages/trade/index')">
-                    <view class="shortcut-icon trade-icon"></view>
-                    <text class="shortcut-text">Agent交易中心</text>
-                </view>
-                <view class="shortcut-item" @click="navigateTo('/pages/indicators/index')">
-                    <view class="shortcut-icon indicator-icon"></view>
-                    <text class="shortcut-text">技术指标</text>
-                </view>
-                <view class="shortcut-item" @click="navigateTo('/pages/auto-trader/index')">
-                    <view class="shortcut-icon auto-icon"></view>
-                    <text class="shortcut-text">Agent T+0交易</text>
+                <view class="quick-item" @click="navigateTo('/pages/device-test/index')">
+                    <view class="quick-icon test-icon"></view>
+                    <text class="quick-text">设备测试</text>
                 </view>
             </view>
         </view>
-        
+
         <!-- 热门股票K线图 -->
         <view class="stock-charts-section">
             <view class="card-title">
@@ -558,6 +542,15 @@ export default {
                 { name: '比亚迪', code: '002594', price: '241.85', change: '+1.58%', trend: 'up' },
                 { name: '宁德时代', code: '300750', price: '187.36', change: '-0.75%', trend: 'down' }
             ],
+            // Agent虚拟账户信息
+            accountInfo: {
+                totalAssets: 0,
+                availableCash: 0,
+                marketValue: 0,
+                profitLoss: 0,
+                profitLossPercent: 0,
+                positionCount: 0
+            },
             // 加载状态
             loading: false,
             lastUpdateTime: null,
@@ -662,7 +655,8 @@ export default {
                 console.error('💡 请确保专业股票数据API (QT_wat5QfcJ6N9pDZM5) 或Agent后端服务正在运行');
 
                 // 显示详细的错误提示
-                this.showDataErrorAlert(error.message);
+                const errorMessage = error && error.message ? error.message : '数据测试失败，请检查服务连接';
+                this.showDataErrorAlert(errorMessage);
             }
         },
 
@@ -670,6 +664,50 @@ export default {
         showDataErrorAlert(message) {
             this.dataErrorMessage = message;
             this.showDataError = true;
+        },
+
+        // 显示真实数据错误提示
+        showRealDataErrorAlert(serviceName, error) {
+            const title = `${serviceName}服务不可用`;
+            const message = error.message || '系统拒绝提供模拟数据，需要连接真实数据源';
+
+            // 构建详细的错误信息
+            let detailMessage = `🚨 ${message}\n\n`;
+
+            if (error.requirements && error.requirements.length > 0) {
+                detailMessage += '📋 系统要求:\n';
+                error.requirements.forEach(req => {
+                    detailMessage += `${req}\n`;
+                });
+                detailMessage += '\n';
+            }
+
+            if (error.next_steps && error.next_steps.length > 0) {
+                detailMessage += '🔧 解决步骤:\n';
+                error.next_steps.forEach(step => {
+                    detailMessage += `${step}\n`;
+                });
+            }
+
+            // 显示模态框
+            uni.showModal({
+                title: title,
+                content: detailMessage,
+                showCancel: true,
+                cancelText: '稍后重试',
+                confirmText: '了解',
+                success: (res) => {
+                    if (res.confirm) {
+                        console.log('用户确认了解真实数据要求');
+                    } else if (res.cancel) {
+                        console.log('用户选择稍后重试');
+                        // 可以在这里添加重试逻辑
+                    }
+                }
+            });
+
+            // 同时在控制台输出详细信息
+            console.warn(`🚨 ${serviceName}服务错误:`, error);
         },
 
         // 隐藏数据错误提示
@@ -714,21 +752,31 @@ export default {
             try {
                 const response = await dataService.getAgentAnalysis();
 
-                if (response && response.recommendations) {
+                if (response && response.data && response.data.recommendations) {
                     // 更新推荐股票数据
-                    this.recommendedStocks = response.recommendations.slice(0, 3).map(stock => ({
-                        name: stock.name,
-                        code: stock.symbol,
-                        price: stock.target_price ? stock.target_price.toFixed(2) : '0.00',
-                        change: '+0.00%', // 这里可以根据实际数据计算
-                        trend: stock.action === '买入' ? 'up' : stock.action === '卖出' ? 'down' : 'neutral'
-                    }));
+                    this.recommendedStocks = response.data.recommendations.slice(0, 3).map(stock => {
+                        const changePercent = stock.current_price && stock.target_price
+                            ? ((stock.target_price - stock.current_price) / stock.current_price * 100).toFixed(2)
+                            : '0.00';
+
+                        return {
+                            name: stock.stock_name,
+                            code: stock.stock_code,
+                            price: stock.current_price ? stock.current_price.toFixed(2) : '0.00',
+                            change: `${changePercent >= 0 ? '+' : ''}${changePercent}%`,
+                            trend: stock.action === 'buy' ? 'up' : stock.action === 'sell' ? 'down' : 'neutral'
+                        };
+                    });
+
+                    console.log('✅ Agent分析数据加载成功:', this.recommendedStocks);
                 }
             } catch (error) {
                 console.error('加载Agent分析数据失败:', error);
 
-                // 检查是否为模拟数据错误
-                if (error.message && error.message.includes('模拟')) {
+                // 检查是否为真实数据服务错误
+                if (error.isRealDataError) {
+                    this.showRealDataErrorAlert('Agent分析', error);
+                } else if (error.message && error.message.includes('模拟')) {
                     this.showDataErrorAlert(error.message);
                 } else {
                     console.error('💡 Agent分析服务连接失败，请检查后端服务');
@@ -741,13 +789,28 @@ export default {
             try {
                 const response = await dataService.getAccountBalance();
 
-                if (response && response.balance_info) {
-                    // 这里可以根据需要更新相关数据
-                    console.log('账户余额数据:', response.balance_info);
+                if (response && response.data) {
+                    // 更新账户信息到页面数据
+                    this.accountInfo = {
+                        totalAssets: response.data.balance.total_assets,
+                        availableCash: response.data.balance.available_cash,
+                        marketValue: response.data.balance.market_value,
+                        profitLoss: response.data.balance.total_profit_loss,
+                        profitLossPercent: response.data.balance.profit_loss_percent,
+                        positionCount: response.data.positions ? response.data.positions.length : 0
+                    };
+
+                    console.log('✅ Agent虚拟账户数据加载成功:', this.accountInfo);
                 }
             } catch (error) {
                 console.error('加载账户余额数据失败:', error);
-                // 使用默认数据，避免影响页面显示
+
+                // 检查是否为真实数据服务错误
+                if (error.isRealDataError) {
+                    this.showRealDataErrorAlert('账户余额', error);
+                } else {
+                    console.error('💡 账户余额服务连接失败，请检查后端服务');
+                }
             }
         }
     }
@@ -947,40 +1010,40 @@ export default {
     font-size: 24rpx;
 }
 
-/* 功能快捷方式 - 深色主题 */
-.dark-theme .feature-shortcuts {
+/* 快速访问 - 深色主题 */
+.dark-theme .quick-access {
     background-color: #222222;
     border-radius: 12rpx;
     padding: 20rpx;
 }
 
-.dark-theme .shortcut-row {
+.dark-theme .quick-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 30rpx;
+    margin-bottom: 20rpx;
 }
 
-.dark-theme .shortcut-row:last-child {
+.dark-theme .quick-row:last-child {
     margin-bottom: 0;
 }
 
-.dark-theme .shortcut-item {
+.dark-theme .quick-item {
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 30%;
 }
 
-.dark-theme .shortcut-icon {
-    width: 100rpx;
-    height: 100rpx;
+.dark-theme .quick-icon {
+    width: 80rpx;
+    height: 80rpx;
     border-radius: 50%;
     background-color: #333333;
-    margin-bottom: 15rpx;
+    margin-bottom: 12rpx;
 }
 
-.dark-theme .shortcut-text {
-    font-size: 24rpx;
+.dark-theme .quick-text {
+    font-size: 22rpx;
     color: #cccccc;
 }
 
@@ -1576,41 +1639,41 @@ export default {
     font-size: 24rpx;
 }
 
-/* 功能快捷方式 - 浅色主题 */
-.light-theme .feature-shortcuts {
+/* 快速访问 - 浅色主题 */
+.light-theme .quick-access {
     background-color: #ffffff;
     border-radius: 12rpx;
     padding: 20rpx;
     box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
 }
 
-.light-theme .shortcut-row {
+.light-theme .quick-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 30rpx;
+    margin-bottom: 20rpx;
 }
 
-.light-theme .shortcut-row:last-child {
+.light-theme .quick-row:last-child {
     margin-bottom: 0;
 }
 
-.light-theme .shortcut-item {
+.light-theme .quick-item {
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 30%;
 }
 
-.light-theme .shortcut-icon {
-    width: 100rpx;
-    height: 100rpx;
+.light-theme .quick-icon {
+    width: 80rpx;
+    height: 80rpx;
     border-radius: 50%;
     background-color: #f0f0f0;
-    margin-bottom: 15rpx;
+    margin-bottom: 12rpx;
 }
 
-.light-theme .shortcut-text {
-    font-size: 24rpx;
+.light-theme .quick-text {
+    font-size: 22rpx;
     color: #666666;
 }
 

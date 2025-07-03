@@ -1,0 +1,33 @@
+{
+  "timestamp": "2025-07-02T05:00:00",
+  "migration": "Netlify to Cloudflare",
+  "cloudflare_domains": {
+    "main": "aigupiao.me",
+    "api": "api.aigupiao.me",
+    "app": "app.aigupiao.me",
+    "mobile": "mobile.aigupiao.me",
+    "admin": "admin.aigupiao.me"
+  },
+  "updated_files": [
+    "炒股养家/env.js",
+    "frontend/gupiao1/env.js",
+    "frontend/stock5/env.js",
+    "炒股养家/services/config.js",
+    "backend/app.py",
+    "cloud_app.py"
+  ],
+  "created_files": [
+    "wrangler.toml",
+    "cloudflare-pages-config.md",
+    "_redirects"
+  ],
+  "removed_files": [
+    "netlify.toml",
+    "netlify-* directories"
+  ],
+  "deployment_instructions": {
+    "frontend": "Deploy to Cloudflare Pages: app.aigupiao.me",
+    "api": "Deploy to Cloudflare Workers: api.aigupiao.me",
+    "dns": "Configure DNS in Cloudflare dashboard"
+  }
+}

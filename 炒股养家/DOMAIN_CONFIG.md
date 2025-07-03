@@ -12,11 +12,11 @@
 // 生产环境
 [ENV_TYPE.PROD]: {
   // API基础URL
-  apiBaseUrl: 'https://aigupiao.me',
-  
+  apiBaseUrl: 'https://api.aigupiao.me',
+
   // WebSocket地址
-  wsUrl: 'wss://aigupiao.me/ws',
-  
+  wsUrl: 'wss://api.aigupiao.me/ws',
+
   // 其他配置...
 }
 ```
@@ -26,7 +26,7 @@
 // API基础URL,根据环境设置
 const baseUrl = process.env.NODE_ENV === 'development'
   ? 'http://localhost:8000'  // 开发环境
-  : 'https://aigupiao.me';   // 生产环境
+  : 'https://api.aigupiao.me';   // 生产环境
 ```
 
 ### 3. Agent分析控制台环境信息

@@ -10,7 +10,7 @@ import realStockDataService from './realStockDataService.js';
 class AgentDataService {
   constructor() {
     this.apiBaseUrl = baseUrl;
-    this.timeout = 10000; // 10秒超时
+    this.timeout = 30000; // 30秒超时，避免频繁超时
   }
 
   /**
@@ -18,14 +18,15 @@ class AgentDataService {
    */
   async getAccountBalance() {
     try {
-      console.log('[Agent数据] 正在获取账户余额...');
-      
+      console.log('[Agent数据] 通过云端Agent获取本地账户余额...');
+
       const response = await uni.request({
-        url: `${this.apiBaseUrl}/api/account-balance`,
+        url: `${this.apiBaseUrl}/api/local-trading/balance`,
         method: 'GET',
-        timeout: this.timeout,
+        timeout: 30000,
         header: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Request-Source': 'mobile-app'
         }
       });
 
@@ -76,14 +77,15 @@ class AgentDataService {
    */
   async getPositions() {
     try {
-      console.log('[Agent数据] 正在获取持仓信息...');
-      
+      console.log('[Agent数据] 通过云端Agent获取本地持仓信息...');
+
       const response = await uni.request({
-        url: `${this.apiBaseUrl}/api/account-positions`,
+        url: `${this.apiBaseUrl}/api/local-trading/positions`,
         method: 'GET',
-        timeout: this.timeout,
+        timeout: 30000,
         header: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Request-Source': 'mobile-app'
         }
       });
 

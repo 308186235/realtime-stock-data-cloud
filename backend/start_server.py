@@ -28,14 +28,17 @@ app = FastAPI(
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://localhost:3000", 
-        "http://localhost:9000",
-        "https://aigupiao.me",
-        "http://aigupiao.me",
-        "*"  # 开发环境允许所有源
-    ],
+    allow_origins = [
+    "https://aigupiao.me",
+    "https://api.aigupiao.me",
+    "https://app.aigupiao.me",
+    "https://mobile.aigupiao.me",
+    "https://admin.aigupiao.me",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "capacitor://localhost",
+    "ionic://localhost"
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

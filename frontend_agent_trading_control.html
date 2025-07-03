@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent本地交易控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .status-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 5px solid #28a745;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .status-item {
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-item h3 {
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        .status-value {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .status-value.success { color: #28a745; }
+        .status-value.error { color: #dc3545; }
+        .status-value.warning { color: #ffc107; }
+
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .panel h2 {
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn.btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .btn.btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+        }
+
+        .btn.btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        }
+
+        .log-panel {
+            background: #1e1e1e;
+            color: #00ff00;
+            border-radius: 10px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+
+        .log-entry.error { color: #ff6b6b; }
+        .log-entry.success { color: #51cf66; }
+        .log-entry.warning { color: #ffd43b; }
+        .log-entry.info { color: #74c0fc; }
+
+        .trade-history {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .trade-table th,
+        .trade-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .trade-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .trade-success { color: #28a745; }
+        .trade-error { color: #dc3545; }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .control-panel {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Agent本地交易控制台</h1>
+            <p>基于working-trader-FIXED的模块化本地交易接口</p>
+        </div>
+
+        <!-- 状态面板 -->
+        <div class="status-panel">
+            <h2>📊 系统状态</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <h3>控制器状态</h3>
+                    <div id="controller-status" class="status-value">检查中...</div>
+                </div>
+                <div class="status-item">
+                    <h3>本地接口</h3>
+                    <div id="interface-status" class="status-value">检查中...</div>
+                </div>
+                <div class="status-item">
+                    <h3>交易软件</h3>
+                    <div id="software-status" class="status-value">检查中...</div>
+                </div>
+                <div class="status-item">
+                    <h3>交易历史</h3>
+                    <div id="history-count" class="status-value">0</div>
+                </div>
+                <div class="status-item">
+                    <h3>最后导出</h3>
+                    <div id="last-export" class="status-value">未导出</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="control-panel">
+            <!-- 系统控制 -->
+            <div class="panel">
+                <h2>🎮 系统控制</h2>
+                <button class="btn btn-success" onclick="startController()">启动控制器</button>
+                <button class="btn btn-danger" onclick="stopController()">停止控制器</button>
+                <button class="btn" onclick="refreshStatus()">刷新状态</button>
+                <button class="btn btn-warning" onclick="testSystem()">系统测试</button>
+            </div>
+
+            <!-- 交易控制 -->
+            <div class="panel">
+                <h2>💰 交易执行</h2>
+                <div class="form-group">
+                    <label>交易类型</label>
+                    <select id="trade-action">
+                        <option value="buy">买入</option>
+                        <option value="sell">卖出</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>股票代码</label>
+                    <input type="text" id="stock-code" placeholder="如: 000001" value="000001">
+                </div>
+                <div class="form-group">
+                    <label>交易数量</label>
+                    <input type="number" id="quantity" placeholder="如: 100" value="100">
+                </div>
+                <div class="form-group">
+                    <label>交易价格 (空白为市价)</label>
+                    <input type="number" id="price" placeholder="如: 10.50" step="0.01">
+                </div>
+                <button class="btn btn-success" onclick="executeTrade()">执行交易</button>
+            </div>
+
+            <!-- 数据管理 -->
+            <div class="panel">
+                <h2>📊 数据管理</h2>
+                <div class="form-group">
+                    <label>导出类型</label>
+                    <select id="export-type">
+                        <option value="all">全部数据</option>
+                        <option value="holdings">持仓数据</option>
+                        <option value="transactions">成交数据</option>
+                        <option value="orders">委托数据</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="exportData()">导出数据</button>
+                <button class="btn" onclick="getPortfolio()">获取投资组合</button>
+                <button class="btn" onclick="getTradeHistory()">获取交易历史</button>
+            </div>
+        </div>
+
+        <!-- 日志面板 -->
+        <div class="log-panel" id="log-panel">
+            <div class="log-entry info">[系统] Agent本地交易控制台已启动</div>
+            <div class="log-entry info">[系统] 正在检查系统状态...</div>
+        </div>
+
+        <!-- 交易历史 -->
+        <div class="trade-history">
+            <h2>📈 交易历史</h2>
+            <table class="trade-table" id="trade-table">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>动作</th>
+                        <th>股票代码</th>
+                        <th>数量</th>
+                        <th>价格</th>
+                        <th>状态</th>
+                        <th>消息</th>
+                    </tr>
+                </thead>
+                <tbody id="trade-table-body">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #666;">暂无交易记录</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // API基础URL
+        const API_BASE_URL = 'https://api.aigupiao.me/api/local-trading';
+        
+        // 日志函数
+        function addLog(message, type = 'info') {
+            const logPanel = document.getElementById('log-panel');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logPanel.appendChild(logEntry);
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+
+        // API调用函数
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.detail || '请求失败');
+                }
+                
+                return result;
+            } catch (error) {
+                addLog(`API调用失败: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // 刷新状态
+        async function refreshStatus() {
+            try {
+                addLog('正在刷新系统状态...', 'info');
+                const status = await apiCall('/status');
+                
+                // 更新状态显示
+                document.getElementById('controller-status').textContent = 
+                    status.controller_running ? '运行中' : '已停止';
+                document.getElementById('controller-status').className = 
+                    `status-value ${status.controller_running ? 'success' : 'error'}`;
+                
+                document.getElementById('interface-status').textContent = 
+                    status.local_interface_initialized ? '已初始化' : '未初始化';
+                document.getElementById('interface-status').className = 
+                    `status-value ${status.local_interface_initialized ? 'success' : 'error'}`;
+                
+                document.getElementById('software-status').textContent = 
+                    status.trading_software_active ? '已激活' : '未激活';
+                document.getElementById('software-status').className = 
+                    `status-value ${status.trading_software_active ? 'success' : 'warning'}`;
+                
+                document.getElementById('history-count').textContent = status.trade_history_count;
+                document.getElementById('last-export').textContent = 
+                    status.last_export_time ? new Date(status.last_export_time).toLocaleString() : '未导出';
+                
+                addLog('系统状态刷新完成', 'success');
+            } catch (error) {
+                addLog(`刷新状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 启动控制器
+        async function startController() {
+            try {
+                addLog('正在启动交易控制器...', 'info');
+                const result = await apiCall('/start', 'POST');
+                addLog(result.message, 'success');
+                await refreshStatus();
+            } catch (error) {
+                addLog(`启动控制器失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 停止控制器
+        async function stopController() {
+            try {
+                addLog('正在停止交易控制器...', 'info');
+                const result = await apiCall('/stop', 'POST');
+                addLog(result.message, 'success');
+                await refreshStatus();
+            } catch (error) {
+                addLog(`停止控制器失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 执行交易
+        async function executeTrade() {
+            try {
+                const action = document.getElementById('trade-action').value;
+                const stockCode = document.getElementById('stock-code').value;
+                const quantity = parseInt(document.getElementById('quantity').value);
+                const priceInput = document.getElementById('price').value;
+                const price = priceInput ? parseFloat(priceInput) : null;
+                
+                if (!stockCode || !quantity) {
+                    addLog('请填写完整的交易信息', 'warning');
+                    return;
+                }
+                
+                addLog(`正在执行${action === 'buy' ? '买入' : '卖出'}操作...`, 'info');
+                
+                const tradeData = {
+                    action: action,
+                    stock_code: stockCode,
+                    quantity: quantity,
+                    price: price
+                };
+                
+                const result = await apiCall('/execute', 'POST', tradeData);
+                
+                if (result.success) {
+                    addLog(`交易执行成功: ${result.message}`, 'success');
+                    await getTradeHistory(); // 刷新交易历史
+                } else {
+                    addLog(`交易执行失败: ${result.message}`, 'error');
+                }
+                
+            } catch (error) {
+                addLog(`交易执行异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 导出数据
+        async function exportData() {
+            try {
+                const dataType = document.getElementById('export-type').value;
+                addLog(`正在导出${dataType}数据...`, 'info');
+                
+                const result = await apiCall('/export', 'POST', { data_type: dataType });
+                
+                if (result.success) {
+                    addLog(`数据导出成功: ${result.message}`, 'success');
+                    await refreshStatus();
+                } else {
+                    addLog(`数据导出失败: ${result.message}`, 'error');
+                }
+                
+            } catch (error) {
+                addLog(`导出数据异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 获取投资组合
+        async function getPortfolio() {
+            try {
+                addLog('正在获取投资组合数据...', 'info');
+                const result = await apiCall('/portfolio');
+                
+                if (result.success) {
+                    addLog(`投资组合获取成功，数据文件: ${result.data_files.length}个`, 'success');
+                    console.log('投资组合数据:', result);
+                } else {
+                    addLog(`获取投资组合失败: ${result.message}`, 'error');
+                }
+                
+            } catch (error) {
+                addLog(`获取投资组合异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 获取交易历史
+        async function getTradeHistory() {
+            try {
+                const result = await apiCall('/history');
+                
+                if (result.success) {
+                    updateTradeHistoryTable(result.history);
+                    addLog(`交易历史获取成功，共${result.total_count}条记录`, 'success');
+                } else {
+                    addLog(`获取交易历史失败`, 'error');
+                }
+                
+            } catch (error) {
+                addLog(`获取交易历史异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 更新交易历史表格
+        function updateTradeHistoryTable(history) {
+            const tbody = document.getElementById('trade-table-body');
+            tbody.innerHTML = '';
+            
+            if (history.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">暂无交易记录</td></tr>';
+                return;
+            }
+            
+            history.forEach(item => {
+                const row = document.createElement('tr');
+                const statusClass = item.result.success ? 'trade-success' : 'trade-error';
+                
+                row.innerHTML = `
+                    <td>${new Date(item.timestamp).toLocaleString()}</td>
+                    <td>${item.request.action === 'buy' ? '买入' : '卖出'}</td>
+                    <td>${item.request.stock_code}</td>
+                    <td>${item.request.quantity}</td>
+                    <td>${item.request.price || '市价'}</td>
+                    <td class="${statusClass}">${item.result.success ? '成功' : '失败'}</td>
+                    <td>${item.result.message}</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        // 系统测试
+        async function testSystem() {
+            try {
+                addLog('正在进行系统测试...', 'info');
+                const result = await apiCall('/test', 'POST');
+                
+                if (result.success) {
+                    addLog('系统测试完成', 'success');
+                    console.log('测试结果:', result);
+                    await refreshStatus();
+                } else {
+                    addLog('系统测试失败', 'error');
+                }
+                
+            } catch (error) {
+                addLog(`系统测试异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            addLog('页面加载完成，正在初始化...', 'info');
+            refreshStatus();
+            
+            // 定期刷新状态
+            setInterval(refreshStatus, 30000); // 每30秒刷新一次
+        });
+    </script>
+</body>
+</html>

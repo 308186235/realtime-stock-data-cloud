@@ -1,6 +1,15 @@
 {
   "pages": [
     {
+      "path": "pages/agent-console/index",
+      "style": {
+        "navigationBarTitleText": "Agent分析控制台",
+        "navigationBarTextStyle": "white",
+        "navigationBarBackgroundColor": "#141414",
+        "backgroundColor": "#141414"
+      }
+    },
+    {
       "path": "pages/index/index",
       "style": {
         "navigationBarTitleText": "炒股养家",
@@ -266,8 +275,8 @@
     "borderStyle": "black",
     "list": [
       {
-        "pagePath": "pages/ai-analysis/index",
-        "text": "Agent分析控制台"
+        "pagePath": "pages/agent-console/index",
+        "text": "Agent控制台"
       },
       {
         "pagePath": "pages/index/index",

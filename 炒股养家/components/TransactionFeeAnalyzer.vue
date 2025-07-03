@@ -239,35 +239,11 @@ export default {
     
     // 获取余额历史变化记录 - 实际应用中需要服务端支持此API
     async getBalanceHistory() {
-      // 开发环境下使用模拟数据
+      // 开发环境下要求真实数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的余额历史数据');
-        
-        // 为测试目的,为每个交易生成一个余额变化记录
-        const mockBalanceHistory = this.trades.map(trade => {
-          const tradeAmount = trade.price * trade.volume;
-          const isBuy = trade.direction === 'BUY';
-          
-          // 买入时余额减少(交易额+费用),卖出时余额增加(交易额-费用)
-          // 模拟的费用大约为交易额的0.15%
-          const feeRate = 0.0015;
-          const fees = tradeAmount * feeRate;
-          
-          let balanceChange = isBuy ? -(tradeAmount + fees) : (tradeAmount - fees);
-          
-          return {
-            time: new Date(trade.trade_time || trade.tradeTime).getTime(),
-            balance: balanceChange,
-            tradeId: trade.trade_id || `trade_${trade.symbol}_${trade.time}`,
-            type: isBuy ? 'BUY' : 'SELL',
-            description: `${isBuy ? '买入' : '卖出'} ${trade.name}(${trade.symbol}) ${trade.volume}股`
-          };
-        });
-        
-        return {
-          success: true,
-          data: mockBalanceHistory
-        };
+        // 🚨 禁用模拟数据 - 要求真实余额历史数据
+        console.error('[真实数据要求] 拒绝要求真实数据');
+        throw new Error('❌ 系统要求真实余额历史数据，拒绝要求真实数据源。');
       }
       
       // 实际应用中应该调用API获取余额历史

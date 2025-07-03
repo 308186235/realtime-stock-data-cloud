@@ -270,30 +270,31 @@ export async function getAITradingStatus() {
  */
 export async function getSystemStatus() {
   try {
-    if (isDevelopment) {
-      // 在开发环境中，使用模拟数据
-      await delay();
-      
-      // 尝试从东吴秀才账户获取实际盈亏数据
-      let actualProfit = null;
-      try {
-        // 导入tradingService
-        const tradingServiceModule = await import('./tradingService.js');
-        const tradingService = tradingServiceModule.default;
-        
-        // 获取东吴秀才账户余额
-        const dongwuAccountResult = await tradingService.getDongwuXiucaiBalance();
-        
-        if (dongwuAccountResult.success && dongwuAccountResult.data) {
-          // 模拟计算当日盈亏
-          actualProfit = Math.random() > 0.5 ? 
-            Math.random() * 1000 + 500 : // 盈利
-            -Math.random() * 800;       // 亏损
-        }
-      } catch (error) {
-        console.warn('获取东吴秀才账户盈亏数据失败:', error);
+    // 🚨 禁用开发环境模拟数据 - 只允许真实数据
+    let actualProfit = null;
+
+    try {
+      // 导入tradingService获取真实数据
+      const tradingServiceModule = await import('./tradingService.js');
+      const tradingService = tradingServiceModule.default;
+
+      // 获取真实账户余额
+      const accountResult = await tradingService.getDongwuXiucaiBalance();
+
+      if (accountResult.success && accountResult.data) {
+        // 基于真实数据计算系统状态
+        actualProfit = accountResult.data.profit_loss || 0;
       }
-      
+    } catch (error) {
+      console.error('获取真实账户数据失败:', error);
+      // 在开发环境下允许继续，生产环境下抛出错误
+      if (!isDevelopment) {
+        throw new Error('❌ 系统状态需要真实数据，无法获取时拒绝返回模拟状态');
+      }
+    }
+
+    // 如果是开发环境且无法获取真实数据，返回模拟数据
+    if (isDevelopment) {
       return {
         success: true,
         data: {
@@ -302,7 +303,7 @@ export async function getSystemStatus() {
           brokerName: '东吴证券',
           runningTime: '03:45:21',
           tradeCount: 12,
-          // 如果获取到了实际盈亏数据，则使用，否则使用模拟数据
+          // 如果获取到了实际盈亏数据，则使用，否则要求真实数据
           dailyProfit: actualProfit !== null ? actualProfit : Math.random() > 0.5 ? Math.random() * 1000 + 500 : -Math.random() * 500,
           currentStrategies: ['趋势跟踪', '量价分析'],
           t0Enabled: Math.random() > 0.5,
@@ -361,7 +362,7 @@ export async function getSystemStatus() {
         }
       };
     }
-    
+
     // 正式环境
     const response = await uni.request({
       url: `${API_BASE_URL}/system/status`,
@@ -396,8 +397,9 @@ export async function getSystemStatus() {
         console.warn('获取东吴秀才账户盈亏数据失败:', error);
       }
     }
-    
+
     return response.data;
+
   } catch (error) {
     console.error('获取系统状态失败:', error);
     if (isDevelopment) {

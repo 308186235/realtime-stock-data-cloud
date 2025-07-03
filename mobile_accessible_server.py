@@ -337,10 +337,10 @@ body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
         import random
         client_info = self._get_client_info()
         response = {
+            "error": "REAL_DATA_REQUIRED",
+            "message": "❌ 系统禁止返回模拟股票数据",
             "code": code,
-            "name": f"股票{code}",
-            "price": round(random.uniform(10, 100), 2),
-            "change": round(random.uniform(-5, 5), 2),
+            "required_action": "请配置真实数据源",
             "timestamp": datetime.now().isoformat(),
             "client_info": client_info
         }
@@ -362,9 +362,11 @@ body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
         """买入交易"""
         client_info = self._get_client_info()
         response = {
+            "error": "REAL_TRADING_REQUIRED",
+            "message": "❌ 系统禁止模拟交易操作",
             "action": "buy",
             "data": data,
-            "status": "simulated",
+            "required_action": "请配置真实交易接口",
             "timestamp": datetime.now().isoformat(),
             "client_info": client_info
         }
@@ -374,9 +376,11 @@ body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
         """卖出交易"""
         client_info = self._get_client_info()
         response = {
+            "error": "REAL_TRADING_REQUIRED",
+            "message": "❌ 系统禁止模拟交易操作",
             "action": "sell",
             "data": data,
-            "status": "simulated",
+            "required_action": "请配置真实交易接口",
             "timestamp": datetime.now().isoformat(),
             "client_info": client_info
         }

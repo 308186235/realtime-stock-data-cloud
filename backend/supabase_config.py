@@ -30,10 +30,10 @@ class SupabaseConfig:
     def _load_from_config(self):
         """从配置文件加载（项目创建后填写）"""
         # 实际的Supabase项目连接信息
-        self.url = "https://zzukfxwavknskqcepsjb.supabase.co"
-        self.key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw"
-        self.service_key = ""  # 需要从设置中获取service_role key
-        self.db_url = "postgresql://postgres:[YOUR_PASSWORD]@db.zzukfxwavknskqcepsjb.supabase.co:5432/postgres"
+        self.url = os.getenv("SUPABASE_URL")
+        self.key = os.getenv("SUPABASE_ANON_KEY")
+        self.service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        self.db_url = os.getenv("DATABASE_URL")
     
     def get_client(self) -> Client:
         """获取Supabase客户端"""

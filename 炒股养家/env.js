@@ -31,17 +31,17 @@ const baseConfig = {
 const envConfigs = {
   // 开发环境
   [ENV_TYPE.DEV]: {
-    // API基础URL
-    apiBaseUrl: 'https://trading-system-api.netlify.app',
+    // API基础URL - 使用实际部署的Worker
+    apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket地址
-    wsUrl: 'wss://trading-system-api.netlify.app/ws',
+    wsUrl: 'wss://api.aigupiao.me/ws',
     
     // 是否启用调试
     debug: true,
     
-    // 是否使用模拟数据
-    useMockData: true,
+    // 🚨 禁用模拟数据 - 只允许真实数据
+    useMockData: false,
     
     // 默认主题
     defaultTheme: 'light',
@@ -52,11 +52,11 @@ const envConfigs = {
   
   // 生产环境
   [ENV_TYPE.PROD]: {
-    // API基础URL
-    apiBaseUrl: 'https://trading-system-api.netlify.app',
+    // API基础URL - 使用实际部署的Worker
+    apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket地址
-    wsUrl: 'wss://trading-system-api.netlify.app/ws',
+    wsUrl: 'wss://api.aigupiao.me/ws',
 
     // 是否启用调试
     debug: false,

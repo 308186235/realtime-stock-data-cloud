@@ -1,0 +1,104 @@
+{
+  "timestamp": "2025-07-02 03:15:35",
+  "summary": {
+    "total_checks": 11,
+    "health_score": 0,
+    "severity_breakdown": {
+      "critical": 2,
+      "high": 2,
+      "medium": 1,
+      "low": 6
+    },
+    "status_breakdown": {
+      "passed": 6,
+      "failed": 4,
+      "warnings": 1
+    }
+  },
+  "results": [
+    {
+      "category": "服务器配置",
+      "severity": "CRITICAL",
+      "issue": "关键配置缺失: 服务器地址为空, 服务器端口为0, 认证token为空",
+      "solution": "在配置文件中填入正确的服务器地址、端口和token",
+      "status": "FAIL"
+    },
+    {
+      "category": "网络设置",
+      "severity": "LOW",
+      "issue": "基础网络连接正常",
+      "solution": "继续检查其他网络配置",
+      "status": "PASS"
+    },
+    {
+      "category": "网络设置",
+      "severity": "LOW",
+      "issue": "Socket优化配置完整",
+      "solution": "配置正确",
+      "status": "PASS"
+    },
+    {
+      "category": "心跳机制",
+      "severity": "CRITICAL",
+      "issue": "缺少心跳功能: _send_heartbeat, _heartbeat_loop",
+      "solution": "实现完整的心跳保活机制",
+      "status": "FAIL"
+    },
+    {
+      "category": "数据验证",
+      "severity": "HIGH",
+      "issue": "缺少数据验证功能: _recv_exact",
+      "solution": "实现数据完整性验证机制",
+      "status": "FAIL"
+    },
+    {
+      "category": "错误处理",
+      "severity": "MEDIUM",
+      "issue": "异常处理覆盖不足",
+      "solution": "增加更完善的异常处理机制",
+      "status": "WARNING"
+    },
+    {
+      "category": "错误处理",
+      "severity": "HIGH",
+      "issue": "缺少重连机制",
+      "solution": "实现自动重连功能",
+      "status": "FAIL"
+    },
+    {
+      "category": "连接监控",
+      "severity": "LOW",
+      "issue": "连接监控功能完善",
+      "solution": "继续优化监控指标",
+      "status": "PASS"
+    },
+    {
+      "category": "性能设置",
+      "severity": "LOW",
+      "issue": "缓冲区配置存在",
+      "solution": "验证缓冲区大小是否合适",
+      "status": "PASS"
+    },
+    {
+      "category": "性能设置",
+      "severity": "LOW",
+      "issue": "队列配置存在",
+      "solution": "验证队列大小设置",
+      "status": "PASS"
+    },
+    {
+      "category": "依赖项",
+      "severity": "LOW",
+      "issue": "必需模块完整",
+      "solution": "检查可选模块",
+      "status": "PASS"
+    }
+  ],
+  "recommendations": [
+    "🔴 立即修复所有严重问题，系统无法正常工作",
+    "🟠 优先修复高优先级问题，影响系统稳定性",
+    "🟡 修复中等优先级问题，提升系统性能",
+    "📝 首先配置正确的服务器地址、端口和认证信息",
+    "💓 实现心跳机制以保持连接稳定"
+  ]
+}

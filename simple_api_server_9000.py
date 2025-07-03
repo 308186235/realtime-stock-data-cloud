@@ -57,13 +57,13 @@ class SimpleAPIRequestHandler(BaseHTTPRequestHandler):
             elif path == '/api/agent/status':
                 response = {
                     "agent_status": "running",
-                    "learning_progress": random.randint(60, 95),
+                    "learning_progress": None  # 需要真实数据,
                     "active_strategies": 3,
                     "last_update": datetime.now().isoformat(),
                     "performance": {
-                        "win_rate": round(random.uniform(0.6, 0.8), 2),
-                        "total_trades": random.randint(100, 500),
-                        "profit_rate": round(random.uniform(0.05, 0.15), 3)
+                        "win_rate": None  # 需要真实数据,
+                        "total_trades": None  # 需要真实数据,
+                        "profit_rate": None  # 需要真实数据
                     }
                 }
             elif path == '/api/trading/summary':
@@ -82,10 +82,10 @@ class SimpleAPIRequestHandler(BaseHTTPRequestHandler):
                 response = {
                     "symbol": symbol,
                     "name": "平安银行" if symbol == "000001" else f"股票{symbol}",
-                    "price": round(random.uniform(10, 50), 2),
-                    "change": round(random.uniform(-2, 3), 2),
+                    "price": None  # 需要真实数据,
+                    "change": None  # 需要真实数据,
                     "change_percent": round(random.uniform(-5, 8), 2),
-                    "volume": random.randint(1000000, 10000000),
+                    "volume": None  # 需要真实数据,
                     "timestamp": datetime.now().isoformat()
                 }
             else:
@@ -156,7 +156,7 @@ class SimpleAPIRequestHandler(BaseHTTPRequestHandler):
                     "order_id": f"order_{random.randint(10000, 99999)}",
                     "symbol": symbol,
                     "quantity": quantity,
-                    "price": round(random.uniform(10, 50), 2),
+                    "price": None  # 需要真实数据,
                     "timestamp": datetime.now().isoformat()
                 }
             elif path == '/api/trading/sell':
@@ -168,7 +168,7 @@ class SimpleAPIRequestHandler(BaseHTTPRequestHandler):
                     "order_id": f"order_{random.randint(10000, 99999)}",
                     "symbol": symbol,
                     "quantity": quantity,
-                    "price": round(random.uniform(10, 50), 2),
+                    "price": None  # 需要真实数据,
                     "timestamp": datetime.now().isoformat()
                 }
             else:

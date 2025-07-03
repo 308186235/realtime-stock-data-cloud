@@ -12,48 +12,7 @@ class TradingService {
     this.apiBaseUrl = baseUrl;
   }
 
-  /**
-   * 获取支持的券商列表
-   */
-  async getSupportedBrokers() {
-    try {
-      // 首先尝试从Agent系统获取
-      try {
-        const response = await uni.request({
-          url: `${this.apiBaseUrl}/api/brokers`,
-          method: 'GET',
-          timeout: 5000
-        });
 
-        if (response.statusCode === 200 && response.data) {
-          console.log('[Agent数据] 成功获取券商列表');
-          return response.data;
-        }
-      } catch (apiError) {
-        console.warn('从Agent API获取券商列表失败:', apiError);
-      }
-
-      // 使用备用券商列表
-      console.log('[备用数据] 使用默认券商列表');
-      return {
-        success: true,
-        data: [
-          { id: 'agent', name: 'Agent智能交易', type: 'ai', status: 'active' },
-          { id: 'dongwu', name: '东吴证券', type: 'traditional', status: 'available' },
-          { id: 'tonghuashun', name: '同花顺', type: 'platform', status: 'available' }
-        ]
-      };
-    } catch (error) {
-      console.error('获取券商列表异常:', error);
-      // 返回默认数据而不是抛出错误
-      return {
-        success: false,
-        data: [
-          { id: 'agent', name: 'Agent智能交易', type: 'ai', status: 'active' }
-        ]
-      };
-    }
-  }
   
   /**
    * 连接到交易服务
@@ -65,56 +24,19 @@ class TradingService {
    * @param {number} [params.server_port] - 服务器端口
    */
   async connect(params = {}) {
-    try {
-      // 首先尝试连接Agent交易系统
-      try {
-        const response = await uni.request({
-          url: `${this.apiBaseUrl}/api/trading/connect`,
-          method: 'POST',
-          data: {
-            broker_type: params.broker_type || 'agent',
-            account_id: params.account_id || 'agent_account',
-            ...params
-          },
-          timeout: 10000
-        });
+    console.log('[系统] 交易服务连接功能已禁用 - 使用Agent虚拟交易');
 
-        if (response.statusCode === 200) {
-          console.log('[Agent交易] 连接成功');
-          return {
-            success: true,
-            message: 'Agent智能交易系统连接成功',
-            data: response.data
-          };
-        }
-      } catch (apiError) {
-        console.warn('连接Agent交易系统失败:', apiError);
+    // 直接返回Agent虚拟交易状态，避免后端连接尝试
+    return {
+      success: true,
+      message: 'Agent虚拟交易系统已就绪',
+      data: {
+        broker_type: 'agent_virtual',
+        status: 'ready',
+        connection_time: new Date().toISOString(),
+        note: '使用Agent虚拟交易，无需连接外部交易系统'
       }
-
-      // 模拟连接成功（确保UI正常工作）
-      console.log('[模拟连接] Agent智能交易系统');
-      return {
-        success: true,
-        message: 'Agent智能交易系统已就绪',
-        data: {
-          broker_type: 'agent',
-          account_id: 'agent_account',
-          status: 'connected',
-          connection_time: new Date().toISOString()
-        }
-      };
-    } catch (error) {
-      console.error('连接交易服务异常:', error);
-      // 返回模拟成功而不是抛出错误
-      return {
-        success: false,
-        message: 'Agent智能交易系统连接失败，使用离线模式',
-        data: {
-          broker_type: 'agent',
-          status: 'offline'
-        }
-      };
-    }
+    };
   }
   
   /**
@@ -172,85 +94,10 @@ class TradingService {
           return result;
         }
       } catch (apiError) {
-        console.warn('从Agent数据服务获取持仓数据失败:', apiError);
+        console.error('从Agent数据服务获取持仓数据失败:', apiError);
+        // 🚨 禁用模拟数据 - API失败时返回错误
+        throw new Error('❌ 无法获取真实持仓数据，系统拒绝要求真实数据。');
       }
-
-      // API失败时使用模拟数据
-      console.log('[备用数据] 使用模拟的持仓数据');
-
-      // 模拟持仓数据
-      const mockPositions = [
-        {
-          symbol: '600519',
-          name: '贵州茅台',
-          volume: 10,
-          available_volume: 10,
-          cost_price: 1680.25,
-          current_price: 1760.88,
-          price_change_pct: 2.15,
-          market_value: 17608.80,
-          profit_loss: 806.30,
-          profit_loss_ratio: 0.048,
-          position_date: '2023-06-15'
-        },
-        {
-          symbol: '000001',
-          name: '平安银行',
-          volume: 1000,
-          available_volume: 1000,
-          cost_price: 16.05,
-          current_price: 15.23,
-          price_change_pct: -1.36,
-          market_value: 15230.00,
-          profit_loss: -820.00,
-          profit_loss_ratio: -0.0511,
-          position_date: '2023-05-22'
-        },
-        {
-          symbol: '601318',
-          name: '中国平安',
-          volume: 200,
-          available_volume: 200,
-          cost_price: 45.30,
-          current_price: 48.75,
-          price_change_pct: 0.56,
-          market_value: 9750.00,
-          profit_loss: 690.00,
-          profit_loss_ratio: 0.0761,
-          position_date: '2023-07-03'
-        },
-        {
-          symbol: '300750',
-          name: '宁德时代',
-          volume: 50,
-          available_volume: 50,
-          cost_price: 200.40,
-          current_price: 226.60,
-          price_change_pct: 4.25,
-          market_value: 11330.00,
-          profit_loss: 1310.00,
-          profit_loss_ratio: 0.1307,
-          position_date: '2023-04-18'
-        },
-        {
-          symbol: '600050',
-          name: '中国联通',
-          volume: 5000,
-          available_volume: 5000,
-          cost_price: 5.12,
-          current_price: 4.68,
-          price_change_pct: -0.21,
-          market_value: 23400.00,
-          profit_loss: -2200.00,
-          profit_loss_ratio: -0.0859,
-          position_date: '2023-01-30'
-        }
-      ];
-
-      return Promise.resolve({
-        success: true,
-        data: mockPositions
-      });
       
       const response = await uni.request({
         url: `${API_PREFIX}/positions`,
@@ -359,11 +206,12 @@ class TradingService {
    */
   async getTrades(params = {}) {
     try {
-      // 开发环境下使用模拟数据
+      // 开发环境下要求真实数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的交易数据');
-        
-        // 模拟交易数据
+        console.log('[开发模式] 拒绝返回模拟数据');
+
+        // ❌ 拒绝返回模拟交易数据
+        throw new Error('❌ 拒绝返回模拟数据！系统要求使用真实数据源');
         const mockTrades = [
           {
             id: 'trade001',
@@ -547,89 +395,13 @@ class TradingService {
    * @returns {Promise<Object>} 账户余额信息
    */
   async getDongwuXiucaiBalance() {
-    try {
-      // 首先尝试从Agent数据服务获取真实数据
-      try {
-        const result = await agentDataService.getAccountBalance();
-        if (result.success) {
-          console.log('[Agent真实数据] 成功获取账户余额');
-          // 转换为东吴秀才格式
-          return {
-            success: true,
-            data: {
-              ...result.data,
-              account_type: 'Agent智能账户'
-            }
-          };
-        }
-      } catch (apiError) {
-        console.warn('从Agent数据服务获取账户余额失败:', apiError);
-      }
+    console.log('[系统] 东吴秀才账户功能已删除 - 不需要此功能');
 
-      // API失败时使用模拟数据
-      console.log('[备用数据] 使用模拟的东吴秀才账户数据');
-      return Promise.resolve({
-        success: true,
-        data: {
-          balance: 120000.00,
-          available: 80000.00,
-          market_value: 40000.00,
-          total_assets: 120000.00,
-          frozen: 0.00,
-          account_type: '东吴秀才'
-        }
-      });
-      
-      // 登录同花顺并获取账户信息
-      const loginResponse = await uni.request({
-        url: `${THS_API_PREFIX}/login`,
-        method: 'POST',
-        data: {
-          account: '东吴秀才账号', // 实际应用中应从配置或安全存储获取
-          password: '密码',       // 实际应用中应从配置或安全存储获取
-          broker_type: 'dongwu_xiucai'
-        }
-      });
-      
-      if (loginResponse.statusCode !== 200 || !loginResponse.data.success) {
-        throw new Error(`登录同花顺失败: ${loginResponse.data?.message || loginResponse.statusCode}`);
-      }
-      
-      const sessionId = loginResponse.data.session_id;
-      
-      // 获取账户信息
-      const accountResponse = await uni.request({
-        url: `${THS_API_PREFIX}/account_info`,
-        method: 'GET',
-        data: { session_id: sessionId }
-      });
-      
-      if (accountResponse.statusCode !== 200 || !accountResponse.data.success) {
-        throw new Error(`获取账户信息失败: ${accountResponse.data?.message || accountResponse.statusCode}`);
-      }
-      
-      // 登出
-      await uni.request({
-        url: `${THS_API_PREFIX}/logout`,
-        method: 'POST',
-        data: { session_id: sessionId }
-      });
-      
-      // 为账户信息添加账户类型标识
-      const accountInfo = accountResponse.data.data;
-      accountInfo.account_type = '东吴秀才';
-      
-      return {
-        success: true,
-        data: accountInfo
-      };
-    } catch (error) {
-      console.error('获取东吴秀才账户信息异常:', error);
-      return {
-        success: false,
-        message: error.message || '获取东吴秀才账户信息失败'
-      };
-    }
+    // 直接返回错误，提示功能已删除
+    return {
+      success: false,
+      message: '💡 东吴秀才账户功能已删除，请使用Agent虚拟账户'
+    };
   }
   
   /**
@@ -641,11 +413,12 @@ class TradingService {
    */
   async getBalanceHistory(params = {}) {
     try {
-      // 开发环境下使用模拟数据
+      // 开发环境下要求真实数据
       if (process.env.NODE_ENV === 'development') {
-        console.log('[开发模式] 使用模拟的余额历史数据');
-        
-        // 生成一个月的模拟余额变化数据
+        console.log('[开发模式] 拒绝返回模拟数据');
+
+        // ❌ 拒绝生成模拟余额变化数据
+        throw new Error('❌ 拒绝返回模拟数据！系统要求使用真实数据源');
         const endDate = params.end_date ? new Date(params.end_date) : new Date();
         const startDate = params.start_date ? new Date(params.start_date) : new Date(endDate);
         startDate.setMonth(startDate.getMonth() - 1);

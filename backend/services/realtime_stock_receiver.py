@@ -5,19 +5,31 @@ API Key: QT_wat5QfcJ6N9pDZM5
 """
 import socket
 import struct
-import asyncio
 import threading
 import time
 import json
 import logging
+import hashlib
 from typing import Optional, Callable, Dict, Any
 from dataclasses import dataclass
-from collections import deque
-import redis
 from datetime import datetime
 import queue
+from enum import Enum
+
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+class ConnectionState(Enum):
+    """连接状态"""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    FAILED = "failed"
 
 @dataclass
 class ConnectionConfig:
@@ -26,11 +38,24 @@ class ConnectionConfig:
     host: str = ""  # 需要填入实际服务器地址
     port: int = 0   # 需要填入实际端口
     token: str = ""  # 需要填入实际token
-    
+
     # 性能配置
     buffer_size: int = 65536  # 64KB缓冲区
     max_queue_size: int = 100000  # 最大队列大小
     redis_batch_size: int = 1000  # Redis批量写入大小
+
+    # 心跳配置
+    heartbeat_interval: int = 30  # 心跳间隔(秒)
+    heartbeat_timeout: int = 90   # 心跳超时(秒)
+
+    # 重连配置
+    max_retries: int = 10         # 最大重试次数
+    retry_base_delay: int = 2     # 重试基础延迟
+    retry_max_delay: int = 300    # 最大重试延迟(5分钟)
+
+    # 数据验证配置
+    enable_checksum: bool = True  # 启用校验和
+    max_message_size: int = 10 * 1024 * 1024  # 10MB最大消息
     
 class RealtimeStockReceiver:
     """实时股票数据接收器"""

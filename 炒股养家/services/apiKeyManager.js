@@ -9,7 +9,7 @@ class ApiKeyManager {
     this.apiKeys = [
       {
         id: 'primary',
-        key: 'QT_wat5QfcJ6N9pDZM5',
+        key: process.env.STOCK_API_KEY || 'YOUR_API_KEY_HERE',
         name: '主要API Key',
         status: 'active',
         lastUsed: null,

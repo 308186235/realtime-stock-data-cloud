@@ -17,8 +17,8 @@ function request(options) {
     if (!url.startsWith('http')) {
       // 配置基础URL,开发环境使用本地服务器,生产环境使用实际API
       const baseUrl = process.env.NODE_ENV === 'development'
-        ? 'http://localhost:8080'  // 使用代理端口
-        : 'http://localhost:8080';  // 使用代理端口
+        ? 'https://api.aigupiao.me'  // 使用代理端口
+        : 'https://api.aigupiao.me';  // 使用代理端口
       url = baseUrl + url;
     }
     

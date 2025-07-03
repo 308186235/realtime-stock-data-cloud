@@ -4,8 +4,13 @@
 import { createClient } from '@supabase/supabase-js'
 
 // Supabase配置
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://zzukfxwavknskqcepsjb.supabase.co'
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw'
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
+const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+
+// 检查必要的环境变量
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing required Supabase environment variables');
+}
 
 // 创建Supabase客户端
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

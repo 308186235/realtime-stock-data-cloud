@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Union, Optional, Tuple
 import aiohttp
 import threading
 from concurrent.futures import ThreadPoolExecutor
+import requests
 
 # 璁剧疆鏃ュ織
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -817,6 +818,75 @@ async def main():
     # 鍋滄Agent
     await agent.stop()
 
+    # 本地交易集成功能
+    async def execute_local_trade(self, action: str, stock_code: str, quantity: int, price: float = None) -> Dict[str, Any]:
+        """执行本地交易"""
+        try:
+            api_url = "https://api.aigupiao.me/api/cloud-local-trading/execute-trade"
+
+            trade_data = {
+                "action": action,
+                "stock_code": stock_code,
+                "quantity": quantity,
+                "price": price,
+                "agent_id": self.name
+            }
+
+            response = requests.post(api_url, json=trade_data, timeout=30)
+            result = response.json()
+
+            if result.get("success"):
+                logger.info(f"✅ 本地交易执行成功: {action} {stock_code} {quantity}股")
+                return {"success": True, "message": "交易指令已发送到本地", "result": result}
+            else:
+                logger.error(f"❌ 本地交易执行失败: {result.get('message', '未知错误')}")
+                return {"success": False, "message": result.get("message", "交易失败")}
+
+        except Exception as e:
+            logger.error(f"❌ 本地交易API调用失败: {e}")
+            return {"success": False, "message": f"API调用失败: {e}"}
+
+    async def export_local_data(self, data_type: str = "all") -> Dict[str, Any]:
+        """导出本地数据"""
+        try:
+            api_url = "https://api.aigupiao.me/api/cloud-local-trading/export-data"
+
+            export_data = {
+                "data_type": data_type,
+                "agent_id": self.name
+            }
+
+            response = requests.post(api_url, json=export_data, timeout=30)
+            result = response.json()
+
+            if result.get("success"):
+                logger.info(f"✅ 本地数据导出成功: {data_type}")
+                return {"success": True, "message": "数据导出指令已发送到本地", "result": result}
+            else:
+                logger.error(f"❌ 本地数据导出失败: {result.get('message', '未知错误')}")
+                return {"success": False, "message": result.get("message", "导出失败")}
+
+        except Exception as e:
+            logger.error(f"❌ 本地数据导出API调用失败: {e}")
+            return {"success": False, "message": f"API调用失败: {e}"}
+
+    async def get_local_status(self) -> Dict[str, Any]:
+        """获取本地状态"""
+        try:
+            api_url = "https://api.aigupiao.me/api/cloud-local-trading/local-status"
+
+            response = requests.get(api_url, timeout=10)
+            result = response.json()
+
+            if result.get("success"):
+                return {"success": True, "local_status": result.get("local_status", {})}
+            else:
+                return {"success": False, "message": result.get("message", "获取状态失败")}
+
+        except Exception as e:
+            logger.error(f"❌ 获取本地状态失败: {e}")
+            return {"success": False, "message": f"API调用失败: {e}"}
+
 if __name__ == "__main__":
     # 杩愯绀轰緥
-    asyncio.run(main()) 
+    asyncio.run(main())

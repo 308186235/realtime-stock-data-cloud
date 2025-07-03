@@ -1,0 +1,89 @@
+{
+  "timestamp": "2025-07-02 03:45:00",
+  "summary": {
+    "total_checks": 8,
+    "passed_checks": 8,
+    "failed_checks": 0,
+    "success_rate": "100.0%"
+  },
+  "by_type": {
+    "frontend_config": {
+      "passed": 3,
+      "failed": 0
+    },
+    "strategy_config": {
+      "passed": 1,
+      "failed": 0
+    },
+    "deployment_config": {
+      "passed": 2,
+      "failed": 0
+    },
+    "cors_config": {
+      "passed": 2,
+      "failed": 0
+    }
+  },
+  "detailed_results": [
+    {
+      "file": "frontend/gupiao1/env.js",
+      "type": "frontend_config",
+      "passed": true,
+      "issues": [],
+      "message": "配置正确"
+    },
+    {
+      "file": "frontend/stock5/env.js",
+      "type": "frontend_config",
+      "passed": true,
+      "issues": [],
+      "message": "配置正确"
+    },
+    {
+      "file": "炒股养家/env.js",
+      "type": "frontend_config",
+      "passed": true,
+      "issues": [],
+      "message": "配置正确"
+    },
+    {
+      "file": "config/trading_strategy.json",
+      "type": "strategy_config",
+      "passed": true,
+      "issues": [],
+      "message": "策略配置完整"
+    },
+    {
+      "file": "_redirects",
+      "type": "deployment_config",
+      "passed": true,
+      "message": "文件存在"
+    },
+    {
+      "file": "wrangler.toml",
+      "type": "deployment_config",
+      "passed": true,
+      "message": "文件存在"
+    },
+    {
+      "file": "backend/app.py",
+      "type": "cors_config",
+      "passed": true,
+      "issues": [],
+      "message": "CORS配置正确"
+    },
+    {
+      "file": "cloud_app.py",
+      "type": "cors_config",
+      "passed": true,
+      "issues": [],
+      "message": "CORS配置正确"
+    }
+  ],
+  "recommendations": [
+    "测试前端与后端的连接",
+    "验证Cloudflare Pages部署",
+    "检查移动端访问",
+    "运行完整的功能测试"
+  ]
+}

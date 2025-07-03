@@ -7,7 +7,7 @@ import { createKVManager, cacheMiddleware, rateLimitMiddleware } from '../kv-sto
 
 // 配置
 const CONFIG = {
-  API_BASE_URL: 'https://trading-system-api.netlify.app',
+  API_BASE_URL: 'https://realtime-stock-api.pages.dev',
   CACHE_TTL: 300, // 5分钟缓存
   CORS_HEADERS: {
     'Access-Control-Allow-Origin': '*',

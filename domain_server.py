@@ -186,8 +186,8 @@ body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
         response = {
             "code": code,
             "name": f"股票{code}",
-            "price": round(random.uniform(10, 100), 2),
-            "change": round(random.uniform(-5, 5), 2),
+            "price": None  # 需要真实股票数据,
+            "change": None  # 需要真实股票数据,
             "timestamp": datetime.now().isoformat(),
             "domain": DOMAIN,
             "host": host,

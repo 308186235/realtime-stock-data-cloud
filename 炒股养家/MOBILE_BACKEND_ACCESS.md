@@ -6,8 +6,8 @@
 
 1. **环境配置文件** (`env.js`)
    - 开发环境: `http://localhost:8000`
-   - 生产环境: `https://aigupiao.me`
-   - WebSocket: `wss://aigupiao.me/ws`
+   - 生产环境: `https://api.aigupiao.me`
+   - WebSocket: `wss://api.aigupiao.me/ws`
 
 2. **服务配置** (`services/config.js`)
    - API基础URL已更新为您的域名
@@ -21,7 +21,7 @@
 ### ⚠️ **需要检查的部分**:
 
 1. **后端CORS配置**
-   - 需要确保后端允许来自 `https://aigupiao.me` 的请求
+   - 需要确保后端允许来自 `https://app.aigupiao.me` 的请求
    - 检查 `backend/app.py` 中的CORS设置
 
 2. **SSL证书**

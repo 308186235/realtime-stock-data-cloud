@@ -1,0 +1,207 @@
+{
+  "timestamp": "2025-07-02T05:00:00",
+  "verification_type": "Cloudflare配置验证",
+  "summary": {
+    "total_checks": 31,
+    "passed_checks": 28,
+    "failed_checks": 3,
+    "success_rate": "90.3%"
+  },
+  "expected_domains": {
+    "api": "api.aigupiao.me",
+    "app": "app.aigupiao.me",
+    "mobile": "mobile.aigupiao.me",
+    "admin": "admin.aigupiao.me"
+  },
+  "verification_results": [
+    {
+      "category": "前端配置",
+      "item": "炒股养家/env.js",
+      "status": true,
+      "message": "API地址正确"
+    },
+    {
+      "category": "前端配置",
+      "item": "炒股养家/env.js (WebSocket)",
+      "status": true,
+      "message": "WebSocket地址正确"
+    },
+    {
+      "category": "前端配置",
+      "item": "炒股养家/env.js (Mock Data)",
+      "status": true,
+      "message": "模拟数据已禁用"
+    },
+    {
+      "category": "前端配置",
+      "item": "炒股养家/env.js (Netlify清理)",
+      "status": true,
+      "message": "无Netlify残留"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/gupiao1/env.js",
+      "status": true,
+      "message": "API地址正确"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/gupiao1/env.js (WebSocket)",
+      "status": true,
+      "message": "WebSocket地址正确"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/gupiao1/env.js (Mock Data)",
+      "status": true,
+      "message": "模拟数据已禁用"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/gupiao1/env.js (Netlify清理)",
+      "status": true,
+      "message": "无Netlify残留"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/stock5/env.js",
+      "status": true,
+      "message": "API地址正确"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/stock5/env.js (WebSocket)",
+      "status": true,
+      "message": "WebSocket地址正确"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/stock5/env.js (Mock Data)",
+      "status": true,
+      "message": "模拟数据已禁用"
+    },
+    {
+      "category": "前端配置",
+      "item": "frontend/stock5/env.js (Netlify清理)",
+      "status": true,
+      "message": "无Netlify残留"
+    },
+    {
+      "category": "API配置",
+      "item": "炒股养家/services/config.js",
+      "status": true,
+      "message": "基础URL正确"
+    },
+    {
+      "category": "API配置",
+      "item": "frontend/gupiao1/services/config.js",
+      "status": true,
+      "message": "基础URL正确"
+    },
+    {
+      "category": "API配置",
+      "item": "frontend/stock5/services/config.js",
+      "status": false,
+      "message": "文件不存在"
+    },
+    {
+      "category": "后端配置",
+      "item": "backend/app.py (CORS)",
+      "status": true,
+      "message": "CORS配置正确"
+    },
+    {
+      "category": "后端配置",
+      "item": "cloud_app.py (CORS)",
+      "status": true,
+      "message": "CORS配置正确"
+    },
+    {
+      "category": "Cloudflare文件",
+      "item": "wrangler.toml",
+      "status": true,
+      "message": "文件存在"
+    },
+    {
+      "category": "Cloudflare文件",
+      "item": "wrangler.toml (域名)",
+      "status": true,
+      "message": "域名配置正确"
+    },
+    {
+      "category": "Cloudflare文件",
+      "item": "_redirects",
+      "status": true,
+      "message": "文件存在"
+    },
+    {
+      "category": "Cloudflare文件",
+      "item": "_redirects (重定向)",
+      "status": true,
+      "message": "重定向配置正确"
+    },
+    {
+      "category": "Cloudflare文件",
+      "item": "cloudflare-pages-config.md",
+      "status": true,
+      "message": "文件存在"
+    },
+    {
+      "category": "Cloudflare文件",
+      "item": "CLOUDFLARE_DEPLOYMENT_GUIDE.md",
+      "status": true,
+      "message": "文件存在"
+    },
+    {
+      "category": "Netlify清理",
+      "item": "netlify.toml",
+      "status": true,
+      "message": "已清理"
+    },
+    {
+      "category": "Netlify清理",
+      "item": "_netlify",
+      "status": true,
+      "message": "已清理"
+    },
+    {
+      "category": "Netlify清理",
+      "item": "netlify-final",
+      "status": true,
+      "message": "已清理"
+    },
+    {
+      "category": "Netlify清理",
+      "item": "netlify-trading",
+      "status": true,
+      "message": "已清理"
+    },
+    {
+      "category": "Netlify清理",
+      "item": "netlify-trading-fixed",
+      "status": true,
+      "message": "已清理"
+    },
+    {
+      "category": "代码扫描",
+      "item": "炒股养家",
+      "status": false,
+      "message": "发现Netlify引用"
+    },
+    {
+      "category": "代码扫描",
+      "item": "frontend",
+      "status": true,
+      "message": "无Netlify引用"
+    },
+    {
+      "category": "代码扫描",
+      "item": "backend",
+      "status": false,
+      "message": "发现Netlify引用"
+    }
+  ],
+  "recommendations": [
+    "检查API服务配置文件"
+  ]
+}

@@ -17,7 +17,7 @@ function request(options) {
     if (!url.startsWith('http')) {
       // 配置基础URL，开发环境使用本地服务器，生产环境使用实际API
       const baseUrl = process.env.NODE_ENV === 'development'
-        ? 'http://localhost:8000'
+        ? 'https://api.aigupiao.me'
         : 'https://aigupiao.me';
       url = baseUrl + url;
     }

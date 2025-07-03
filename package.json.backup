@@ -1,0 +1,29 @@
+{
+  "name": "ai-stock-trading-system",
+  "version": "1.0.0",
+  "description": "AI智能股票交易系统",
+  "type": "module",
+  "main": "cloud-agent-system.js",
+  "scripts": {
+    "test": "node test-cloud-agent.js",
+    "test-agent": "node test-cloud-agent.js",
+    "test-integration": "python test_integration_final.py",
+    "start-local": "python enhanced_local_api.py",
+    "deploy-backend": "powershell -ExecutionPolicy Bypass -File deploy-backend.ps1",
+    "deploy-frontend": "powershell -ExecutionPolicy Bypass -File deploy-frontend.ps1",
+    "deploy": "wrangler deploy"
+  },
+  "keywords": [
+    "ai",
+    "stock",
+    "trading",
+    "automation",
+    "agent",
+    "cloudflare"
+  ],
+  "author": "AI Stock Trading System",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

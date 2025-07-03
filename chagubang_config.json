@@ -1,0 +1,54 @@
+{
+  "tokens": [
+    {
+      "token": "demo_token_123",
+      "description": "演示Token 1",
+      "added_time": "2025-07-02T11:50:51.973471",
+      "last_test_time": "2025-07-02T12:09:49.498986",
+      "test_status": "invalid"
+    },
+    {
+      "token": "test_token_456",
+      "description": "演示Token 2",
+      "added_time": "2025-07-02T11:50:51.974219",
+      "last_test_time": null,
+      "test_status": "untested"
+    },
+    {
+      "token": "sample_token_789",
+      "description": "演示Token 3",
+      "added_time": "2025-07-02T11:50:51.974644",
+      "last_test_time": null,
+      "test_status": "untested"
+    },
+    {
+      "token": "QT_wat5QfcJ6N9pDZM5",
+      "description": "生产环境key",
+      "added_time": "2025-07-02T12:20:16.966725",
+      "last_test_time": "2025-07-02T12:20:28.638579",
+      "test_status": "error"
+    }
+  ],
+  "current_token": "",
+  "last_test_time": null,
+  "test_results": {
+    "demo_token_123": {
+      "token": "demo_token_123",
+      "test_time": "2025-07-02T12:09:49.498986",
+      "status": "invalid",
+      "message": "Token鉴权失败",
+      "can_connect": true,
+      "can_authenticate": false,
+      "receives_data": false
+    },
+    "QT_wat5QfcJ6N9pDZM5": {
+      "token": "QT_wat5QfcJ6N9pDZM5",
+      "test_time": "2025-07-02T12:20:28.638579",
+      "status": "error",
+      "message": "服务器响应超时",
+      "can_connect": true,
+      "can_authenticate": false,
+      "receives_data": false
+    }
+  }
+}

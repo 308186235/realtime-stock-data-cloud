@@ -150,50 +150,25 @@ def _save_to_local(symbol: str, data: pd.DataFrame) -> bool:
         return False
 
 def _create_sample_data(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """创建示例数据用于开发和测试"""
-    # 转换日期为datetime对象
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
-    
-    # 创建日期范围
-    dates = []
-    current_date = start
-    
-    while current_date <= end:
-        # 跳过周末
-        if current_date.weekday() < 5:  # 0-4表示周一至周五
-            dates.append(current_date)
-        current_date += timedelta(days=1)
-    
-    # 生成初始价格
-    # 使用股票代码的哈希值作为随机种子,这样同一股票会生成相同的数据
-    np.random.seed(hash(symbol) % 2**32)
-    
-    initial_price = np.random.uniform(50, 200)
-    prices = [initial_price]
-    
-    # 生成后续价格 (随机游走模型)
-    for i in range(1, len(dates)):
-        # 每日价格变化幅度限制在前一日的-3%到+3%之间
-        change_pct = np.random.uniform(-0.03, 0.03)
-        new_price = prices[-1] * (1 + change_pct)
-        prices.append(new_price)
-    
-    # 创建示例数据
-    data = pd.DataFrame({
-        'date': dates,
-        'open': prices,
-        'high': [p * (1 + np.random.uniform(0, 0.015)) for p in prices],
-        'low': [p * (1 - np.random.uniform(0, 0.015)) for p in prices],
-        'close': [p * (1 + np.random.uniform(-0.01, 0.01)) for p in prices],
-        'volume': [int(np.random.uniform(1000, 10000)) for _ in prices]
-    })
-    
-    # 设置日期为索引
-    data['date'] = pd.to_datetime(data['date'])
-    data.set_index('date', inplace=True)
-    
-    return data
+    """
+    🚨 禁用示例数据创建 - 只允许真实数据
+    """
+    error_msg = f"""
+    ❌ 错误：系统禁止创建示例数据
+
+    请求的股票: {symbol}
+    日期范围: {start_date} 到 {end_date}
+
+    请配置真实数据源：
+    1. 淘宝股票数据推送服务 (API_KEY: QT_wat5QfcJ6N9pDZM5)
+    2. 同花顺实时数据API
+    3. 通达信数据接口
+
+    系统拒绝提供任何模拟或示例数据！
+    """
+
+    logger.error(error_msg)
+    raise ValueError(error_msg)
 
 def get_available_symbols() -> List[Dict[str, str]]:
     """获取可用的股票列表"""

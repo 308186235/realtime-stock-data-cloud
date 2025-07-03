@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-item {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 3px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 API连接测试</h1>
+        
+        <div class="test-item" id="cloud-test">
+            <h3>☁️ 云端API测试</h3>
+            <p>URL: https://ai-stock-trading-backend.308186235.workers.dev</p>
+            <button onclick="testCloudAPI()">测试云端API</button>
+            <div class="result" id="cloud-result">等待测试...</div>
+        </div>
+        
+        <div class="test-item" id="local-test">
+            <h3>💻 本地API测试</h3>
+            <p>URL: http://localhost:5000</p>
+            <button onclick="testLocalAPI()">测试本地API</button>
+            <div class="result" id="local-result">等待测试...</div>
+        </div>
+        
+        <div class="test-item" id="integration-test">
+            <h3>🔗 集成测试</h3>
+            <button onclick="testIntegration()">测试完整流程</button>
+            <div class="result" id="integration-result">等待测试...</div>
+        </div>
+    </div>
+
+    <script>
+        const CLOUD_API_URL = 'https://ai-stock-trading-backend.308186235.workers.dev';
+        const LOCAL_API_URL = 'http://localhost:5000';
+
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            element.textContent += `[${timestamp}] ${message}\n`;
+            
+            const container = element.parentElement;
+            container.className = 'test-item ' + (type === 'success' ? 'success' : type === 'error' ? 'error' : 'loading');
+        }
+
+        async function testCloudAPI() {
+            const resultId = 'cloud-result';
+            document.getElementById(resultId).textContent = '';
+            log(resultId, '🔍 开始测试云端API...', 'loading');
+            
+            try {
+                // 测试健康检查
+                log(resultId, '1. 测试健康检查...');
+                const healthResponse = await fetch(`${CLOUD_API_URL}/api/health`);
+                const healthData = await healthResponse.json();
+                log(resultId, `✅ 健康检查成功: ${healthData.status}`);
+                
+                // 测试Agent分析
+                log(resultId, '2. 测试Agent分析...');
+                const analysisResponse = await fetch(`${CLOUD_API_URL}/api/agent-analysis`);
+                const analysisData = await analysisResponse.json();
+                log(resultId, `✅ Agent分析成功: 获取${analysisData.data.length}条数据`);
+                
+                // 测试账户余额
+                log(resultId, '3. 测试账户余额...');
+                const balanceResponse = await fetch(`${CLOUD_API_URL}/api/account-balance`);
+                const balanceData = await balanceResponse.json();
+                log(resultId, `✅ 账户余额成功: 总资产¥${balanceData.data.balance.totalAssets}`);
+                
+                // 测试持仓信息
+                log(resultId, '4. 测试持仓信息...');
+                const positionsResponse = await fetch(`${CLOUD_API_URL}/api/account-positions`);
+                const positionsData = await positionsResponse.json();
+                log(resultId, `✅ 持仓信息成功: ${positionsData.data.length}只股票`);
+                
+                log(resultId, '🎉 云端API测试全部通过！', 'success');
+                
+            } catch (error) {
+                log(resultId, `❌ 云端API测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function testLocalAPI() {
+            const resultId = 'local-result';
+            document.getElementById(resultId).textContent = '';
+            log(resultId, '🔍 开始测试本地API...', 'loading');
+            
+            try {
+                // 测试健康检查
+                log(resultId, '1. 测试健康检查...');
+                const healthResponse = await fetch(`${LOCAL_API_URL}/health`);
+                const healthData = await healthResponse.json();
+                log(resultId, `✅ 健康检查成功: ${healthData.status}`);
+                
+                // 测试余额获取
+                log(resultId, '2. 测试余额获取...');
+                const balanceResponse = await fetch(`${LOCAL_API_URL}/balance`);
+                const balanceData = await balanceResponse.json();
+                if (balanceData.success) {
+                    log(resultId, `✅ 余额获取成功: ¥${balanceData.data.available_cash}`);
+                } else {
+                    log(resultId, `❌ 余额获取失败: ${balanceData.error}`);
+                }
+                
+                log(resultId, '🎉 本地API测试完成！', 'success');
+                
+            } catch (error) {
+                log(resultId, `❌ 本地API测试失败: ${error.message}`, 'error');
+                log(resultId, '💡 请确保本地API服务器正在运行 (python enhanced_local_api.py)');
+            }
+        }
+
+        async function testIntegration() {
+            const resultId = 'integration-result';
+            document.getElementById(resultId).textContent = '';
+            log(resultId, '🔍 开始集成测试...', 'loading');
+            
+            try {
+                // 1. 测试云端API
+                log(resultId, '第1步: 测试云端API连接...');
+                const cloudHealth = await fetch(`${CLOUD_API_URL}/api/health`);
+                const cloudData = await cloudHealth.json();
+                log(resultId, `✅ 云端API连接正常: ${cloudData.status}`);
+                
+                // 2. 测试本地API
+                log(resultId, '第2步: 测试本地API连接...');
+                try {
+                    const localHealth = await fetch(`${LOCAL_API_URL}/health`);
+                    const localData = await localHealth.json();
+                    log(resultId, `✅ 本地API连接正常: ${localData.status}`);
+                } catch (error) {
+                    log(resultId, `⚠️ 本地API连接失败: ${error.message}`);
+                    log(resultId, '💡 本地API可能未启动，但云端API正常');
+                }
+                
+                // 3. 测试数据获取
+                log(resultId, '第3步: 测试数据获取...');
+                const analysisResponse = await fetch(`${CLOUD_API_URL}/api/agent-analysis`);
+                const analysisData = await analysisResponse.json();
+                log(resultId, `✅ 获取分析数据: ${analysisData.data.length}条股票信息`);
+                
+                const balanceResponse = await fetch(`${CLOUD_API_URL}/api/account-balance`);
+                const balanceData = await balanceResponse.json();
+                log(resultId, `✅ 获取账户数据: 总资产¥${balanceData.data.balance.totalAssets}`);
+                
+                log(resultId, '🎉 集成测试完成！前端可以正常连接后端API！', 'success');
+                log(resultId, '📱 现在可以重新启动前端应用进行测试');
+                
+            } catch (error) {
+                log(resultId, `❌ 集成测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动测试
+        window.onload = function() {
+            console.log('🚀 API连接测试页面加载完成');
+        };
+    </script>
+</body>
+</html>

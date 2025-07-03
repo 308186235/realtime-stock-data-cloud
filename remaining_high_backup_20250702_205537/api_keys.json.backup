@@ -1,0 +1,15 @@
+{
+  "current_key": "prod",
+  "keys": {
+    "prod": {
+      "key": "${STOCK_API_KEY}",
+      "name": "生产环境",
+      "expire": "2025-07-26"
+    },
+    "test": {
+      "key": "${STOCK_API_KEY_TEST}",
+      "name": "测试环境",
+      "expire": "2025-06-27"
+    }
+  }
+}

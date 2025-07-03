@@ -50,7 +50,7 @@ try {
 const envConfigs = {
   // Development environment
   [ENV_TYPE.DEV]: {
-    // API base URL - use domain for external access
+    // API base URL - use actual deployed Worker
     apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket address
@@ -59,8 +59,8 @@ const envConfigs = {
     // Enable debugging
     debug: true,
     
-    // Use mock data
-    useMockData: true,
+    // 🚨 禁用模拟数据 - 只允许真实数据
+    useMockData: false,
     
     // Default theme
     defaultTheme: 'light',
@@ -71,11 +71,11 @@ const envConfigs = {
   
   // Production environment
   [ENV_TYPE.PROD]: {
-    // API base URL
-    apiBaseUrl: 'https://1caf-39-188-128-188.ngrok-free.app',
+    // API base URL - use actual deployed Worker
+    apiBaseUrl: 'https://api.aigupiao.me',
 
     // WebSocket address
-    wsUrl: 'wss://1caf-39-188-128-188.ngrok-free.app/ws',
+    wsUrl: 'wss://api.aigupiao.me/ws',
     
     // Disable debugging
     debug: false,

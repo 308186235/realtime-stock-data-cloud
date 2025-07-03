@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时股票数据API - 云端服务</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        }
+        h1 {
+            text-align: center;
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 1.2em;
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+        .api-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .api-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .api-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(31, 38, 135, 0.5);
+        }
+        .api-card h3 {
+            margin-top: 0;
+            color: #fff;
+            font-size: 1.4em;
+        }
+        .api-card p {
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+        .api-link {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            margin-top: 15px;
+            transition: background 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .api-link:hover {
+            background: rgba(255, 255, 255, 0.3);
+            text-decoration: none;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4CAF50;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            opacity: 0.8;
+            font-size: 0.9em;
+        }
+        .tech-stack {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .tech-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .live-data {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .stock-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stock-item:last-child {
+            border-bottom: none;
+        }
+        .stock-code {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .stock-price {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .stock-change {
+            font-size: 0.9em;
+            padding: 3px 8px;
+            border-radius: 12px;
+        }
+        .positive {
+            background: rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+        }
+        .negative {
+            background: rgba(244, 67, 54, 0.3);
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 实时股票数据API</h1>
+        <p class="subtitle">
+            <span class="status-indicator"></span>
+            高性能云端股票数据服务 - 已部署到全球CDN
+        </p>
+
+        <div class="api-grid">
+            <div class="api-card">
+                <h3>📊 API状态检查</h3>
+                <p>检查API服务运行状态和连接信息</p>
+                <a href="/real-stock-api/status" class="api-link">查看状态</a>
+            </div>
+
+            <div class="api-card">
+                <h3>📈 股票数据查询</h3>
+                <p>获取实时股票行情数据，支持多股票代码查询</p>
+                <a href="/real-stock-api/quotes?symbols=sz000001" class="api-link">测试查询</a>
+            </div>
+
+            <div class="api-card">
+                <h3>🔑 密钥管理</h3>
+                <p>管理API密钥和配置信息</p>
+                <a href="/key-manager.html" class="api-link">密钥管理</a>
+            </div>
+
+            <div class="api-card">
+                <h3>📱 移动端测试</h3>
+                <p>移动设备API连接测试页面</p>
+                <a href="/mobile.html" class="api-link">移动测试</a>
+            </div>
+
+            <div class="api-card">
+                <h3>⚡ 性能测试</h3>
+                <p>API响应速度和性能测试</p>
+                <a href="/test.html" class="api-link">性能测试</a>
+            </div>
+
+            <div class="api-card">
+                <h3>📚 API文档</h3>
+                <p>完整的API使用文档和示例</p>
+                <a href="/docs" class="api-link">查看文档</a>
+            </div>
+        </div>
+
+        <div class="live-data">
+            <h3>📊 实时股票数据预览</h3>
+            <div id="stock-list">
+                <div class="stock-item">
+                    <span class="stock-code">正在加载数据...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="tech-stack">
+            <span class="tech-badge">Cloudflare Pages</span>
+            <span class="tech-badge">Serverless Functions</span>
+            <span class="tech-badge">Real-time API</span>
+            <span class="tech-badge">Global CDN</span>
+            <span class="tech-badge">Stock Data</span>
+        </div>
+
+        <div class="footer">
+            <p>🌐 部署在 Cloudflare Pages | ⚡ 全球加速 | 🔒 安全可靠</p>
+            <p>API Key: QT_wat5QfcJ6N9pDZM5 | 到期时间: 2025-02-01</p>
+        </div>
+    </div>
+
+    <script>
+        // 自动检查API状态
+        async function checkApiStatus() {
+            try {
+                const response = await fetch('/real-stock-api/status');
+                const data = await response.json();
+                console.log('API状态:', data);
+                
+                if (data.success) {
+                    document.querySelector('.status-indicator').style.background = '#4CAF50';
+                } else {
+                    document.querySelector('.status-indicator').style.background = '#f44336';
+                }
+            } catch (error) {
+                console.error('API状态检查失败:', error);
+                document.querySelector('.status-indicator').style.background = '#ff9800';
+            }
+        }
+
+        // 获取实时股票数据
+        async function loadStockData() {
+            try {
+                const symbols = ['sz000001', 'sh600000', 'sh600519', 'sz000858', 'sz002415'];
+                const response = await fetch(`/real-stock-api/quotes?symbols=${symbols.join(',')}`);
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    displayStockData(data.data);
+                }
+            } catch (error) {
+                console.error('获取股票数据失败:', error);
+                document.getElementById('stock-list').innerHTML = 
+                    '<div class="stock-item"><span class="stock-code">数据加载失败，请稍后重试</span></div>';
+            }
+        }
+
+        // 显示股票数据
+        function displayStockData(stocks) {
+            const stockList = document.getElementById('stock-list');
+            stockList.innerHTML = '';
+            
+            stocks.forEach(stock => {
+                const item = document.createElement('div');
+                item.className = 'stock-item';
+                
+                const changeClass = stock.change >= 0 ? 'positive' : 'negative';
+                const changeSymbol = stock.change >= 0 ? '+' : '';
+                
+                item.innerHTML = `
+                    <span class="stock-code">${stock.symbol}</span>
+                    <span class="stock-price">¥${stock.price}</span>
+                    <span class="stock-change ${changeClass}">
+                        ${changeSymbol}${stock.change_percent}%
+                    </span>
+                `;
+                
+                stockList.appendChild(item);
+            });
+        }
+
+        // 页面加载时检查状态和加载数据
+        window.addEventListener('load', () => {
+            checkApiStatus();
+            loadStockData();
+        });
+        
+        // 每30秒检查一次状态
+        setInterval(checkApiStatus, 30000);
+        
+        // 每10秒更新一次股票数据
+        setInterval(loadStockData, 10000);
+    </script>
+</body>
+</html>

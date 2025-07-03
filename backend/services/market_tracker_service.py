@@ -528,51 +528,24 @@ class MarketTrackerService:
         Returns:
             pd.DataFrame: Market data
         """
-        # In a real implementation, this would fetch real-time data from market data service
-        # For demonstration, we'll create mock data
-        
-        try:
-            # Create mock data for demonstration
-            dates = pd.date_range(end=pd.Timestamp.now(), periods=days)
-            
-            # Generate some realistic looking price data
-            n = len(dates)
-            seed = sum(ord(c) for c in stock_code)  # Use stock code to seed the random generator
-            np.random.seed(seed + int(datetime.now().timestamp()) // 3600)  # Change seed each hour
-            
-            # Start with a base price
-            base_price = 50 + (seed % 100)
-            
-            # Generate a price trend with some randomness
-            trend = np.linspace(0, 0.01, n) * base_price
-            random_walk = np.random.normal(0, 0.005, n).cumsum() * base_price
-            
-            close = base_price + trend + random_walk
-            
-            # Create other price columns
-            open_price = close * np.random.normal(1, 0.002, n)
-            high = np.maximum(close, open_price) * np.random.normal(1.005, 0.002, n)
-            low = np.minimum(close, open_price) * np.random.normal(0.995, 0.002, n)
-            
-            # Generate volume
-            volume = np.abs(np.diff(np.concatenate([[0], close]))) * 100000 + np.random.normal(500000, 100000, n)
-            volume = np.maximum(volume, 10000).astype(int)
-            
-            # Create DataFrame
-            data = pd.DataFrame({
-                'date': dates,
-                'open': open_price,
-                'high': high,
-                'low': low,
-                'close': close,
-                'volume': volume
-            })
-            
-            return data
-            
-        except Exception as e:
-            logger.error(f"Error getting market data: {e}")
-            return pd.DataFrame()
+        # 系统禁止创建模拟数据 - 只允许真实市场数据
+
+        error_msg = f"""
+        错误：系统禁止创建模拟历史数据
+
+        请求的股票: {stock_code}
+        请求天数: {days}
+
+        请配置真实数据源：
+        1. 淘宝股票数据推送服务 (API_KEY: QT_wat5QfcJ6N9pDZM5)
+        2. 同花顺历史数据API
+        3. 通达信历史数据接口
+
+        系统拒绝提供任何模拟历史数据！
+        """
+
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     def _save_tracker(self, tracker):
         """

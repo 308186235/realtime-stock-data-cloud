@@ -1,0 +1,16 @@
+{
+  "deployment_type": "Cloudflare Pages",
+  "entry_file": "index.html",
+  "redirects_file": "_redirects",
+  "build_command": null,
+  "build_output": "/",
+  "framework": "Static HTML",
+  "domains": [
+    "abf7ecd1.stock-trading.pages.dev",
+    "app.aigupiao.me"
+  ],
+  "api_endpoints": [
+    "https://api.aigupiao.me"
+  ],
+  "status": "Ready for deployment"
+}

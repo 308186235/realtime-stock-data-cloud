@@ -1,0 +1,36 @@
+{
+  "trading_positions": {
+    "positions": [
+      {
+        "stock_code": "000001",
+        "stock_name": "平安银行",
+        "quantity": 1000,
+        "available_quantity": 1000,
+        "cost_price": 13.2,
+        "current_price": 13.5,
+        "market_value": 13500,
+        "profit_loss": 300,
+        "profit_loss_ratio": 2.27,
+        "source": "local_trading_export"
+      }
+    ],
+    "summary": {
+      "total_market_value": 13500,
+      "total_profit_loss": 300,
+      "total_cost": 13200
+    },
+    "timestamp": "2025-07-03T02:11:58.759346",
+    "source": "local_computer"
+  },
+  "trading_balance": {
+    "balance": {
+      "total_assets": 125680.5,
+      "available_cash": 23450.8,
+      "market_value": 102229.7,
+      "frozen_amount": 0,
+      "source": "local_trading_export"
+    },
+    "timestamp": "2025-07-03T02:11:58.759353",
+    "source": "local_computer"
+  }
+}

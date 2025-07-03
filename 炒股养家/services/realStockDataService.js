@@ -646,7 +646,7 @@ class RealStockDataService {
       queueSize: this.dataQueue.length,
       subscriberCount: this.subscribers.size,
       reconnectAttempts: this.reconnectAttempts,
-      apiKey: this.apiKey.substring(0, 8) + '...' // 部分显示API Key
+      apiKey: this.apiKey ? this.apiKey.substring(0, 8) + '...' : '未配置' // 部分显示API Key
     };
   }
 }

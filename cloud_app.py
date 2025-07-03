@@ -1,4 +1,4 @@
-"""
+from port_manager import port_manager\n"""
 云端实时股票数据服务主应用
 专为云端部署优化，支持Railway、Render等平台
 API Key: QT_wat5QfcJ6N9pDZM5
@@ -39,7 +39,17 @@ app = FastAPI(
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 云端部署允许所有来源
+    allow_origins = [
+    "https://aigupiao.me",
+    "https://api.aigupiao.me",
+    "https://app.aigupiao.me",
+    "https://mobile.aigupiao.me",
+    "https://admin.aigupiao.me",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "capacitor://localhost",
+    "ionic://localhost"
+],  # 云端部署允许所有来源
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

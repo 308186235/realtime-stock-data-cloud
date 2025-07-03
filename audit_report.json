@@ -1,0 +1,205 @@
+{
+  "audit_time": "2025-07-02T21:02:00.514832",
+  "total_issues": 14,
+  "severity_summary": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 13,
+    "LOW": 1
+  },
+  "detailed_issues": {
+    "security": [],
+    "database": [],
+    "dependencies": [],
+    "configuration": [],
+    "performance": [
+      {
+        "file": "backend/supabase_config.py",
+        "issue": "数据库连接池较小",
+        "severity": "LOW",
+        "description": "连接池大小为10，高并发时可能不足"
+      }
+    ],
+    "architecture": [
+      {
+        "issue": "端口8000冲突",
+        "severity": "MEDIUM",
+        "description": "端口8000在多个文件中使用",
+        "files": [
+          ".\\agent_api_adapter.py",
+          ".\\check_system_status.py",
+          ".\\cloudflare_tunnel_diagnostic.py",
+          ".\\deploy_cloud.py",
+          ".\\mcp_cloudflare_dns_fix.py",
+          ".\\network_diagnostic.py",
+          ".\\run_server.py",
+          ".\\server_websocket_fix.py",
+          ".\\server_websocket_fix.py",
+          ".\\setup.py",
+          ".\\setup.py",
+          ".\\setup.py",
+          ".\\setup_cloudflare_simple.py",
+          ".\\setup_frp.py",
+          ".\\simple_api_server.py",
+          ".\\backend\\agent_main.py",
+          ".\\backend\\main.py",
+          ".\\backend\\main.py",
+          ".\\backend\\simple_backend.py",
+          ".\\backend\\simple_test_server.py",
+          ".\\backend\\start_server.py",
+          ".\\backend\\ai\\agent_api.py"
+        ]
+      },
+      {
+        "issue": "端口6380冲突",
+        "severity": "MEDIUM",
+        "description": "端口6380在多个文件中使用",
+        "files": [
+          ".\\agent_debug_parser.py",
+          ".\\agent_fixed_system.py",
+          ".\\agent_raw_debug.py",
+          ".\\agent_simple_test.py",
+          ".\\chagubang_deep_diagnosis.py",
+          ".\\chagubang_to_database.py",
+          ".\\debug_chagubang.py",
+          ".\\debug_chagubang_connection.py",
+          ".\\debug_raw_data.py",
+          ".\\fix_critical_security_issues.py",
+          ".\\realtime_agent_processor.py",
+          ".\\test_agent_realtime.py",
+          ".\\test_chagubang.py",
+          ".\\test_chagubang.py",
+          ".\\test_realtime_database.py"
+        ]
+      },
+      {
+        "issue": "端口8003冲突",
+        "severity": "MEDIUM",
+        "description": "端口8003在多个文件中使用",
+        "files": [
+          ".\\app_api_server.py",
+          ".\\port_proxy.py",
+          ".\\websocket_fix_patch.py"
+        ]
+      },
+      {
+        "issue": "端口0冲突",
+        "severity": "MEDIUM",
+        "description": "端口0在多个文件中使用",
+        "files": [
+          ".\\auto_cleanup_trading_agent.py",
+          ".\\push_receiver_diagnostics.py",
+          ".\\robust_push_receiver.py",
+          ".\\stock_data_receiver.py",
+          ".\\backup_deleted_20250624_224708\\corrected_trading_agent.py",
+          ".\\backup_deleted_20250624_224708\\enhanced_secure_trading_agent.py",
+          ".\\backup_deleted_20250624_224708\\enhanced_trading_agent.py",
+          ".\\backup_deleted_20250624_224708\\smart_trading_agent.py",
+          ".\\venv\\Lib\\site-packages\\pip\\_vendor\\rich\\console.py",
+          ".\\venv\\Lib\\site-packages\\pip\\_vendor\\urllib3\\util\\connection.py"
+        ]
+      },
+      {
+        "issue": "端口8081冲突",
+        "severity": "MEDIUM",
+        "description": "端口8081在多个文件中使用",
+        "files": [
+          ".\\cloudflare_diagnostic.py",
+          ".\\fix_cloudflare_tunnel.py",
+          ".\\simple_tunnel_server.py"
+        ]
+      },
+      {
+        "issue": "端口8888冲突",
+        "severity": "MEDIUM",
+        "description": "端口8888在多个文件中使用",
+        "files": [
+          ".\\complete_cloud_local_trading_system.py",
+          ".\\robust_push_receiver.py",
+          ".\\robust_push_receiver.py",
+          ".\\robust_push_receiver.py",
+          ".\\simple_cloud_to_local_solution.py"
+        ]
+      },
+      {
+        "issue": "端口5000冲突",
+        "severity": "MEDIUM",
+        "description": "端口5000在多个文件中使用",
+        "files": [
+          ".\\complete_integration_system.py",
+          ".\\enhanced_local_api.py",
+          ".\\local_trading_api.py",
+          ".\\stock_api_server.py",
+          ".\\web_config_manager.py"
+        ]
+      },
+      {
+        "issue": "端口8001冲突",
+        "severity": "MEDIUM",
+        "description": "端口8001在多个文件中使用",
+        "files": [
+          ".\\deploy_realtime_test_cloud.py",
+          ".\\deploy_realtime_test_cloud.py",
+          ".\\deploy_realtime_test_cloud.py",
+          ".\\deploy_realtime_test_cloud.py",
+          ".\\mcp_server_diagnostic.py",
+          ".\\backup_deleted_20250624_224708\\ws_test_server.py"
+        ]
+      },
+      {
+        "issue": "端口8002冲突",
+        "severity": "MEDIUM",
+        "description": "端口8002在多个文件中使用",
+        "files": [
+          ".\\domain_server.py",
+          ".\\mobile_accessible_server.py",
+          ".\\setup_domain_access.py",
+          ".\\backend\\robust_server.py",
+          ".\\backup_deleted_20250624_224708\\fixed_test_server.py"
+        ]
+      },
+      {
+        "issue": "端口6379冲突",
+        "severity": "MEDIUM",
+        "description": "端口6379在多个文件中使用",
+        "files": [
+          ".\\robust_push_receiver.py",
+          ".\\ultra_high_performance_receiver.py",
+          ".\\ultra_high_performance_receiver.py",
+          ".\\backend\\services\\high_performance_market_service.py",
+          ".\\backend\\services\\mass_stock_receiver.py",
+          ".\\backend\\services\\realtime_stock_receiver.py",
+          ".\\backend\\services\\stock_data_consumer.py"
+        ]
+      },
+      {
+        "issue": "端口9000冲突",
+        "severity": "MEDIUM",
+        "description": "端口9000在多个文件中使用",
+        "files": [
+          ".\\simple_api_server_9000.py",
+          ".\\start_simple_frontend.py",
+          ".\\test_server.py",
+          ".\\backend\\simple_server.py"
+        ]
+      },
+      {
+        "issue": "端口2冲突",
+        "severity": "MEDIUM",
+        "description": "端口2在多个文件中使用",
+        "files": [
+          ".\\venv\\Lib\\site-packages\\pip\\_vendor\\packaging\\licenses\\_spdx.py",
+          ".\\venv\\Lib\\site-packages\\pip\\_vendor\\packaging\\licenses\\_spdx.py"
+        ]
+      }
+    ],
+    "data_integrity": [
+      {
+        "file": "trader_api.py",
+        "issue": "缺少输入验证",
+        "severity": "MEDIUM",
+        "description": "交易API缺少充分的输入验证"
+      }
+    ]
+  }
+}

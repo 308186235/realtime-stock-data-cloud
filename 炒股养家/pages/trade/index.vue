@@ -4,10 +4,7 @@
       <text class="title">交易中心</text>
     </view>
     
-    <!-- 东吴秀才账户信息组件 -->
-    <view class="account-section">
-      <DongwuAccountInfo />
-    </view>
+    <!-- 东吴秀才账户信息已删除 - 不需要此功能 -->
     
     <!-- 券商连接组件 -->
     <view class="connection-section">
@@ -78,7 +75,6 @@
 import BrokerConnection from '@/components/trade/BrokerConnection.vue';
 import PositionList from '@/components/trade/PositionList.vue';
 import OrderList from '@/components/trade/OrderList.vue';
-import DongwuAccountInfo from '@/components/DongwuAccountInfo.vue';
 import TransactionFeeAnalyzer from '@/components/TransactionFeeAnalyzer.vue';
 import TradeHistory from '@/components/trade/TradeHistory.vue';
 
@@ -87,7 +83,6 @@ export default {
     BrokerConnection,
     PositionList,
     OrderList,
-    DongwuAccountInfo,
     TransactionFeeAnalyzer,
     TradeHistory
   },

@@ -1,0 +1,38 @@
+{
+  "timestamp": "2025-07-02T04:00:00",
+  "api_configuration": {
+    "correct_api_url": "https://api.aigupiao.me",
+    "correct_ws_url": "wss://api.aigupiao.me/ws",
+    "mock_data_disabled": true
+  },
+  "frontend_projects": [
+    {
+      "name": "frontend/gupiao1",
+      "env_file": true,
+      "request_file": true,
+      "services_dir": true,
+      "api_dir": false
+    },
+    {
+      "name": "frontend/stock5",
+      "env_file": true,
+      "request_file": true,
+      "services_dir": true,
+      "api_dir": false
+    },
+    {
+      "name": "炒股养家",
+      "env_file": true,
+      "request_file": true,
+      "services_dir": true,
+      "api_dir": false
+    }
+  ],
+  "common_issues_fixed": [
+    "API URL统一为 https://api.aigupiao.me",
+    "WebSocket URL统一为 wss://api.aigupiao.me/ws",
+    "所有环境禁用模拟数据",
+    "添加API地址验证",
+    "移除硬编码的localhost地址"
+  ]
+}

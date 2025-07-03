@@ -1,0 +1,3 @@
+name = "simple-api"
+main = "simple-worker.js"
+compatibility_date = "2024-01-01"
