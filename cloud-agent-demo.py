@@ -116,15 +116,15 @@ class CloudAgentDemo:
                 if action != 'hold':  # 只保存非持有决策
                     decision = {
                         'symbol': stock['symbol'],
-                        'stock_name': stock['name'],
-                        'action': action,
-                        'current_price': stock['price'],
-                        'change_percent': stock['change_percent'],
-                        'volume': stock['volume'],
-                        'confidence': confidence,
+                        'action': action.upper(),
+                        'price': stock['price'],
+                        'confidence': int(confidence * 100),  # 转换为百分比
                         'reason': reason,
-                        'created_at': datetime.now().isoformat(),
-                        'updated_at': datetime.now().isoformat()
+                        'decision_time': datetime.now().isoformat(),
+                        'technical_signals': {
+                            'volume': stock['volume'],
+                            'change_percent': stock['change_percent']
+                        }
                     }
                     decisions.append(decision)
                     
