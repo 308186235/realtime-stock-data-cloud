@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+测试交易软件响应
+验证华宝证券智投版的快捷键和界面响应
+"""
+
+import pyautogui
+import time
+import win32gui
+import win32con
+import keyboard
+from PIL import Image
+import os
+
+class TradingSoftwareTester:
+    def __init__(self):
+        self.trading_window = None
+        self.window_title = "华宝证券智投版"
+        
+        # 设置pyautogui
+        pyautogui.FAILSAFE = True
+        pyautogui.PAUSE = 0.5
+        
+    def find_trading_window(self):
+        """查找交易窗口"""
+        windows = []
+        
+        def enum_windows_callback(hwnd, windows_list):
+            if win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd)
+                if window_text:
+                    windows_list.append((hwnd, window_text))
+            return True
+        
+        win32gui.EnumWindows(enum_windows_callback, windows)
+        
+        print("🔍 发现的窗口:")
+        for i, (hwnd, title) in enumerate(windows):
+            print(f"  {i+1}. {title}")
+            if "华宝证券" in title or "智投版" in title or "交易" in title:
+                self.trading_window = hwnd
+                print(f"  ✅ 找到交易窗口: {title}")
+        
+        return self.trading_window is not None
+    
+    def activate_window(self):
+        """激活交易窗口"""
+        if self.trading_window:
+            try:
+                win32gui.SetForegroundWindow(self.trading_window)
+                win32gui.ShowWindow(self.trading_window, win32con.SW_RESTORE)
+                time.sleep(1)
+                print("✅ 交易窗口已激活")
+                return True
+            except Exception as e:
+                print(f"❌ 激活窗口失败: {e}")
+                return False
+        return False
+    
+    def take_screenshot(self, filename=None):
+        """截取屏幕截图"""
+        if not filename:
+            timestamp = int(time.time())
+            filename = f"trading_screenshot_{timestamp}.png"
+        
+        try:
+            if self.trading_window:
+                # 获取窗口位置
+                rect = win32gui.GetWindowRect(self.trading_window)
+                screenshot = pyautogui.screenshot(region=rect)
+            else:
+                screenshot = pyautogui.screenshot()
+            
+            screenshot.save(filename)
+            print(f"📸 截图已保存: {filename}")
+            return filename
+        except Exception as e:
+            print(f"❌ 截图失败: {e}")
+            return None
+    
+    def test_hotkeys(self):
+        """测试常用快捷键"""
+        if not self.find_trading_window():
+            print("❌ 未找到交易窗口，无法测试")
+            return
+        
+        if not self.activate_window():
+            print("❌ 无法激活交易窗口")
+            return
+        
+        print("\n🧪 测试交易软件快捷键响应...")
+        
+        # 测试快捷键列表
+        hotkeys_to_test = [
+            ("F1", "买入界面"),
+            ("F2", "卖出界面"), 
+            ("F3", "撤单界面"),
+            ("F4", "查询界面"),
+            ("F5", "刷新"),
+            ("F6", "持仓查询"),
+            ("F7", "资金查询"),
+            ("F8", "委托查询"),
+            ("F9", "成交查询"),
+            ("F10", "行情界面"),
+            ("Ctrl+1", "买入"),
+            ("Ctrl+2", "卖出"),
+            ("Ctrl+3", "撤单"),
+            ("Ctrl+4", "查询"),
+        ]
+        
+        for hotkey, description in hotkeys_to_test:
+            print(f"\n测试 {hotkey} - {description}")
+            input("按回车开始测试...")
+            
+            # 截图前状态
+            before_screenshot = self.take_screenshot(f"before_{hotkey.replace('+', '_')}.png")
+            
+            # 按下快捷键
+            try:
+                if '+' in hotkey:
+                    keys = hotkey.lower().split('+')
+                    pyautogui.hotkey(*keys)
+                else:
+                    pyautogui.press(hotkey.lower())
+                
+                time.sleep(1)  # 等待界面响应
+                
+                # 截图后状态
+                after_screenshot = self.take_screenshot(f"after_{hotkey.replace('+', '_')}.png")
+                
+                print(f"✅ {hotkey} 测试完成")
+                
+            except Exception as e:
+                print(f"❌ {hotkey} 测试失败: {e}")
+            
+            # 按ESC返回
+            pyautogui.press('esc')
+            time.sleep(0.5)
+    
+    def test_input_fields(self):
+        """测试输入框响应"""
+        if not self.find_trading_window():
+            print("❌ 未找到交易窗口")
+            return
+        
+        if not self.activate_window():
+            print("❌ 无法激活交易窗口")
+            return
+        
+        print("\n🧪 测试输入框响应...")
+        
+        # 尝试进入买入界面
+        print("1. 尝试进入买入界面 (F1)")
+        pyautogui.press('f1')
+        time.sleep(1)
+        
+        self.take_screenshot("buy_interface.png")
+        
+        # 测试输入
+        test_inputs = [
+            ("000001", "股票代码"),
+            ("100", "数量"),
+            ("13.50", "价格")
+        ]
+        
+        for test_value, description in test_inputs:
+            print(f"\n测试输入 {description}: {test_value}")
+            input("请手动点击对应输入框，然后按回车...")
+            
+            try:
+                # 清空输入框
+                pyautogui.hotkey('ctrl', 'a')
+                time.sleep(0.2)
+                pyautogui.press('delete')
+                time.sleep(0.2)
+                
+                # 输入测试值
+                pyautogui.typewrite(test_value)
+                time.sleep(0.5)
+                
+                print(f"✅ 输入 {description} 完成")
+                
+            except Exception as e:
+                print(f"❌ 输入 {description} 失败: {e}")
+        
+        # 截图最终状态
+        self.take_screenshot("input_test_result.png")
+        
+        # 按ESC退出
+        pyautogui.press('esc')
+    
+    def interactive_test(self):
+        """交互式测试"""
+        print("\n🎮 交互式测试模式")
+        print("你可以手动测试各种操作，程序会记录截图")
+        
+        if not self.find_trading_window():
+            print("❌ 未找到交易窗口")
+            return
+        
+        if not self.activate_window():
+            print("❌ 无法激活交易窗口")
+            return
+        
+        test_count = 1
+        
+        while True:
+            print(f"\n📋 测试 #{test_count}")
+            print("请在交易软件中进行你想测试的操作...")
+            action = input("操作完成后，请描述你做了什么 (输入 'quit' 退出): ")
+            
+            if action.lower() == 'quit':
+                break
+            
+            # 截图记录
+            filename = f"interactive_test_{test_count}_{action.replace(' ', '_')}.png"
+            self.take_screenshot(filename)
+            
+            print(f"✅ 测试 #{test_count} 已记录")
+            test_count += 1
+        
+        print("🏁 交互式测试完成")
+    
+    def run_full_test(self):
+        """运行完整测试"""
+        print("🚀 华宝证券智投版 - 完整功能测试")
+        print("=" * 50)
+        
+        # 创建测试结果目录
+        test_dir = f"trading_test_{int(time.time())}"
+        os.makedirs(test_dir, exist_ok=True)
+        os.chdir(test_dir)
+        
+        print(f"📁 测试结果将保存到: {os.getcwd()}")
+        
+        # 1. 窗口检测测试
+        print("\n1️⃣ 窗口检测测试")
+        if self.find_trading_window():
+            print("✅ 窗口检测通过")
+        else:
+            print("❌ 窗口检测失败")
+            return
+        
+        # 2. 窗口激活测试
+        print("\n2️⃣ 窗口激活测试")
+        if self.activate_window():
+            print("✅ 窗口激活通过")
+        else:
+            print("❌ 窗口激活失败")
+            return
+        
+        # 3. 截图测试
+        print("\n3️⃣ 截图功能测试")
+        if self.take_screenshot("initial_state.png"):
+            print("✅ 截图功能正常")
+        else:
+            print("❌ 截图功能异常")
+        
+        # 4. 快捷键测试
+        print("\n4️⃣ 快捷键响应测试")
+        choice = input("是否进行快捷键测试? (y/n): ")
+        if choice.lower() == 'y':
+            self.test_hotkeys()
+        
+        # 5. 输入框测试
+        print("\n5️⃣ 输入框响应测试")
+        choice = input("是否进行输入框测试? (y/n): ")
+        if choice.lower() == 'y':
+            self.test_input_fields()
+        
+        # 6. 交互式测试
+        print("\n6️⃣ 交互式测试")
+        choice = input("是否进行交互式测试? (y/n): ")
+        if choice.lower() == 'y':
+            self.interactive_test()
+        
+        print("\n🏁 测试完成！")
+        print(f"📁 所有测试结果已保存到: {os.getcwd()}")
+    
+    def quick_test(self):
+        """快速测试"""
+        print("⚡ 快速测试模式")
+        
+        if self.find_trading_window() and self.activate_window():
+            print("✅ 基础功能正常")
+            
+            # 快速截图
+            self.take_screenshot("quick_test.png")
+            
+            # 测试F1买入
+            print("测试F1买入界面...")
+            pyautogui.press('f1')
+            time.sleep(1)
+            self.take_screenshot("f1_buy_test.png")
+            
+            # 测试F2卖出
+            print("测试F2卖出界面...")
+            pyautogui.press('f2')
+            time.sleep(1)
+            self.take_screenshot("f2_sell_test.png")
+            
+            # 返回
+            pyautogui.press('esc')
+            
+            print("✅ 快速测试完成")
+        else:
+            print("❌ 基础功能异常")
+
+def main():
+    tester = TradingSoftwareTester()
+    
+    print("🧪 华宝证券智投版 - 交易软件测试工具")
+    print("=" * 50)
+    print("1. 快速测试")
+    print("2. 完整测试")
+    print("3. 交互式测试")
+    print("4. 退出")
+    
+    choice = input("\n请选择测试模式 (1-4): ").strip()
+    
+    if choice == '1':
+        tester.quick_test()
+    elif choice == '2':
+        tester.run_full_test()
+    elif choice == '3':
+        tester.interactive_test()
+    elif choice == '4':
+        print("👋 退出测试")
+    else:
+        print("❌ 无效选择")
+
+if __name__ == "__main__":
+    main()

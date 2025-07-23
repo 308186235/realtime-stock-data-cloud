@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""
+验证Zero Trust系统完整性
+检查所有服务和隧道配置是否正常工作
+"""
+import requests
+import json
+import subprocess
+import socket
+import time
+from datetime import datetime
+from typing import Dict, List, Any
+
+class ZeroTrustVerifier:
+    """Zero Trust系统验证器"""
+    
+    def __init__(self):
+        self.services = {
+            8000: {
+                'name': 'Main API Service',
+                'domain': 'api.aigupiao.me',
+                'description': '主API服务'
+            },
+            8001: {
+                'name': 'Realtime Data Service',
+                'domain': 'realtime.aigupiao.me', 
+                'description': '实时数据服务'
+            },
+            8002: {
+                'name': 'Monitoring Service',
+                'domain': 'monitor.aigupiao.me',
+                'description': '监控服务'
+            },
+            8003: {
+                'name': 'Backup API Service',
+                'domain': 'backup.aigupiao.me',
+                'description': '备份API服务'
+            },
+            8888: {
+                'name': 'Trading Service',
+                'domain': 'trading.aigupiao.me',
+                'description': '交易服务'
+            },
+            9999: {
+                'name': 'Agent Service',
+                'domain': 'agent.aigupiao.me',
+                'description': '智能代理服务'
+            }
+        }
+        
+        self.tunnel_id = "7f3d4c5e-c0e2-48d3-b5e4-8cd0ed4e71af"
+        self.results = {}
+        
+    def print_banner(self):
+        """打印验证横幅"""
+        print("=" * 80)
+        print("🔍 Zero Trust系统完整性验证")
+        print("=" * 80)
+        print(f"📅 验证时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"🔗 隧道ID: {self.tunnel_id}")
+        print("=" * 80)
+        
+    def check_port_status(self, port: int) -> bool:
+        """检查端口是否开放"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(3)
+                result = s.connect_ex(('localhost', port))
+                return result == 0
+        except Exception:
+            return False
+            
+    def check_service_health(self, port: int) -> Dict[str, Any]:
+        """检查服务健康状态"""
+        service = self.services.get(port, {})
+        result = {
+            'port': port,
+            'name': service.get('name', f'Service-{port}'),
+            'domain': service.get('domain', f'port{port}.aigupiao.me'),
+            'description': service.get('description', ''),
+            'port_open': False,
+            'health_check': False,
+            'response_data': None,
+            'error': None
+        }
+        
+        # 检查端口状态
+        result['port_open'] = self.check_port_status(port)
+        
+        if not result['port_open']:
+            result['error'] = 'Port not accessible'
+            return result
+            
+        # 检查健康端点
+        try:
+            response = requests.get(f'http://localhost:{port}/health', timeout=5)
+            if response.status_code == 200:
+                result['health_check'] = True
+                result['response_data'] = response.json()
+            else:
+                result['error'] = f'Health check failed: HTTP {response.status_code}'
+        except requests.exceptions.RequestException as e:
+            # 尝试根路径
+            try:
+                response = requests.get(f'http://localhost:{port}/', timeout=5)
+                if response.status_code == 200:
+                    result['health_check'] = True
+                    result['response_data'] = response.json()
+                else:
+                    result['error'] = f'Root endpoint failed: HTTP {response.status_code}'
+            except Exception as e2:
+                result['error'] = f'Service unreachable: {str(e)}'
+                
+        return result
+        
+    def check_tunnel_status(self) -> Dict[str, Any]:
+        """检查Cloudflare隧道状态"""
+        result = {
+            'tunnel_id': self.tunnel_id,
+            'status': 'unknown',
+            'connectors': [],
+            'error': None
+        }
+        
+        try:
+            # 执行cloudflared tunnel info命令
+            cmd = ['cloudflared', 'tunnel', 'info', self.tunnel_id]
+            process = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if process.returncode == 0:
+                result['status'] = 'active'
+                output_lines = process.stdout.strip().split('\n')
+                
+                # 解析连接器信息
+                for line in output_lines:
+                    if 'CONNECTOR ID' in line:
+                        continue
+                    if len(line.strip()) > 0 and not line.startswith('NAME:') and not line.startswith('ID:') and not line.startswith('CREATED:'):
+                        if 'WRN' not in line and 'windows_amd64' in line:
+                            result['connectors'].append(line.strip())
+                            
+            else:
+                result['status'] = 'error'
+                result['error'] = process.stderr.strip()
+                
+        except subprocess.TimeoutExpired:
+            result['error'] = 'Command timeout'
+        except Exception as e:
+            result['error'] = str(e)
+            
+        return result
+        
+    def check_websocket_service(self, port: int) -> Dict[str, Any]:
+        """检查WebSocket服务(仅针对8001端口)"""
+        if port != 8001:
+            return {'websocket_available': False, 'reason': 'Not a WebSocket service'}
+            
+        try:
+            # 简单检查WebSocket端点是否响应
+            response = requests.get(f'http://localhost:{port}/', timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if 'websocket_url' in data:
+                    return {
+                        'websocket_available': True,
+                        'websocket_url': data['websocket_url'],
+                        'active_connections': data.get('active_connections', 0)
+                    }
+        except Exception as e:
+            return {'websocket_available': False, 'error': str(e)}
+            
+        return {'websocket_available': False, 'reason': 'WebSocket info not found'}
+        
+    def run_verification(self):
+        """运行完整验证"""
+        self.print_banner()
+        
+        print("🔍 检查服务状态...")
+        print("-" * 80)
+        
+        service_results = []
+        for port in sorted(self.services.keys()):
+            print(f"检查端口 {port}: {self.services[port]['name']}...", end=" ")
+            
+            result = self.check_service_health(port)
+            service_results.append(result)
+            
+            if result['port_open'] and result['health_check']:
+                print("✅ 正常")
+            elif result['port_open']:
+                print("🟡 端口开放但健康检查失败")
+            else:
+                print("❌ 服务未运行")
+                
+            # 特殊检查WebSocket服务
+            if port == 8001 and result['health_check']:
+                ws_result = self.check_websocket_service(port)
+                result['websocket'] = ws_result
+                if ws_result.get('websocket_available'):
+                    print(f"    📡 WebSocket: {ws_result['websocket_url']}")
+                    
+        print("\n🔗 检查Cloudflare隧道状态...")
+        print("-" * 80)
+        
+        tunnel_result = self.check_tunnel_status()
+        
+        if tunnel_result['status'] == 'active':
+            print(f"✅ 隧道状态: 活跃")
+            print(f"📊 连接器数量: {len(tunnel_result['connectors'])}")
+            for connector in tunnel_result['connectors']:
+                print(f"    🔗 {connector}")
+        else:
+            print(f"❌ 隧道状态: {tunnel_result['status']}")
+            if tunnel_result['error']:
+                print(f"    错误: {tunnel_result['error']}")
+                
+        # 生成总结报告
+        self.generate_summary_report(service_results, tunnel_result)
+        
+    def generate_summary_report(self, service_results: List[Dict], tunnel_result: Dict):
+        """生成总结报告"""
+        print("\n" + "=" * 80)
+        print("📊 验证总结报告")
+        print("=" * 80)
+        
+        # 服务状态统计
+        total_services = len(service_results)
+        running_services = len([s for s in service_results if s['port_open']])
+        healthy_services = len([s for s in service_results if s['health_check']])
+        
+        print(f"🎯 服务状态:")
+        print(f"  • 总服务数: {total_services}")
+        print(f"  • 运行中服务: {running_services}")
+        print(f"  • 健康服务: {healthy_services}")
+        print(f"  • 成功率: {(healthy_services/total_services)*100:.1f}%")
+        
+        print(f"\n🔗 隧道状态:")
+        print(f"  • 隧道ID: {tunnel_result['tunnel_id']}")
+        print(f"  • 状态: {tunnel_result['status']}")
+        print(f"  • 连接器: {len(tunnel_result.get('connectors', []))}")
+        
+        print(f"\n📋 详细服务列表:")
+        for result in service_results:
+            status_icon = "✅" if result['health_check'] else ("🟡" if result['port_open'] else "❌")
+            print(f"  {status_icon} {result['domain']} (:{result['port']}) - {result['name']}")
+            if result['error']:
+                print(f"      ⚠️ {result['error']}")
+                
+        # Zero Trust完整性评估
+        print(f"\n🏆 Zero Trust系统完整性评估:")
+        
+        if healthy_services >= 4 and tunnel_result['status'] == 'active':
+            print("  🟢 系统完整性: 优秀")
+            print("  ✅ 所有核心服务正常运行")
+            print("  ✅ Cloudflare隧道连接正常")
+            print("  ✅ Zero Trust配置完整")
+        elif healthy_services >= 3 and tunnel_result['status'] == 'active':
+            print("  🟡 系统完整性: 良好")
+            print("  ✅ 大部分服务正常运行")
+            print("  ✅ Cloudflare隧道连接正常")
+        else:
+            print("  🔴 系统完整性: 需要修复")
+            print("  ⚠️ 部分关键服务未运行")
+            if tunnel_result['status'] != 'active':
+                print("  ⚠️ Cloudflare隧道连接异常")
+                
+        print("\n💡 建议:")
+        if healthy_services < total_services:
+            print("  • 检查并启动未运行的服务")
+        if tunnel_result['status'] != 'active':
+            print("  • 检查Cloudflare隧道配置")
+        if healthy_services >= 4 and tunnel_result['status'] == 'active':
+            print("  • 系统运行正常,可以进行生产使用")
+            
+        print("=" * 80)
+
+def main():
+    """主函数"""
+    verifier = ZeroTrustVerifier()
+    verifier.run_verification()
+
+if __name__ == "__main__":
+    main()

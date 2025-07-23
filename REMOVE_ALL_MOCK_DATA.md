@@ -1,14 +1,14 @@
-# 🚨 紧急修复：完全移除所有模拟数据
+# 🚨 紧急修复:完全移除所有模拟数据
 
 ## ❌ **发现的严重问题**
 
-项目中存在大量模拟数据，这是绝对不允许的！必须立即修复！
+项目中存在大量模拟数据,这是绝对不允许的!必须立即修复!
 
 ---
 
 ## 🔍 **发现的模拟数据文件**
 
-### **前端Mock文件（必须删除）**
+### **前端Mock文件(必须删除)**
 ```
 ❌ frontend/stock5/mock/trade-data.js - 模拟交易数据
 ❌ frontend/stock5/mock/stock-data.js - 模拟股票数据  
@@ -18,7 +18,7 @@
 ❌ 炒股养家/utils/request.js - 模拟数据处理
 ```
 
-### **后端模拟数据（必须修复）**
+### **后端模拟数据(必须修复)**
 ```
 ❌ backend/services/market_data_service.py - 包含模拟数据检查
 ❌ backend/services/ai_service.py - 生成模拟DataFrame
@@ -31,7 +31,7 @@
 
 ## 🚀 **立即执行的修复方案**
 
-### **第1步：删除所有Mock文件**
+### **第1步:删除所有Mock文件**
 ```bash
 # 删除前端Mock文件
 rm -rf frontend/stock5/mock/
@@ -42,7 +42,7 @@ rm -rf 炒股养家/mock/
 rm generate_test_push_data.py
 ```
 
-### **第2步：修复前端请求逻辑**
+### **第2步:修复前端请求逻辑**
 ```javascript
 // 修复 frontend/gupiao1/utils/request.js
 const request = (options = {}) => {
@@ -63,7 +63,7 @@ const request = (options = {}) => {
     
     // 检查是否为真实API地址
     if (!options.url || !options.url.startsWith('http')) {
-      reject(new Error('❌ 错误：只允许调用真实API，不允许模拟数据'));
+      reject(new Error('❌ 错误:只允许调用真实API,不允许模拟数据'));
       return;
     }
     
@@ -82,7 +82,7 @@ const request = (options = {}) => {
     .then(data => {
       // 验证返回的是真实数据
       if (data && data.data_source === 'mock') {
-        reject(new Error('❌ 错误：检测到模拟数据，系统拒绝使用'));
+        reject(new Error('❌ 错误:检测到模拟数据,系统拒绝使用'));
         return;
       }
       resolve(data);
@@ -95,7 +95,7 @@ const request = (options = {}) => {
 };
 ```
 
-### **第3步：修复后端数据服务**
+### **第3步:修复后端数据服务**
 ```python
 # 修复 backend/services/market_data_service.py
 class MarketDataService:
@@ -110,7 +110,7 @@ class MarketDataService:
     def get_real_time_data(self, stock_codes):
         """获取实时数据 - 只允许真实数据源"""
         if not self.real_data_sources:
-            raise ValueError("❌ 错误：没有配置真实数据源，拒绝返回模拟数据")
+            raise ValueError("❌ 错误:没有配置真实数据源,拒绝返回模拟数据")
         
         try:
             # 尝试从淘宝股票数据推送服务获取
@@ -118,27 +118,27 @@ class MarketDataService:
             if data:
                 return data
             
-            # 备用：同花顺API
+            # 备用:同花顺API
             data = self._get_from_tonghuashun(stock_codes)
             if data:
                 return data
             
-            # 备用：通达信API
+            # 备用:通达信API
             data = self._get_from_tongdaxin(stock_codes)
             if data:
                 return data
             
             # 所有真实数据源都失败
-            raise Exception("❌ 所有真实数据源都不可用，拒绝返回模拟数据")
+            raise Exception("❌ 所有真实数据源都不可用,拒绝返回模拟数据")
             
         except Exception as e:
             logger.error(f"❌ 真实数据获取失败: {e}")
-            raise Exception("❌ 真实数据不可用，系统拒绝提供模拟数据")
+            raise Exception("❌ 真实数据不可用,系统拒绝提供模拟数据")
     
     def _get_from_taobao_service(self, stock_codes):
         """从淘宝股票数据推送服务获取数据"""
         # TODO: 实现淘宝股票数据API调用
-        # API_KEY = "QT_wat5QfcJ6N9pDZM5"
+        # API_KEY = "YOUR_STOCK_API_KEY"
         raise NotImplementedError("❌ 淘宝股票数据推送服务尚未配置")
     
     def _validate_real_data(self, data):
@@ -148,7 +148,7 @@ class MarketDataService:
         
         # 检查数据源标识
         if hasattr(data, 'data_source') and 'mock' in str(data.data_source).lower():
-            raise ValueError("❌ 检测到模拟数据，系统拒绝使用")
+            raise ValueError("❌ 检测到模拟数据,系统拒绝使用")
         
         # 检查数据时效性
         if hasattr(data, 'timestamp'):
@@ -156,12 +156,12 @@ class MarketDataService:
             current_time = time.time()
             data_time = data.timestamp
             if current_time - data_time > 300:  # 5分钟内的数据
-                raise ValueError("❌ 数据过期，需要实时数据")
+                raise ValueError("❌ 数据过期,需要实时数据")
         
         return True
 ```
 
-### **第4步：修复AI服务**
+### **第4步:修复AI服务**
 ```python
 # 修复 backend/services/ai_service.py
 class AIService:
@@ -186,15 +186,15 @@ class AIService:
                 
             except Exception as e:
                 logger.error(f"❌ 真实数据获取失败: {e}")
-                raise Exception("❌ 真实数据不可用，AI服务拒绝使用模拟数据进行分析")
+                raise Exception("❌ 真实数据不可用,AI服务拒绝使用模拟数据进行分析")
         
-        raise Exception("❌ 模拟数据已禁用，请配置真实数据源")
+        raise Exception("❌ 模拟数据已禁用,请配置真实数据源")
     
     def analyze_with_real_data_only(self, data):
         """只使用真实数据进行分析"""
         # 验证数据真实性
         if not self._validate_real_data(data):
-            raise ValueError("❌ 数据验证失败，拒绝使用非真实数据")
+            raise ValueError("❌ 数据验证失败,拒绝使用非真实数据")
         
         # 执行真实数据分析
         return self._perform_real_analysis(data)
@@ -243,7 +243,7 @@ class TradingAgent:
             
         except Exception as e:
             logger.error(f"❌ Agent决策失败: {e}")
-            raise Exception("❌ 无法获取真实数据，Agent拒绝基于模拟数据做决策")
+            raise Exception("❌ 无法获取真实数据,Agent拒绝基于模拟数据做决策")
     
     def _validate_real_market_data(self, data):
         """验证市场数据真实性"""
@@ -262,7 +262,7 @@ class TradingAgent:
         current_time = time.time()
         data_time = data.get('timestamp', 0)
         if current_time - data_time > 60:  # 1分钟内的数据
-            logger.error("❌ 数据过期，需要实时数据")
+            logger.error("❌ 数据过期,需要实时数据")
             return False
         
         # 检查数据源标识
@@ -291,7 +291,7 @@ class MockDataDetectedError(DataValidationError):
 def validate_real_data(data, data_type="unknown"):
     """验证数据真实性"""
     if not data:
-        raise DataValidationError(f"❌ {data_type}数据为空，需要真实数据")
+        raise DataValidationError(f"❌ {data_type}数据为空,需要真实数据")
     
     # 检查模拟数据标识
     mock_indicators = ['mock', 'test', 'demo', 'sample', 'fake']
@@ -300,27 +300,27 @@ def validate_real_data(data, data_type="unknown"):
         source = str(data.source).lower()
         for indicator in mock_indicators:
             if indicator in source:
-                raise MockDataDetectedError(f"❌ 检测到{data_type}模拟数据，系统拒绝使用")
+                raise MockDataDetectedError(f"❌ 检测到{data_type}模拟数据,系统拒绝使用")
     
     if isinstance(data, dict):
         for key, value in data.items():
             if any(indicator in str(key).lower() or indicator in str(value).lower() 
                    for indicator in mock_indicators):
-                raise MockDataDetectedError(f"❌ 检测到{data_type}模拟数据字段，系统拒绝使用")
+                raise MockDataDetectedError(f"❌ 检测到{data_type}模拟数据字段,系统拒绝使用")
     
     return True
 
 def require_real_data_source():
     """要求配置真实数据源"""
     error_msg = """
-    ❌ 错误：未配置真实数据源
+    ❌ 错误:未配置真实数据源
     
-    请配置以下真实数据源之一：
-    1. 淘宝股票数据推送服务 (API_KEY: QT_wat5QfcJ6N9pDZM5)
+    请配置以下真实数据源之一:
+    1. 淘宝股票数据推送服务 (API_KEY: YOUR_STOCK_API_KEY)
     2. 同花顺实时数据API
     3. 通达信数据接口
     
-    系统拒绝使用任何模拟数据！
+    系统拒绝使用任何模拟数据!
     """
     raise DataValidationError(error_msg)
 ```
@@ -331,10 +331,10 @@ def require_real_data_source():
 
 ### **今天必须完成**
 - [ ] 删除所有Mock文件夹
-- [ ] 修复前端请求逻辑，移除模拟数据
-- [ ] 修复后端数据服务，禁用模拟数据
+- [ ] 修复前端请求逻辑,移除模拟数据
+- [ ] 修复后端数据服务,禁用模拟数据
 - [ ] 添加数据验证和错误提示
-- [ ] 测试所有API，确保无模拟数据
+- [ ] 测试所有API,确保无模拟数据
 
 ### **明天配置真实数据**
 - [ ] 配置淘宝股票数据推送服务
@@ -361,8 +361,8 @@ find . -name "*test*data*" -type f -delete
 echo "搜索剩余的模拟数据..."
 grep -r "mock\|fake\|sample\|demo" --include="*.py" --include="*.js" . || echo "✅ 未发现模拟数据"
 
-echo "✅ 模拟数据清理完成！"
-echo "⚠️ 请立即配置真实数据源！"
+echo "✅ 模拟数据清理完成!"
+echo "⚠️ 请立即配置真实数据源!"
 ```
 
-**🚨 这是紧急修复！必须立即执行，确保系统只使用真实数据！**
+**🚨 这是紧急修复!必须立即执行,确保系统只使用真实数据!**

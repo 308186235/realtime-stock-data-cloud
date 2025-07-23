@@ -1,4 +1,4 @@
-# 生产环境依赖（基于主requirements）
+# 生产环境依赖(基于主requirements)
 -r requirements.txt
 
 # 生产环境特定包

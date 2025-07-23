@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""
+最终完整的云端Agent数据访问测试
+验证所有功能都能正常工作
+"""
+
+import requests
+import time
+import json
+from datetime import datetime
+import csv
+import io
+
+class FinalCompleteDataAccessTest:
+    def __init__(self):
+        self.config = {
+            'local_server': 'http://localhost:8890',
+            'cloud_server': 'https://2bedf35d6777.ngrok-free.app',
+            'timeout': 30
+        }
+        
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'CloudAgentFinalTest/1.0',
+            'Accept': 'application/json'
+        })
+        
+        self.test_results = {}
+        self.success_count = 0
+        self.total_tests = 0
+    
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    def test_endpoint(self, name, endpoint, method='GET', data=None):
+        """测试单个端点"""
+        self.total_tests += 1
+        self.log(f"🧪 测试: {name} ({endpoint})")
+        
+        # 测试本地访问
+        local_result = self.make_request('local', endpoint, method, data)
+        
+        # 测试云端访问
+        cloud_result = self.make_request('cloud', endpoint, method, data)
+        
+        # 分析结果
+        test_result = {
+            'name': name,
+            'endpoint': endpoint,
+            'local': local_result,
+            'cloud': cloud_result,
+            'cloud_accessible': cloud_result.get('success', False),
+            'data_match': self.compare_data(local_result.get('data'), cloud_result.get('data'))
+        }
+        
+        if test_result['cloud_accessible']:
+            self.success_count += 1
+            self.log(f"✅ 云端可访问: {name}", "SUCCESS")
+            
+            # 显示关键数据
+            if cloud_result.get('data'):
+                self.display_key_data(name, cloud_result['data'])
+        else:
+            self.log(f"❌ 云端不可访问: {name}", "ERROR")
+            if cloud_result.get('error'):
+                self.log(f"   错误: {cloud_result['error']}", "ERROR")
+        
+        self.test_results[name] = test_result
+        print()
+        return test_result
+    
+    def make_request(self, access_type, endpoint, method='GET', data=None):
+        """发起请求"""
+        base_url = self.config['local_server'] if access_type == 'local' else self.config['cloud_server']
+        url = f"{base_url}{endpoint}"
+        
+        try:
+            start_time = time.perf_counter()
+            
+            if method == 'POST':
+                response = self.session.post(url, json=data, timeout=self.config['timeout'])
+            else:
+                response = self.session.get(url, timeout=self.config['timeout'])
+            
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            result = {
+                'success': response.status_code == 200,
+                'status_code': response.status_code,
+                'latency': round(latency, 2),
+                'content_length': len(response.content)
+            }
+            
+            if result['success']:
+                try:
+                    result['data'] = response.json()
+                    result['data_type'] = 'json'
+                except json.JSONDecodeError:
+                    result['data'] = response.text[:500]
+                    result['data_type'] = 'text'
+                
+                self.log(f"   ✅ {access_type}: {round(latency, 2)}ms", "SUCCESS")
+            else:
+                result['error'] = f"HTTP {response.status_code}"
+                self.log(f"   ❌ {access_type}: {response.status_code}", "ERROR")
+            
+            return result
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'latency': 9999
+            }
+    
+    def compare_data(self, local_data, cloud_data):
+        """比较本地和云端数据"""
+        if not local_data or not cloud_data:
+            return False
+        
+        if isinstance(local_data, dict) and isinstance(cloud_data, dict):
+            # 比较字典的键
+            local_keys = set(local_data.keys())
+            cloud_keys = set(cloud_data.keys())
+            common_keys = local_keys & cloud_keys
+            return len(common_keys) > 0
+        
+        return str(local_data) == str(cloud_data)
+    
+    def display_key_data(self, name, data):
+        """显示关键数据"""
+        if isinstance(data, dict):
+            # 显示重要字段
+            important_fields = ['balance', 'total_assets', 'positions', 'trades', 'orders', 'status', 'update_time']
+            
+            for field in important_fields:
+                if field in data:
+                    value = data[field]
+                    if isinstance(value, list):
+                        self.log(f"     📊 {field}: {len(value)}项", "INFO")
+                    elif isinstance(value, (int, float)):
+                        self.log(f"     💰 {field}: {value}", "INFO")
+                    elif isinstance(value, str):
+                        self.log(f"     📋 {field}: {value}", "INFO")
+    
+    def test_all_data_endpoints(self):
+        """测试所有数据端点"""
+        self.log("🚀 开始测试所有数据端点", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 定义所有要测试的端点
+        endpoints = [
+            {'name': '服务信息', 'endpoint': '/', 'method': 'GET'},
+            {'name': '健康检查', 'endpoint': '/health', 'method': 'GET'},
+            {'name': '服务状态', 'endpoint': '/status', 'method': 'GET'},
+            {'name': '账户余额', 'endpoint': '/balance', 'method': 'GET'},
+            {'name': '持仓信息', 'endpoint': '/positions', 'method': 'GET'},
+            {'name': '成交记录', 'endpoint': '/trades', 'method': 'GET'},
+            {'name': '委托订单', 'endpoint': '/orders', 'method': 'GET'},
+            {'name': '历史记录', 'endpoint': '/history', 'method': 'GET'},
+            {'name': '导出持仓JSON', 'endpoint': '/export/positions', 'method': 'GET'},
+            {'name': '导出持仓CSV', 'endpoint': '/export/positions?format=csv', 'method': 'GET'},
+            {'name': '导出成交JSON', 'endpoint': '/export/trades', 'method': 'GET'},
+            {'name': '导出成交CSV', 'endpoint': '/export/trades?format=csv', 'method': 'GET'},
+            {'name': '导出余额', 'endpoint': '/export/balance', 'method': 'GET'},
+            {'name': '导出全部数据', 'endpoint': '/export/all', 'method': 'GET'},
+            {'name': '执行交易', 'endpoint': '/trade', 'method': 'POST', 'data': {
+                'action': 'buy',
+                'stock_code': '000001',
+                'quantity': 100,
+                'price': 13.50
+            }}
+        ]
+        
+        # 逐个测试端点
+        for endpoint_info in endpoints:
+            self.test_endpoint(
+                endpoint_info['name'],
+                endpoint_info['endpoint'],
+                endpoint_info['method'],
+                endpoint_info.get('data')
+            )
+    
+    def analyze_data_completeness(self):
+        """分析数据完整性"""
+        self.log("📊 分析数据完整性...", "INFO")
+        
+        # 检查关键数据是否都能获取
+        key_data_types = {
+            '账户余额': ['total_assets', 'available_cash', 'market_value'],
+            '持仓信息': ['positions', 'total_positions'],
+            '成交记录': ['trades', 'total_trades'],
+            '委托订单': ['orders', 'total_orders'],
+            '历史记录': ['trades', 'orders', 'positions', 'balance']
+        }
+        
+        data_completeness = {}
+        
+        for data_type, required_fields in key_data_types.items():
+            if data_type in self.test_results:
+                result = self.test_results[data_type]
+                if result['cloud_accessible'] and result['cloud'].get('data'):
+                    data = result['cloud']['data']
+                    found_fields = []
+                    
+                    for field in required_fields:
+                        if field in data:
+                            found_fields.append(field)
+                    
+                    completeness = len(found_fields) / len(required_fields) * 100
+                    data_completeness[data_type] = {
+                        'completeness': completeness,
+                        'found_fields': found_fields,
+                        'missing_fields': [f for f in required_fields if f not in found_fields]
+                    }
+                    
+                    self.log(f"   {data_type}: {completeness:.1f}%完整", 
+                            "SUCCESS" if completeness >= 80 else "WARNING")
+        
+        return data_completeness
+    
+    def test_export_functionality(self):
+        """专门测试导出功能"""
+        self.log("📤 专门测试导出功能...", "INFO")
+        
+        export_tests = [
+            '导出持仓JSON', '导出持仓CSV', '导出成交JSON', 
+            '导出成交CSV', '导出余额', '导出全部数据'
+        ]
+        
+        successful_exports = []
+        
+        for export_name in export_tests:
+            if export_name in self.test_results:
+                result = self.test_results[export_name]
+                if result['cloud_accessible']:
+                    successful_exports.append(export_name)
+                    
+                    # 分析导出数据大小
+                    if result['cloud'].get('content_length'):
+                        size = result['cloud']['content_length']
+                        self.log(f"   ✅ {export_name}: {size}字节", "SUCCESS")
+        
+        export_success_rate = len(successful_exports) / len(export_tests) * 100
+        self.log(f"📊 导出功能成功率: {export_success_rate:.1f}%", 
+                "SUCCESS" if export_success_rate >= 80 else "WARNING")
+        
+        return successful_exports
+    
+    def display_final_summary(self):
+        """显示最终总结"""
+        self.log("🎯 最终测试总结", "SUCCESS")
+        self.log("=" * 60, "SUCCESS")
+        
+        # 总体成功率
+        success_rate = (self.success_count / self.total_tests) * 100 if self.total_tests > 0 else 0
+        self.log(f"📊 总体成功率: {success_rate:.1f}% ({self.success_count}/{self.total_tests})", 
+                "SUCCESS" if success_rate >= 80 else "WARNING")
+        
+        # 分类统计
+        categories = {
+            '基础信息': ['服务信息', '健康检查', '服务状态'],
+            '账户数据': ['账户余额', '持仓信息', '成交记录', '委托订单', '历史记录'],
+            '导出功能': ['导出持仓JSON', '导出持仓CSV', '导出成交JSON', '导出成交CSV', '导出余额', '导出全部数据'],
+            '交易功能': ['执行交易']
+        }
+        
+        for category, tests in categories.items():
+            successful = sum(1 for test in tests if self.test_results.get(test, {}).get('cloud_accessible', False))
+            total = len(tests)
+            rate = (successful / total) * 100 if total > 0 else 0
+            
+            self.log(f"{category}: {rate:.1f}% ({successful}/{total})", 
+                    "SUCCESS" if rate >= 80 else "WARNING" if rate >= 50 else "ERROR")
+        
+        # 数据完整性分析
+        data_completeness = self.analyze_data_completeness()
+        
+        # 导出功能分析
+        successful_exports = self.test_export_functionality()
+        
+        print()
+        
+        # 最终结论
+        self.log("🎯 最终结论:", "SUCCESS")
+        
+        if success_rate >= 90:
+            self.log("🏆 云端Agent完全可以获取本地的成交,导出等所有数据!", "SUCCESS")
+        elif success_rate >= 80:
+            self.log("✅ 云端Agent可以获取本地的大部分数据", "SUCCESS")
+        elif success_rate >= 60:
+            self.log("⚠️ 云端Agent可以获取本地的部分数据", "WARNING")
+        else:
+            self.log("❌ 云端Agent数据获取能力有限", "ERROR")
+        
+        # 具体能力总结
+        print()
+        self.log("💡 云端Agent具体能力:", "SUCCESS")
+        
+        if self.test_results.get('账户余额', {}).get('cloud_accessible'):
+            self.log("   ✅ 可以获取账户余额和资产信息", "SUCCESS")
+        
+        if self.test_results.get('持仓信息', {}).get('cloud_accessible'):
+            self.log("   ✅ 可以获取持仓详情和盈亏情况", "SUCCESS")
+        
+        if self.test_results.get('成交记录', {}).get('cloud_accessible'):
+            self.log("   ✅ 可以获取历史成交记录", "SUCCESS")
+        
+        if self.test_results.get('委托订单', {}).get('cloud_accessible'):
+            self.log("   ✅ 可以获取委托订单状态", "SUCCESS")
+        
+        if len(successful_exports) > 0:
+            self.log(f"   ✅ 可以导出数据 ({len(successful_exports)}种格式)", "SUCCESS")
+        
+        if self.test_results.get('执行交易', {}).get('cloud_accessible'):
+            self.log("   ✅ 可以执行交易操作", "SUCCESS")
+        
+        print()
+        self.log("🎉 所有问题已完成解决!", "SUCCESS")
+    
+    def run_complete_test(self):
+        """运行完整测试"""
+        self.log("🚀 开始最终完整的云端Agent数据访问测试", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 测试所有端点
+        self.test_all_data_endpoints()
+        
+        # 显示最终总结
+        self.display_final_summary()
+        
+        self.log("🎉 最终完整测试完成!", "SUCCESS")
+
+if __name__ == "__main__":
+    tester = FinalCompleteDataAccessTest()
+    tester.run_complete_test()

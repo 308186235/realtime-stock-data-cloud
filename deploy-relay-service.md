@@ -24,13 +24,13 @@ wrangler deploy --env production
 
 ### 2. 配置域名
 
-在Cloudflare Dashboard中设置：
-- 域名：`relay.aigupiao.me`
-- 指向：刚部署的relay-service Worker
+在Cloudflare Dashboard中设置:
+- 域名:`relay.aigupiao.me`
+- 指向:刚部署的relay-service Worker
 
 ### 3. 修改主Worker
 
-修改 `ultra-simple-worker.js` 中的本地交易API端点：
+修改 `ultra-simple-worker.js` 中的本地交易API端点:
 
 ```javascript
 // 将现有的本地调用改为中转服务调用
@@ -46,7 +46,7 @@ const relayResponse = await fetch('https://relay.aigupiao.me/api/relay/positions
 
 ### 4. 运行本地客户端
 
-在您的本地电脑上：
+在您的本地电脑上:
 
 ```bash
 # 安装依赖
@@ -60,7 +60,7 @@ python local-relay-client.py
 
 ### 本地客户端配置
 
-编辑 `local-relay-client.py`：
+编辑 `local-relay-client.py`:
 
 ```python
 # 云端中转服务WebSocket地址
@@ -72,7 +72,7 @@ self.local_api_base = "http://localhost:8000"
 
 ### 前端配置
 
-修改 `agentDataService.js`：
+修改 `agentDataService.js`:
 
 ```javascript
 // 持仓信息端点
@@ -112,7 +112,7 @@ curl https://relay.aigupiao.me/api/relay/status
 
 ### 检查本地连接
 
-本地客户端会显示连接状态：
+本地客户端会显示连接状态:
 - ✅ 成功连接到云端中转服务
 - 📡 调用本地API成功
 - 📤 自动发送数据到云端
@@ -135,17 +135,17 @@ curl https://relay.aigupiao.me/api/relay/status
 
 ### 日志查看
 
-- **云端中转服务**：Cloudflare Dashboard → Workers → Logs
-- **本地客户端**：控制台输出
-- **本地交易软件**：软件自身日志
+- **云端中转服务**:Cloudflare Dashboard → Workers → Logs
+- **本地客户端**:控制台输出
+- **本地交易软件**:软件自身日志
 
 ## 🎯 优势
 
-1. **真实数据**：直接从本地交易软件获取
-2. **实时同步**：WebSocket保持连接
-3. **故障恢复**：自动重连机制
-4. **安全性**：本地数据不暴露到公网
-5. **扩展性**：支持多个本地客户端
+1. **真实数据**:直接从本地交易软件获取
+2. **实时同步**:WebSocket保持连接
+3. **故障恢复**:自动重连机制
+4. **安全性**:本地数据不暴露到公网
+5. **扩展性**:支持多个本地客户端
 
 ## 📝 下一步
 
@@ -155,4 +155,4 @@ curl https://relay.aigupiao.me/api/relay/status
 4. 验证交易执行
 5. 监控系统状态
 
-这个方案解决了云端无法直接访问本地网络的问题，通过WebSocket建立稳定的双向通信通道。
+这个方案解决了云端无法直接访问本地网络的问题,通过WebSocket建立稳定的双向通信通道。

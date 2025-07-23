@@ -1,11 +1,5 @@
 {
-  "name": "ai-stock-trading-static",
-  "version": "1.0.0",
-  "description": "AI股票交易系统 - 静态站点",
-  "private": true,
-  "scripts": {
-    "build": "echo 'Static site - no build needed' && exit 0"
-  },
-  "devDependencies": {},
-  "dependencies": {}
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
 }

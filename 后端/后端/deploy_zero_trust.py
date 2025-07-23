@@ -1,0 +1,391 @@
+# 文件操作最佳实践:
+# 1. 始终使用 with 语句打开文件
+# 2. 避免在循环中重复打开同一文件
+# 3. 大文件处理时考虑分块读取
+# 4. 异常情况下确保文件正确关闭
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Cloudflare Zero Trust 一键部署脚本
+自动配置和部署完整的Zero Trust解决方案
+"""
+
+import os
+import sys
+import json
+import time
+import logging
+import subprocess
+import requests
+from pathlib import Path
+from typing import Dict, List, Optional
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('zero_trust_deployment.log', encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class ZeroTrustDeployer:
+    """Zero Trust部署器"""
+    
+    def __init__(self):
+        self.deployment_config = {
+            'tunnel_name': 'aigupiao-tunnel',
+            'domain': 'aigupiao.me',
+            'cloudflared_path': 'cloudflared.exe',
+            'config_file': 'config.yml',
+            'credentials_path': None,
+            'tunnel_id': None
+        }
+        
+        self.required_domains = [
+            'api.aigupiao.me',
+            'trading.aigupiao.me', 
+            'agent.aigupiao.me',
+            'realtime.aigupiao.me',
+            'monitor.aigupiao.me',
+            'backup.aigupiao.me'
+        ]
+        
+        self.local_services = [
+            {'name': 'Main API', 'port': 8000, 'domain': 'api.aigupiao.me'},
+            {'name': 'Trading API', 'port': 8888, 'domain': 'trading.aigupiao.me'},
+            {'name': 'Agent Backend', 'port': 9999, 'domain': 'agent.aigupiao.me'},
+            {'name': 'Realtime Data', 'port': 8001, 'domain': 'realtime.aigupiao.me'},
+            {'name': 'Monitor', 'port': 8002, 'domain': 'monitor.aigupiao.me'},
+            {'name': 'Backup API', 'port': 8003, 'domain': 'backup.aigupiao.me'}
+        ]
+    
+    def log(self, message: str, level: str = "INFO"):
+        """统一日志输出"""
+        if level == "ERROR":
+            logger.error(message)
+        elif level == "WARNING":
+            logger.warning(message)
+        elif level == "SUCCESS":
+            logger.info(f"✅ {message}")
+        else:
+            logger.info(message)
+    
+    def run_command(self, command: str, timeout: int = 30) -> tuple:
+        """执行命令"""
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding='utf-8'
+            )
+            return result.returncode == 0, result.stdout, result.stderr
+        except subprocess.TimeoutExpired:
+            return False, "", "命令执行超时"
+        except Exception as e:
+            return False, "", str(e)
+    
+    def check_prerequisites(self) -> bool:
+        """检查部署前提条件"""
+        self.log("🔍 检查部署前提条件...")
+        
+        # 检查cloudflared是否存在
+        if not os.path.exists(self.deployment_config['cloudflared_path']):
+            self.log("❌ 未找到cloudflared.exe", "ERROR")
+            self.log("请从 https://github.com/cloudflare/cloudflared/releases 下载", "ERROR")
+            return False
+        
+        self.log("✅ cloudflared.exe 已找到", "SUCCESS")
+        
+        # 检查是否已登录Cloudflare
+        success, stdout, stderr = self.run_command(f"{self.deployment_config['cloudflared_path']} tunnel list")
+        if not success:
+            self.log("❌ 未登录Cloudflare或无权限", "ERROR")
+            self.log("请先运行: cloudflared tunnel login", "ERROR")
+            return False
+        
+        self.log("✅ Cloudflare认证有效", "SUCCESS")
+        
+        # 检查现有隧道
+        if self.deployment_config['tunnel_name'] in stdout:
+            self.log(f"✅ 找到现有隧道: {self.deployment_config['tunnel_name']}", "SUCCESS")
+            # 提取隧道ID
+            lines = stdout.split('\n')
+            for line in lines:
+                if self.deployment_config['tunnel_name'] in line:
+                    parts = line.split()
+                    if len(parts) > 0:
+                        self.deployment_config['tunnel_id'] = parts[0]
+                        break
+        else:
+            self.log(f"⚠️ 未找到隧道: {self.deployment_config['tunnel_name']}", "WARNING")
+        
+        return True
+    
+    def create_tunnel_if_needed(self) -> bool:
+        """如果需要,创建新隧道"""
+        if self.deployment_config['tunnel_id']:
+            self.log(f"使用现有隧道ID: {self.deployment_config['tunnel_id']}")
+            return True
+        
+        self.log(f"🏗️ 创建新隧道: {self.deployment_config['tunnel_name']}")
+        
+        success, stdout, stderr = self.run_command(
+            f"{self.deployment_config['cloudflared_path']} tunnel create {self.deployment_config['tunnel_name']}"
+        )
+        
+        if success:
+            # 从输出中提取隧道ID
+            lines = stdout.split('\n')
+            for line in lines:
+                if 'Created tunnel' in line and 'with id' in line:
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if part == 'id' and i + 1 < len(parts):
+                            self.deployment_config['tunnel_id'] = parts[i + 1]
+                            break
+                    break
+            
+            if self.deployment_config['tunnel_id']:
+                self.log(f"✅ 隧道创建成功,ID: {self.deployment_config['tunnel_id']}", "SUCCESS")
+                return True
+            else:
+                self.log("❌ 无法获取隧道ID", "ERROR")
+                return False
+        else:
+            self.log(f"❌ 隧道创建失败: {stderr}", "ERROR")
+            return False
+    
+    def configure_dns_routes(self) -> bool:
+        """配置DNS路由"""
+        self.log("🌐 配置DNS路由...")
+        
+        success_count = 0
+        for domain in self.required_domains:
+            self.log(f"配置域名: {domain}")
+            
+            success, stdout, stderr = self.run_command(
+                f"{self.deployment_config['cloudflared_path']} tunnel route dns {self.deployment_config['tunnel_name']} {domain}"
+            )
+            
+            if success or "already exists" in stderr:
+                self.log(f"✅ {domain} 配置成功", "SUCCESS")
+                success_count += 1
+            else:
+                self.log(f"❌ {domain} 配置失败: {stderr}", "ERROR")
+        
+        if success_count == len(self.required_domains):
+            self.log("✅ 所有DNS路由配置完成", "SUCCESS")
+            return True
+        else:
+            self.log(f"⚠️ {success_count}/{len(self.required_domains)} 个域名配置成功", "WARNING")
+            return success_count > 0
+    
+    def update_tunnel_config(self) -> bool:
+        """更新隧道配置文件"""
+        self.log("📝 更新隧道配置文件...")
+        
+        if not self.deployment_config['tunnel_id']:
+            self.log("❌ 缺少隧道ID", "ERROR")
+            return False
+        
+        # 配置文件已经在之前创建,这里只需要更新隧道ID
+        try:
+            with open(self.deployment_config['config_file'], 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 替换隧道ID(如果需要)
+            if self.deployment_config['tunnel_id'] not in content:
+                # 查找并替换现有的隧道ID
+                lines = content.split('\n')
+                for i, line in enumerate(lines):
+                    if line.startswith('tunnel:'):
+                        lines[i] = f"tunnel: {self.deployment_config['tunnel_id']}"
+                        break
+                
+                # 更新credentials文件路径
+                credentials_file = f"C:\\Users\\锋\\.cloudflared\\{self.deployment_config['tunnel_id']}.json"
+                for i, line in enumerate(lines):
+                    if line.startswith('credentials-file:'):
+                        lines[i] = f"credentials-file: {credentials_file}"
+                        break
+                
+                # 写回文件
+                with open(self.deployment_config['config_file'], 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines))
+                
+                self.log("✅ 配置文件已更新", "SUCCESS")
+            else:
+                self.log("✅ 配置文件已是最新", "SUCCESS")
+            
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ 更新配置文件失败: {e}", "ERROR")
+            return False
+    
+    def start_tunnel_service(self) -> bool:
+        """启动隧道服务"""
+        self.log("🚀 启动隧道服务...")
+        
+        try:
+            # 停止现有进程
+            subprocess.run(['taskkill', '/f', '/im', 'cloudflared.exe'], 
+                         capture_output=True, timeout=10)
+            time.sleep(2)
+            
+            # 启动新进程
+            cmd = [
+                self.deployment_config['cloudflared_path'],
+                'tunnel',
+                '--config', self.deployment_config['config_file'],
+                'run'
+            ]
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+            
+            # 等待服务启动
+            time.sleep(8)
+            
+            # 检查进程是否还在运行
+            if process.poll() is None:
+                self.log("✅ 隧道服务启动成功", "SUCCESS")
+                return True
+            else:
+                stdout, stderr = process.communicate()
+                self.log(f"❌ 隧道服务启动失败: {stderr.decode('utf-8', errors='ignore')}", "ERROR")
+                return False
+                
+        except Exception as e:
+            self.log(f"❌ 启动隧道服务异常: {e}", "ERROR")
+            return False
+    
+    def test_connectivity(self) -> bool:
+        """测试连接性"""
+        self.log("🧪 测试连接性...")
+        
+        test_urls = [
+            f"https://{domain}/health" for domain in self.required_domains[:3]  # 测试前3个域名
+        ]
+        
+        success_count = 0
+        for url in test_urls:
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code in [200, 404]:  # 404也算连通
+                    self.log(f"✅ {url} 连接成功", "SUCCESS")
+                    success_count += 1
+                else:
+                    self.log(f"⚠️ {url} 返回状态码: {response.status_code}", "WARNING")
+            except Exception as e:
+                self.log(f"❌ {url} 连接失败: {e}", "ERROR")
+        
+        if success_count > 0:
+            self.log(f"✅ {success_count}/{len(test_urls)} 个域名连接成功", "SUCCESS")
+            return True
+        else:
+            self.log("❌ 所有域名连接失败", "ERROR")
+            return False
+    
+    def create_monitoring_config(self) -> bool:
+        """创建监控配置"""
+        self.log("📊 创建监控配置...")
+        
+        config = {
+            'check_interval': 30,
+            'failure_threshold': 3,
+            'reconnect_delay': 10,
+            'max_reconnect_attempts': 5,
+            'cloudflared_path': self.deployment_config['cloudflared_path'],
+            'config_file': self.deployment_config['config_file'],
+            'tunnel_name': self.deployment_config['tunnel_name'],
+            'mobile_optimization': True,
+            'network_quality_check': True,
+            'auto_restart_services': True
+        }
+        
+        try:
+            with open('zero_trust_config.json', 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            self.log("✅ 监控配置文件已创建", "SUCCESS")
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ 创建监控配置失败: {e}", "ERROR")
+            return False
+    
+    def deploy(self) -> bool:
+        """执行完整部署"""
+        self.log("🚀 开始Zero Trust部署...")
+        self.log("=" * 60)
+        
+        # 1. 检查前提条件
+        if not self.check_prerequisites():
+            return False
+        
+        # 2. 创建隧道(如果需要)
+        if not self.create_tunnel_if_needed():
+            return False
+        
+        # 3. 配置DNS路由
+        if not self.configure_dns_routes():
+            return False
+        
+        # 4. 更新隧道配置
+        if not self.update_tunnel_config():
+            return False
+        
+        # 5. 启动隧道服务
+        if not self.start_tunnel_service():
+            return False
+        
+        # 6. 测试连接性
+        time.sleep(10)  # 等待服务完全启动
+        if not self.test_connectivity():
+            self.log("⚠️ 连接性测试失败,但部署可能仍然成功", "WARNING")
+        
+        # 7. 创建监控配置
+        self.create_monitoring_config()
+        
+        self.log("=" * 60)
+        self.log("🎉 Zero Trust部署完成!", "SUCCESS")
+        self.log("📋 后续步骤:")
+        self.log("1. 运行监控脚本: python zero_trust_connection_monitor.py")
+        self.log("2. 配置Zero Trust访问策略(参考 zero-trust-policies.yml)")
+        self.log("3. 测试各个域名的访问")
+        
+        return True
+
+def main():
+    """主函数"""
+    deployer = ZeroTrustDeployer()
+    
+    try:
+        success = deployer.deploy()
+        if success:
+            print("\n✅ 部署成功完成!")
+            sys.exit(0)
+        else:
+            print("\n❌ 部署失败!")
+            sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n⚠️ 部署被用户中断")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ 部署异常: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

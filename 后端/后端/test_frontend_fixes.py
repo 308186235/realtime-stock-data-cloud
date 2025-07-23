@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""
+测试前端修复效果
+验证前端项目是否正常工作
+"""
+import os
+import json
+import requests
+import time
+from datetime import datetime
+
+class FrontendFixTester:
+    """前端修复测试器"""
+    
+    def __init__(self):
+        self.test_results = {}
+        
+    def print_banner(self):
+        """打印测试横幅"""
+        print("=" * 80)
+        print("🧪 前端修复效果测试")
+        print("=" * 80)
+        print(f"📅 测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("🎯 验证前端项目修复效果")
+        print("=" * 80)
+        
+    def test_project_structure(self):
+        """测试项目结构"""
+        print("\n📁 测试项目结构...")
+        print("-" * 60)
+        
+        structure_tests = {
+            "frontend/gupiao1": ["package.json", "App.vue", "main.js"],
+            "frontend/stock5": ["package.json", "env.js"],
+            "炒股养家": ["package.json", "App.vue", "main.js", "pages.json", "manifest.json"],
+            "vercel-frontend": ["package.json", "config.js", "pages.json", "manifest.json"]
+        }
+        
+        results = {}
+        
+        for project, required_files in structure_tests.items():
+            print(f"测试项目: {project}")
+            
+            if not os.path.exists(project):
+                results[project] = {"status": "missing", "files": []}
+                print(f"  ❌ 项目目录不存在")
+                continue
+                
+            project_results = {"status": "ok", "files": []}
+            
+            for file in required_files:
+                file_path = os.path.join(project, file)
+                if os.path.exists(file_path):
+                    project_results["files"].append({"file": file, "status": "ok"})
+                    print(f"  ✅ {file}")
+                else:
+                    project_results["files"].append({"file": file, "status": "missing"})
+                    print(f"  ❌ {file} 缺失")
+                    project_results["status"] = "incomplete"
+                    
+            results[project] = project_results
+            
+        self.test_results["structure"] = results
+        
+    def test_api_configuration(self):
+        """测试API配置"""
+        print("\n🌐 测试API配置...")
+        print("-" * 60)
+        
+        config_files = {
+            "frontend/stock5/env.js": "ENV_CONFIG",
+            "炒股养家/env.js": "ENV_CONFIG",
+            "vercel-frontend/config.js": "config"
+        }
+        
+        results = {}
+        
+        for config_file, config_var in config_files.items():
+            print(f"测试配置: {config_file}")
+            
+            if not os.path.exists(config_file):
+                results[config_file] = {"status": "missing"}
+                print(f"  ❌ 配置文件不存在")
+                continue
+                
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                config_result = {"status": "ok", "checks": []}
+                
+                # 检查API地址
+                if 'api.aigupiao.me' in content:
+                    config_result["checks"].append({"check": "api_url", "status": "ok"})
+                    print(f"  ✅ API地址配置正确")
+                else:
+                    config_result["checks"].append({"check": "api_url", "status": "fail"})
+                    print(f"  ❌ API地址配置错误")
+                    config_result["status"] = "fail"
+                    
+                # 检查模拟数据配置
+                if 'useMockData: false' in content or 'useMockData:false' in content:
+                    config_result["checks"].append({"check": "mock_data", "status": "ok"})
+                    print(f"  ✅ 模拟数据已禁用")
+                else:
+                    config_result["checks"].append({"check": "mock_data", "status": "warning"})
+                    print(f"  ⚠️ 模拟数据配置需要检查")
+                    
+                # 检查WebSocket配置
+                if 'wss://api.aigupiao.me/ws' in content:
+                    config_result["checks"].append({"check": "websocket", "status": "ok"})
+                    print(f"  ✅ WebSocket配置正确")
+                else:
+                    config_result["checks"].append({"check": "websocket", "status": "warning"})
+                    print(f"  ⚠️ WebSocket配置需要检查")
+                    
+                results[config_file] = config_result
+                
+            except Exception as e:
+                results[config_file] = {"status": "error", "error": str(e)}
+                print(f"  ❌ 配置文件读取失败: {str(e)}")
+                
+        self.test_results["api_config"] = results
+        
+    def test_api_connectivity(self):
+        """测试API连接性"""
+        print("\n🔗 测试API连接性...")
+        print("-" * 60)
+        
+        api_endpoints = [
+            "https://api.aigupiao.me/health",
+            "https://api.aigupiao.me/",
+            "http://localhost:8000/health",
+            "http://localhost:8001/health"
+        ]
+        
+        results = {}
+        
+        for endpoint in api_endpoints:
+            print(f"测试连接: {endpoint}")
+            
+            try:
+                response = requests.get(endpoint, timeout=5)
+                if response.status_code == 200:
+                    results[endpoint] = {
+                        "status": "ok",
+                        "status_code": response.status_code,
+                        "response_time": response.elapsed.total_seconds()
+                    }
+                    print(f"  ✅ 连接正常 ({response.status_code})")
+                else:
+                    results[endpoint] = {
+                        "status": "warning",
+                        "status_code": response.status_code
+                    }
+                    print(f"  ⚠️ 状态码: {response.status_code}")
+                    
+            except requests.exceptions.ConnectionError:
+                results[endpoint] = {"status": "fail", "error": "connection_error"}
+                print(f"  ❌ 连接失败")
+            except requests.exceptions.Timeout:
+                results[endpoint] = {"status": "fail", "error": "timeout"}
+                print(f"  ❌ 连接超时")
+            except Exception as e:
+                results[endpoint] = {"status": "error", "error": str(e)}
+                print(f"  ❌ 测试异常: {str(e)}")
+                
+        self.test_results["connectivity"] = results
+        
+    def test_package_json_validity(self):
+        """测试package.json有效性"""
+        print("\n📦 测试package.json有效性...")
+        print("-" * 60)
+        
+        projects = ["frontend/gupiao1", "frontend/stock5", "炒股养家", "vercel-frontend"]
+        results = {}
+        
+        for project in projects:
+            package_json_path = os.path.join(project, "package.json")
+            
+            print(f"测试: {package_json_path}")
+            
+            if not os.path.exists(package_json_path):
+                results[project] = {"status": "missing"}
+                print(f"  ❌ package.json不存在")
+                continue
+                
+            try:
+                with open(package_json_path, 'r', encoding='utf-8') as f:
+                    package_data = json.load(f)
+                    
+                package_result = {"status": "ok", "checks": []}
+                
+                # 检查必要字段
+                required_fields = ["name", "version", "scripts"]
+                for field in required_fields:
+                    if field in package_data:
+                        package_result["checks"].append({"field": field, "status": "ok"})
+                        print(f"  ✅ {field}字段存在")
+                    else:
+                        package_result["checks"].append({"field": field, "status": "missing"})
+                        print(f"  ❌ {field}字段缺失")
+                        package_result["status"] = "incomplete"
+                        
+                # 检查脚本
+                scripts = package_data.get("scripts", {})
+                if "dev" in scripts or "serve" in scripts:
+                    package_result["checks"].append({"field": "dev_script", "status": "ok"})
+                    print(f"  ✅ 开发脚本存在")
+                else:
+                    package_result["checks"].append({"field": "dev_script", "status": "missing"})
+                    print(f"  ❌ 开发脚本缺失")
+                    package_result["status"] = "incomplete"
+                    
+                results[project] = package_result
+                
+            except json.JSONDecodeError as e:
+                results[project] = {"status": "invalid", "error": "json_error"}
+                print(f"  ❌ JSON格式错误")
+            except Exception as e:
+                results[project] = {"status": "error", "error": str(e)}
+                print(f"  ❌ 测试异常: {str(e)}")
+                
+        self.test_results["package_json"] = results
+        
+    def generate_test_report(self):
+        """生成测试报告"""
+        print("\n" + "=" * 80)
+        print("📊 前端修复测试报告")
+        print("=" * 80)
+        
+        # 统计测试结果
+        total_tests = 0
+        passed_tests = 0
+        
+        for category, results in self.test_results.items():
+            print(f"\n🔍 {category.upper()}测试结果:")
+            
+            if isinstance(results, dict):
+                for item, result in results.items():
+                    total_tests += 1
+                    status = result.get("status", "unknown")
+                    
+                    if status == "ok":
+                        passed_tests += 1
+                        print(f"  ✅ {item}: 通过")
+                    elif status == "warning":
+                        print(f"  ⚠️ {item}: 警告")
+                    elif status == "incomplete":
+                        print(f"  🔶 {item}: 不完整")
+                    else:
+                        print(f"  ❌ {item}: 失败")
+                        
+        # 计算通过率
+        if total_tests > 0:
+            pass_rate = (passed_tests / total_tests) * 100
+            print(f"\n📈 测试统计:")
+            print(f"  • 总测试数: {total_tests}")
+            print(f"  • 通过数: {passed_tests}")
+            print(f"  • 通过率: {pass_rate:.1f}%")
+            
+            if pass_rate >= 80:
+                print(f"  🎉 测试结果: 优秀")
+            elif pass_rate >= 60:
+                print(f"  👍 测试结果: 良好")
+            else:
+                print(f"  ⚠️ 测试结果: 需要改进")
+        else:
+            print(f"\n⚠️ 未执行任何测试")
+            
+        print(f"\n💡 建议:")
+        print("  1. 如果API连接测试失败,检查网络和服务状态")
+        print("  2. 如果配置测试失败,检查配置文件内容")
+        print("  3. 如果结构测试失败,检查文件是否存在")
+        print("  4. 运行 npm run dev 测试前端项目启动")
+        
+        print("=" * 80)
+        
+    def run_tests(self):
+        """运行所有测试"""
+        self.print_banner()
+        
+        # 执行各项测试
+        self.test_project_structure()
+        self.test_api_configuration()
+        self.test_api_connectivity()
+        self.test_package_json_validity()
+        
+        # 生成报告
+        self.generate_test_report()
+
+def main():
+    """主函数"""
+    tester = FrontendFixTester()
+    tester.run_tests()
+
+if __name__ == "__main__":
+    main()

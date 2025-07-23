@@ -1,0 +1,63 @@
+{
+  "timestamp": "2025-07-21T13:25:04.623Z",
+  "implementation_status": {
+    "services": {
+      "后端服务": {
+        "running": true,
+        "latency": 23,
+        "statusCode": 404,
+        "port": 8000
+      },
+      "本地交易服务": {
+        "running": true,
+        "latency": 2,
+        "statusCode": 200,
+        "port": 8888
+      }
+    },
+    "tunnels": {
+      "ngrok": {
+        "running": true,
+        "processes": 2,
+        "note": "2个ngrok进程运行中"
+      },
+      "cloudflare": {
+        "running": true,
+        "note": "Cloudflare隧道运行中"
+      }
+    },
+    "dns": {
+      "using_google_dns": true,
+      "resolution_works": true,
+      "latency": 492,
+      "raw_output": "������:  dns.google\r\nAddress:  8.8.8.8\r\n\r\n����:    aigupiao.me\r\nAddresses:  2606:4700:3037::6815:2659\r\n\t  2606:4700:3037::ac43:dcd4\r\n\t  172.67.220.212\r\n\t  104.21.38.89\r\n\r\n"
+    },
+    "performance": {
+      "Cloudflare路由": {
+        "latency": 3914,
+        "success": true,
+        "statusCode": 200
+      },
+      "API路由": {
+        "latency": 9999,
+        "success": false,
+        "error": "getaddrinfo ENOTFOUND api.aigupiao.me"
+      },
+      "本地服务": {
+        "latency": 4,
+        "success": true,
+        "statusCode": 200
+      }
+    },
+    "overall": {
+      "completion_rate": 100,
+      "completed_items": 5,
+      "total_items": 5,
+      "issues": [],
+      "performance_success_rate": 67
+    }
+  },
+  "recommendations": [
+    "考虑使用ngrok替代Cloudflare隧道"
+  ]
+}

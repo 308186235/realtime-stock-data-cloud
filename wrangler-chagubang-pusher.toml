@@ -1,0 +1,41 @@
+name = "chagubang-realtime-pusher"
+main = "chagubang-realtime-pusher.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 路由配置
+routes = [
+    { pattern = "data.aigupiao.me/*", zone_name = "aigupiao.me" }
+]
+
+# 定时任务配置
+[[triggers.crons]]
+cron = "10 9 * * 1-5"    # 周一到周五 9:10 AM
+[[triggers.crons]]
+cron = "*/1 9-11 * * 1-5"  # 周一到周五 9:00-11:59 每分钟
+[[triggers.crons]]
+cron = "*/1 13-14 * * 1-5" # 周一到周五 13:00-14:59 每分钟
+
+# 环境变量
+[vars]
+DOMAIN = "aigupiao.me"
+ENVIRONMENT = "production"
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+CHAGUBANG_HOST = "l1.chagubang.com"
+CHAGUBANG_PORT = "6380"
+CHAGUBANG_TOKEN = "QT_wat5QfcJ6N9pDZM5"
+
+# KV 存储配置
+[[kv_namespaces]]
+binding = "STOCK_CACHE"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# Durable Objects 配置（用于维持 TCP 连接）
+[[durable_objects.bindings]]
+name = "CHAGUBANG_CONNECTION"
+class_name = "ChaguBangConnection"
+
+# 限制配置
+[limits]
+cpu_ms = 30000

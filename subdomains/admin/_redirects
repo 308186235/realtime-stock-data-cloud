@@ -1,3 +1,0 @@
-# admin.aigupiao.me redirects
-/api/* https://api.aigupiao.me/api/:splat 200
-/* /index.html 200

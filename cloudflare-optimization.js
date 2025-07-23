@@ -1,0 +1,257 @@
+/**
+ * Cloudflare优化方案 - 解决云端慢的问题
+ * 
+ * 功能:
+ * 1. 使用优选IP列表
+ * 2. 自动测试最快IP
+ * 3. 动态切换最优路径
+ * 4. 本地DNS劫持
+ */
+
+const https = require('https');
+const dns = require('dns');
+
+// 已知的Cloudflare优选IP列表(中国大陆优化)
+const OPTIMIZED_IPS = [
+  // 香港节点(通常最快)
+  '104.16.132.229',
+  '104.16.133.229', 
+  '172.67.74.226',
+  '104.21.48.84',
+  
+  // 新加坡节点
+  '104.18.24.2',
+  '104.18.25.2',
+  '172.67.136.89',
+  '104.21.72.223',
+  
+  // 日本节点
+  '104.16.106.96',
+  '104.16.107.96',
+  '172.67.181.63',
+  '104.21.28.62',
+  
+  // 美国西海岸(备用)
+  '104.16.124.96',
+  '104.16.125.96',
+  '172.67.74.226',
+  '104.21.48.84'
+];
+
+// 测试结果缓存
+const ipTestResults = new Map();
+const CACHE_TTL = 300000; // 5分钟缓存
+
+// 测试单个IP的延迟
+async function testIPLatency(ip, hostname = 'api.aigupiao.me') {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    
+    const options = {
+      hostname: ip,
+      port: 443,
+      path: '/api/health',
+      method: 'GET',
+      timeout: 5000,
+      headers: {
+        'Host': hostname,
+        'User-Agent': 'Cloudflare-Optimizer/1.0'
+      },
+      // 跳过证书验证(因为IP不匹配域名)
+      rejectUnauthorized: false
+    };
+    
+    const req = https.request(options, (res) => {
+      const latency = Date.now() - start;
+      resolve({
+        ip: ip,
+        latency: latency,
+        status: res.statusCode,
+        success: res.statusCode === 200
+      });
+    });
+    
+    req.on('error', () => {
+      resolve({
+        ip: ip,
+        latency: 9999,
+        status: 0,
+        success: false
+      });
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({
+        ip: ip,
+        latency: 9999,
+        status: 0,
+        success: false
+      });
+    });
+    
+    req.end();
+  });
+}
+
+// 测试所有IP并找到最快的
+async function findFastestIP() {
+  console.log('🔍 正在测试Cloudflare优选IP...');
+  
+  const testPromises = OPTIMIZED_IPS.map(ip => testIPLatency(ip));
+  const results = await Promise.all(testPromises);
+  
+  // 过滤成功的结果并按延迟排序
+  const successfulResults = results
+    .filter(result => result.success)
+    .sort((a, b) => a.latency - b.latency);
+  
+  console.log('\n📊 IP测试结果:');
+  results.forEach(result => {
+    const status = result.success ? '✅' : '❌';
+    const latency = result.success ? `${result.latency}ms` : '超时';
+    console.log(`${status} ${result.ip}: ${latency}`);
+  });
+  
+  if (successfulResults.length > 0) {
+    const fastest = successfulResults[0];
+    console.log(`\n🏆 最快IP: ${fastest.ip} (${fastest.latency}ms)`);
+    
+    // 缓存结果
+    ipTestResults.set('fastest', {
+      ip: fastest.ip,
+      latency: fastest.latency,
+      timestamp: Date.now()
+    });
+    
+    return fastest;
+  } else {
+    console.log('\n❌ 没有找到可用的优选IP');
+    return null;
+  }
+}
+
+// 获取最快IP(带缓存)
+async function getFastestIP() {
+  const cached = ipTestResults.get('fastest');
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    console.log(`📦 使用缓存的最快IP: ${cached.ip} (${cached.latency}ms)`);
+    return cached;
+  }
+  
+  return await findFastestIP();
+}
+
+// 创建优化的HTTPS Agent
+function createOptimizedAgent(ip) {
+  return new https.Agent({
+    lookup: (hostname, options, callback) => {
+      // DNS劫持:将域名解析到优选IP
+      callback(null, ip, 4);
+    },
+    keepAlive: true,
+    maxSockets: 10
+  });
+}
+
+// 优化的请求函数
+async function optimizedRequest(url, options = {}) {
+  const fastestIP = await getFastestIP();
+  
+  if (!fastestIP) {
+    throw new Error('没有可用的优选IP');
+  }
+  
+  const agent = createOptimizedAgent(fastestIP.ip);
+  
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    
+    const requestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname + urlObj.search,
+      method: options.method || 'GET',
+      headers: {
+        'Host': urlObj.hostname,
+        'User-Agent': 'Optimized-Client/1.0',
+        ...options.headers
+      },
+      agent: agent,
+      timeout: options.timeout || 10000
+    };
+    
+    const req = https.request(requestOptions, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          headers: res.headers,
+          body: data,
+          optimizedIP: fastestIP.ip,
+          latency: fastestIP.latency
+        });
+      });
+    });
+    
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    
+    if (options.body) {
+      req.write(options.body);
+    }
+    
+    req.end();
+  });
+}
+
+// 导出函数
+module.exports = {
+  findFastestIP,
+  getFastestIP,
+  optimizedRequest,
+  createOptimizedAgent,
+  OPTIMIZED_IPS
+};
+
+// 如果直接运行此文件,执行测试
+if (require.main === module) {
+  (async () => {
+    console.log('🚀 Cloudflare优化测试开始\n');
+    
+    try {
+      const fastest = await findFastestIP();
+      
+      if (fastest) {
+        console.log('\n🧪 测试优化效果...');
+        
+        // 测试优化前后的性能对比
+        const start = Date.now();
+        const result = await optimizedRequest('https://api.aigupiao.me/api/health');
+        const duration = Date.now() - start;
+        
+        console.log(`\n✅ 优化后测试结果:`);
+        console.log(`   响应时间: ${duration}ms`);
+        console.log(`   使用IP: ${result.optimizedIP}`);
+        console.log(`   状态码: ${result.statusCode}`);
+        console.log(`   响应: ${result.body.substring(0, 100)}...`);
+        
+        console.log('\n🎉 Cloudflare优化配置完成!');
+        console.log('💡 使用方法:');
+        console.log('   const { optimizedRequest } = require("./cloudflare-optimization");');
+        console.log('   const result = await optimizedRequest("https://api.aigupiao.me/api/health");');
+        
+      } else {
+        console.log('\n❌ 优化失败:没有找到可用的IP');
+      }
+      
+    } catch (error) {
+      console.error('\n❌ 测试失败:', error.message);
+    }
+  })();
+}

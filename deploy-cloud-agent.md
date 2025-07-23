@@ -12,7 +12,7 @@
 - 选择分支: `main`
 
 ### 3. 配置部署
-Railway会自动检测到 `railway.json` 配置文件：
+Railway会自动检测到 `railway.json` 配置文件:
 ```json
 {
   "build": {
@@ -29,7 +29,7 @@ Railway会自动检测到 `railway.json` 配置文件：
 ```
 
 ### 4. 设置环境变量
-在Railway项目设置中添加：
+在Railway项目设置中添加:
 - `PORT`: 8080 (Railway会自动设置)
 - 其他环境变量已在代码中硬编码
 
@@ -46,7 +46,7 @@ Railway会自动检测到 `railway.json` 配置文件：
 ## ✅ 验证部署
 
 ### 1. 检查服务状态
-访问Railway提供的URL，应该看到：
+访问Railway提供的URL,应该看到:
 ```json
 {
   "status": "running",
@@ -56,7 +56,7 @@ Railway会自动检测到 `railway.json` 配置文件：
 ```
 
 ### 2. 检查日志
-在Railway控制台查看日志，应该看到：
+在Railway控制台查看日志,应该看到:
 ```
 🚀 启动云端Agent智能交易系统...
 🔗 连接茶股帮: l1.chagubang.com:6380
@@ -65,7 +65,7 @@ Railway会自动检测到 `railway.json` 配置文件：
 ```
 
 ### 3. 检查Supabase数据
-查询agent_decisions表，应该有新的决策数据：
+查询agent_decisions表,应该有新的决策数据:
 ```sql
 SELECT COUNT(*) FROM agent_decisions WHERE created_at > NOW() - INTERVAL '1 hour';
 ```
@@ -76,7 +76,7 @@ SELECT COUNT(*) FROM agent_decisions WHERE created_at > NOW() - INTERVAL '1 hour
 - ✅ **完全云端运行** - 无需本地服务
 - ✅ **实时数据接收** - 直连茶股帮TCP
 - ✅ **智能分析** - 30秒一轮分析
-- ✅ **数据清洗** - 过滤涨跌停、北交所等
+- ✅ **数据清洗** - 过滤涨跌停,北交所等
 - ✅ **决策生成** - 买卖持有决策
 - ✅ **置信度计算** - 0.1-0.9置信度
 - ✅ **原因生成** - 可解释的决策原因
@@ -94,7 +94,7 @@ SELECT COUNT(*) FROM agent_decisions WHERE created_at > NOW() - INTERVAL '1 hour
 ## 🔧 监控和维护
 
 ### 日志监控
-Railway控制台实时查看：
+Railway控制台实时查看:
 - 连接状态
 - 数据处理量
 - 决策生成数
@@ -113,11 +113,11 @@ Railway控制台实时查看：
 
 ## 🎉 部署完成
 
-部署成功后，您将拥有：
+部署成功后,您将拥有:
 - ✅ **真正的云端Agent系统**
 - ✅ **24/7不间断运行**
 - ✅ **实时股票数据分析**
 - ✅ **智能交易决策生成**
 - ✅ **完全无本地依赖**
 
-**云端agent现在真正在接收实时股票推送并进行智能分析！**
+**云端agent现在真正在接收实时股票推送并进行智能分析!**

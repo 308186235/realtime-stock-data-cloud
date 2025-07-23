@@ -1,0 +1,101 @@
+{
+  "timestamp": "2025-07-21T13:47:12.052Z",
+  "test_type": "Final ngrok vs Cloudflare Comparison",
+  "ngrok_url": "https://2346443b1406.ngrok-free.app",
+  "results": {
+    "before_optimization": {
+      "cloudflare_tunnel": 6204,
+      "success_rate": 67
+    },
+    "after_optimization": {
+      "本地服务基准": {
+        "type": "local",
+        "average_latency": 9,
+        "success_rate": 100,
+        "successful_tests": 3,
+        "total_tests": 3,
+        "all_results": [
+          {
+            "latency": 23,
+            "success": true,
+            "statusCode": 200
+          },
+          {
+            "latency": 2,
+            "success": true,
+            "statusCode": 200
+          },
+          {
+            "latency": 3,
+            "success": true,
+            "statusCode": 200
+          }
+        ]
+      },
+      "ngrok隧道 (优化方案)": {
+        "type": "ngrok",
+        "average_latency": 408,
+        "success_rate": 100,
+        "successful_tests": 3,
+        "total_tests": 3,
+        "all_results": [
+          {
+            "latency": 672,
+            "success": true,
+            "statusCode": 200
+          },
+          {
+            "latency": 292,
+            "success": true,
+            "statusCode": 200
+          },
+          {
+            "latency": 259,
+            "success": true,
+            "statusCode": 200
+          }
+        ]
+      },
+      "Cloudflare隧道 (原方案)": {
+        "type": "cloudflare",
+        "average_latency": 2066,
+        "success_rate": 67,
+        "successful_tests": 2,
+        "total_tests": 3,
+        "all_results": [
+          {
+            "latency": 3163,
+            "success": true,
+            "statusCode": 200
+          },
+          {
+            "latency": 968,
+            "success": true,
+            "statusCode": 200
+          },
+          {
+            "latency": 9999,
+            "success": false,
+            "error": "Request timeout"
+          }
+        ]
+      }
+    },
+    "improvement": {
+      "ngrok_vs_cloudflare": {
+        "latency_improvement": 80,
+        "ngrok_latency": 408,
+        "cloudflare_latency": 2066
+      },
+      "overall": {
+        "improvement": 93,
+        "before_latency": 6204,
+        "after_latency": 408
+      }
+    }
+  },
+  "summary": {
+    "best_solution": "本地服务基准",
+    "recommendation": "ngrok隧道性能优秀，建议作为主要解决方案"
+  }
+}

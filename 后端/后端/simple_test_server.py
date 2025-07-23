@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+简单的测试服务器,用于验证Zero Trust隧道连接
+"""
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+import uvicorn
+import json
+
+app = FastAPI(title="Zero Trust Test Server", version="1.0.0")
+
+# 添加CORS中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    """根路径"""
+    return {
+        "message": "Zero Trust Test Server",
+        "status": "running",
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/health")
+async def health_check():
+    """健康检查端点"""
+    return {
+        "status": "healthy",
+        "message": "服务正常运行",
+        "timestamp": datetime.now().isoformat(),
+        "service": "zero-trust-test-server"
+    }
+
+@app.get("/api/status")
+async def api_status():
+    """API状态检查"""
+    return {
+        "api_status": "active",
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "endpoints": [
+            "/",
+            "/health",
+            "/api/status",
+            "/api/balance",
+            "/api/positions",
+            "/api/orders"
+        ]
+    }
+
+@app.get("/api/balance")
+async def get_balance():
+    """模拟余额查询"""
+    return {
+        "balance": {
+            "total": 100000.00,
+            "available": 85000.00,
+            "frozen": 15000.00,
+            "currency": "CNY"
+        },
+        "timestamp": datetime.now().isoformat(),
+        "status": "success"
+    }
+
+@app.get("/api/positions")
+async def get_positions():
+    """模拟持仓查询"""
+    return {
+        "positions": [
+            {
+                "symbol": "000001.SZ",
+                "name": "平安银行",
+                "quantity": 1000,
+                "avg_price": 12.50,
+                "current_price": 13.20,
+                "profit_loss": 700.00
+            },
+            {
+                "symbol": "600036.SH",
+                "name": "招商银行",
+                "quantity": 500,
+                "avg_price": 45.80,
+                "current_price": 47.20,
+                "profit_loss": 700.00
+            }
+        ],
+        "timestamp": datetime.now().isoformat(),
+        "status": "success"
+    }
+
+@app.get("/api/orders")
+async def get_orders():
+    """模拟订单查询"""
+    return {
+        "orders": [
+            {
+                "order_id": "20250705001",
+                "symbol": "000001.SZ",
+                "side": "buy",
+                "quantity": 1000,
+                "price": 13.00,
+                "status": "filled",
+                "timestamp": "2025-07-05T08:30:00"
+            },
+            {
+                "order_id": "20250705002",
+                "symbol": "600036.SH",
+                "side": "sell",
+                "quantity": 200,
+                "price": 47.50,
+                "status": "pending",
+                "timestamp": "2025-07-05T09:15:00"
+            }
+        ],
+        "timestamp": datetime.now().isoformat(),
+        "status": "success"
+    }
+
+@app.get("/metrics")
+async def get_metrics():
+    """监控指标"""
+    return {
+        "metrics": {
+            "uptime": "1h 30m",
+            "requests_total": 1250,
+            "requests_per_minute": 15.5,
+            "memory_usage": "45.2MB",
+            "cpu_usage": "12.3%"
+        },
+        "timestamp": datetime.now().isoformat(),
+        "status": "healthy"
+    }
+
+if __name__ == "__main__":
+    print("🚀 启动Zero Trust测试服务器...")
+    print("📍 服务地址: http://127.0.0.1:8000")
+    print("🌐 通过隧道访问: https://api.aigupiao.me")
+    
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        log_level="info"
+    )

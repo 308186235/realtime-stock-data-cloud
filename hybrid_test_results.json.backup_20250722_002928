@@ -1,0 +1,65 @@
+{
+  "timestamp": "2025-07-21T12:47:24.872550",
+  "test_results": {
+    "dns": {
+      "latency": 426,
+      "success": true
+    },
+    "cdn": {
+      "latency": 10962,
+      "success": true
+    }
+  },
+  "config": {
+    "dns": {
+      "primary": "8.8.8.8",
+      "secondary": "8.8.4.4",
+      "name": "Google DNS"
+    },
+    "ngrok": {
+      "version": "2",
+      "authtoken": "YOUR_NGROK_TOKEN",
+      "tunnels": {
+        "aigupiao-api": {
+          "proto": "http",
+          "addr": 8000,
+          "region": "ap",
+          "bind_tls": true
+        },
+        "aigupiao-trading": {
+          "proto": "http",
+          "addr": 8888,
+          "region": "ap",
+          "bind_tls": true
+        }
+      }
+    },
+    "cdn": {
+      "primary": {
+        "name": "JSDelivr CDN",
+        "url": "https://cdn.jsdelivr.net",
+        "latency": 919
+      },
+      "fallback": {
+        "name": "BootCDN",
+        "url": "https://cdn.bootcdn.net",
+        "latency": 1367
+      }
+    },
+    "architecture": {
+      "architecture": "Cloudflare SSL/CDN + ngrok Tunnel",
+      "components": {
+        "ssl_provider": "Cloudflare",
+        "cdn_provider": "JSDelivr + Cloudflare",
+        "tunnel_provider": "ngrok (亚太区域)",
+        "dns_provider": "Google DNS"
+      },
+      "flow": [
+        "Mobile App → Cloudflare DNS",
+        "Static Resources → JSDelivr CDN",
+        "API Requests → ngrok Tunnel → Local Server",
+        "SSL/Security → Cloudflare"
+      ]
+    }
+  }
+}

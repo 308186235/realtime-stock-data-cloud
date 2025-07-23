@@ -1,0 +1,241 @@
+/**
+ * 茶股帮实时数据推送 Worker
+ * 功能:连接茶股帮服务器,接收实时股票数据,推送到 Supabase
+ */
+
+// 配置
+const CHAGUBANG_CONFIG = {
+  host: 'l1.chagubang.com',
+  port: 6380,
+  token: 'QT_wat5QfcJ6N9pDZM5'
+};
+
+const SUPABASE_URL = 'https://zzukfxwavknskqcepsjb.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTk3NTQ5MDYsImV4cCI6MjAzNTMzMDkwNn0.VQjKQKWgVXKhJhqKvZ8_Zt8wZ8wZ8wZ8wZ8wZ8wZ8wZ';
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    
+    if (url.pathname === '/start-data-push') {
+      return await startDataPush(env);
+    } else if (url.pathname === '/status') {
+      return await getStatus(env);
+    } else if (url.pathname === '/test-connection') {
+      return await testConnection();
+    }
+    
+    return new Response('Chagubang Realtime Data Pusher', {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  },
+
+  // 定时任务处理
+  async scheduled(controller, env, ctx) {
+    // 每天 9:10 AM 开始数据推送
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    
+    // 交易时间:9:10-11:30, 13:00-15:00
+    if ((hour === 9 && minute >= 10) || 
+        (hour >= 10 && hour < 11) || 
+        (hour === 11 && minute <= 30) ||
+        (hour >= 13 && hour < 15)) {
+      
+      ctx.waitUntil(startDataPush(env));
+    }
+  }
+};
+
+// 开始数据推送
+async function startDataPush(env) {
+  try {
+    // 连接茶股帮服务器
+    const socket = connect(CHAGUBANG_CONFIG.host, CHAGUBANG_CONFIG.port);
+    
+    // 发送认证token
+    await socket.send(CHAGUBANG_CONFIG.token);
+    
+    // 监听数据
+    socket.addEventListener('message', async (event) => {
+      try {
+        const rawData = event.data;
+        const stockData = parseStockData(rawData);
+        
+        if (stockData) {
+          // 推送到 Supabase
+          await pushToSupabase(stockData);
+          
+          // 缓存到 KV
+          if (env.STOCK_CACHE) {
+            await env.STOCK_CACHE.put(
+              `stock:${stockData.symbol}`, 
+              JSON.stringify(stockData),
+              { expirationTtl: 300 } // 5分钟过期
+            );
+          }
+        }
+      } catch (error) {
+        console.error('处理股票数据失败:', error);
+      }
+    });
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: '数据推送已启动',
+      timestamp: new Date().toISOString()
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 解析股票数据
+function parseStockData(rawData) {
+  try {
+    // 茶股帮数据格式:33个字段,用$分隔
+    const fields = rawData.split('$');
+    
+    if (fields.length < 33) {
+      return null;
+    }
+    
+    return {
+      symbol: fields[0],           // 股票代码
+      name: fields[1],             // 股票名称
+      current_price: parseFloat(fields[2]) || 0,    // 当前价格
+      change_amount: parseFloat(fields[3]) || 0,    // 涨跌额
+      change_percent: parseFloat(fields[4]) || 0,   // 涨跌幅
+      volume: parseInt(fields[5]) || 0,             // 成交量
+      turnover: parseFloat(fields[6]) || 0,         // 成交额
+      open_price: parseFloat(fields[7]) || 0,       // 开盘价
+      high_price: parseFloat(fields[8]) || 0,       // 最高价
+      low_price: parseFloat(fields[9]) || 0,        // 最低价
+      prev_close: parseFloat(fields[10]) || 0,      // 昨收价
+      bid_price_1: parseFloat(fields[11]) || 0,     // 买一价
+      bid_volume_1: parseInt(fields[12]) || 0,      // 买一量
+      ask_price_1: parseFloat(fields[13]) || 0,     // 卖一价
+      ask_volume_1: parseInt(fields[14]) || 0,      // 卖一量
+      timestamp: new Date().toISOString(),
+      data_source: 'chagubang'
+    };
+  } catch (error) {
+    console.error('解析股票数据失败:', error);
+    return null;
+  }
+}
+
+// 推送到 Supabase
+async function pushToSupabase(stockData) {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/realtime_stock_data`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(stockData)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Supabase 推送失败: ${response.status}`);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('推送到 Supabase 失败:', error);
+    throw error;
+  }
+}
+
+// 获取状态
+async function getStatus(env) {
+  try {
+    // 检查最近的数据
+    let recentData = null;
+    if (env.STOCK_CACHE) {
+      const keys = await env.STOCK_CACHE.list({ prefix: 'stock:' });
+      recentData = keys.keys.length;
+    }
+    
+    return new Response(JSON.stringify({
+      status: 'running',
+      cached_stocks: recentData || 0,
+      last_update: new Date().toISOString(),
+      config: {
+        host: CHAGUBANG_CONFIG.host,
+        port: CHAGUBANG_CONFIG.port,
+        supabase_url: SUPABASE_URL
+      }
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      status: 'error',
+      error: error.message
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 测试连接
+async function testConnection() {
+  try {
+    // 测试 Supabase 连接
+    const supabaseResponse = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    
+    const supabaseOk = supabaseResponse.ok;
+    
+    return new Response(JSON.stringify({
+      supabase_connection: supabaseOk ? 'OK' : 'FAILED',
+      chagubang_config: CHAGUBANG_CONFIG,
+      timestamp: new Date().toISOString()
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 简单的 TCP 连接模拟(在实际环境中需要使用 Durable Objects)
+function connect(host, port) {
+  // 这里需要实现实际的 TCP 连接
+  // 在 Cloudflare Workers 中,需要使用 Durable Objects 来维持长连接
+  return {
+    send: async (data) => {
+      console.log(`发送到 ${host}:${port}:`, data);
+    },
+    addEventListener: (event, handler) => {
+      // 模拟接收数据
+      console.log(`监听 ${event} 事件`);
+    }
+  };
+}

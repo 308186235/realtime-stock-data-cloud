@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""
+生产环境Supabase连接测试脚本
+"""
+import os
+import sys
+import json
+import requests
+from datetime import datetime
+
+def load_production_config():
+    """加载生产环境配置"""
+    config = {}
+    
+    # 从.env.production加载配置
+    if os.path.exists('.env.production'):
+        with open('.env.production', 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    config[key] = value
+    
+    return config
+
+def test_supabase_api_endpoint(config):
+    """测试Supabase API端点"""
+    try:
+        url = config.get('SUPABASE_URL')
+        key = config.get('SUPABASE_KEY')
+        
+        if not url or not key:
+            return False, "SUPABASE_URL 或 SUPABASE_KEY 未配置"
+        
+        if 'YOUR_' in url or 'YOUR_' in key:
+            return False, "配置中包含占位符,请替换为实际值"
+        
+        # 测试REST API端点
+        headers = {
+            'apikey': key,
+            'Authorization': f'Bearer {key}',
+            'Content-Type': 'application/json'
+        }
+        
+        # 测试健康检查端点
+        health_url = f"{url}/rest/v1/"
+        response = requests.get(health_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            return True, f"Supabase API端点响应正常 (状态码: {response.status_code})"
+        else:
+            return False, f"API端点响应异常 (状态码: {response.status_code})"
+        
+    except requests.exceptions.Timeout:
+        return False, "API请求超时"
+    except requests.exceptions.ConnectionError:
+        return False, "无法连接到Supabase服务器"
+    except Exception as e:
+        return False, f"API测试失败: {e}"
+
+def test_configuration_completeness():
+    """测试配置完整性"""
+    config = load_production_config()
+    
+    required_keys = [
+        'SUPABASE_URL',
+        'SUPABASE_KEY', 
+        'SUPABASE_SERVICE_KEY',
+        'DATABASE_URL'
+    ]
+    
+    missing_keys = []
+    placeholder_keys = []
+    
+    for key in required_keys:
+        value = config.get(key)
+        if not value:
+            missing_keys.append(key)
+        elif 'YOUR_' in value or '[YOUR_' in value:
+            placeholder_keys.append(key)
+    
+    if missing_keys:
+        return False, f"缺少配置项: {', '.join(missing_keys)}", config
+    
+    if placeholder_keys:
+        return False, f"以下配置项包含占位符,需要替换为实际值: {', '.join(placeholder_keys)}", config
+    
+    return True, "配置检查通过", config
+
+def test_database_url_format():
+    """测试数据库URL格式"""
+    config = load_production_config()
+    database_url = config.get('DATABASE_URL', '')
+
+    if not database_url:
+        return False, "DATABASE_URL 未配置"
+
+    if '[YOUR_DB_PASSWORD]' in database_url:
+        return False, "DATABASE_URL 中包含占位符 [YOUR_DB_PASSWORD],请替换为实际密码"
+
+    # 支持两种格式:PostgreSQL直连和Supabase URL
+    if database_url.startswith('postgresql://'):
+        # PostgreSQL直连格式检查
+        required_components = ['@db.zzukfxwavknskqcepsjb.supabase.co', ':5432', '/postgres']
+        missing_components = [comp for comp in required_components if comp not in database_url]
+
+        if missing_components:
+            return False, f"PostgreSQL URL 缺少必要组件: {', '.join(missing_components)}"
+
+        return True, "PostgreSQL数据库URL格式正确"
+
+    elif database_url.startswith('supabase://'):
+        # Supabase URL格式检查
+        if 'zzukfxwavknskqcepsjb.supabase.co' not in database_url:
+            return False, "Supabase URL 应包含项目域名"
+
+        return True, "Supabase数据库URL格式正确"
+
+    else:
+        return False, "DATABASE_URL 格式不正确,应以 postgresql:// 或 supabase:// 开头"
+
+def main():
+    """主测试函数"""
+    print("🔍 Supabase生产环境配置测试")
+    print("=" * 50)
+    
+    test_results = []
+    
+    # 1. 配置完整性测试
+    print("\n1. 配置完整性测试...")
+    config_ok, config_msg, config = test_configuration_completeness()
+    test_results.append(("配置完整性", config_ok, config_msg))
+    print(f"   {'✅' if config_ok else '❌'} {config_msg}")
+    
+    # 2. 数据库URL格式测试
+    print("\n2. 数据库URL格式测试...")
+    db_url_ok, db_url_msg = test_database_url_format()
+    test_results.append(("数据库URL格式", db_url_ok, db_url_msg))
+    print(f"   {'✅' if db_url_ok else '❌'} {db_url_msg}")
+    
+    # 3. Supabase API端点测试
+    print("\n3. Supabase API端点测试...")
+    if config_ok:
+        api_ok, api_msg = test_supabase_api_endpoint(config)
+        test_results.append(("API端点连接", api_ok, api_msg))
+        print(f"   {'✅' if api_ok else '❌'} {api_msg}")
+    else:
+        test_results.append(("API端点连接", False, "跳过(配置不完整)"))
+        print("   ⏭️ 跳过(配置不完整)")
+    
+    # 4. 配置信息展示
+    if config_ok:
+        print("\n4. 配置信息:")
+        print(f"   📍 项目URL: {config.get('SUPABASE_URL')}")
+        print(f"   🔑 API密钥: {config.get('SUPABASE_KEY', '')[:20]}...")
+        print(f"   🗄️ 数据库: db.zzukfxwavknskqcepsjb.supabase.co")
+        print(f"   🌍 区域: ap-southeast-1")
+    
+    # 生成测试报告
+    print("\n" + "=" * 50)
+    print("📊 测试结果摘要:")
+    
+    passed_tests = sum(1 for _, ok, _ in test_results if ok)
+    total_tests = len(test_results)
+    
+    for test_name, ok, msg in test_results:
+        print(f"   {'✅' if ok else '❌'} {test_name}: {msg}")
+    
+    print(f"\n🎯 测试通过率: {passed_tests}/{total_tests} ({passed_tests/total_tests*100:.1f}%)")
+    
+    # 保存测试报告
+    report = {
+        "test_time": datetime.now().isoformat(),
+        "test_results": [
+            {
+                "name": name,
+                "passed": ok,
+                "message": msg
+            }
+            for name, ok, msg in test_results
+        ],
+        "summary": {
+            "total_tests": total_tests,
+            "passed_tests": passed_tests,
+            "success_rate": passed_tests/total_tests*100
+        },
+        "configuration_status": {
+            "config_complete": config_ok,
+            "ready_for_production": passed_tests == total_tests
+        }
+    }
+    
+    with open('production_supabase_test_report.json', 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    
+    print(f"📄 测试报告已保存: production_supabase_test_report.json")
+    
+    # 提供下一步建议
+    if passed_tests == total_tests:
+        print("\n🎉 所有测试通过!Supabase生产环境配置正确。")
+        print("\n📋 下一步操作:")
+        print("1. 在Supabase Dashboard中执行 supabase_init.sql")
+        print("2. 测试数据库表创建和数据插入")
+        print("3. 配置应用程序使用生产环境配置")
+        print("4. 进行端到端功能测试")
+    else:
+        print(f"\n⚠️ {total_tests - passed_tests} 个测试失败,请检查配置。")
+        print("\n🔧 修复建议:")
+        for test_name, ok, msg in test_results:
+            if not ok:
+                print(f"   • {test_name}: {msg}")
+    
+    return passed_tests == total_tests
+
+if __name__ == "__main__":
+    try:
+        result = main()
+        sys.exit(0 if result else 1)
+    except KeyboardInterrupt:
+        print("\n\n⏹️ 测试被用户中断")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n\n❌ 测试过程中发生错误: {e}")
+        sys.exit(1)

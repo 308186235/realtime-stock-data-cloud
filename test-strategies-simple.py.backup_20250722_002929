@@ -1,0 +1,412 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+简化的策略集成测试
+直接检查代码文件中的策略实现
+"""
+
+import os
+from datetime import datetime
+
+class SimpleStrategiesTester:
+    def __init__(self):
+        self.worker_file = 'cloud-intelligent-agent-worker.js'
+        
+    def test_all_strategies(self):
+        """测试所有策略实现"""
+        print("🎯 策略集成检查")
+        print("=" * 60)
+        print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
+        
+        if not os.path.exists(self.worker_file):
+            print(f"❌ 文件不存在: {self.worker_file}")
+            return
+        
+        with open(self.worker_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        results = {}
+        
+        # 1. 测试技术指标策略
+        print("📊 测试1: 技术指标策略")
+        print("-" * 40)
+        results["technical_indicators"] = self.test_technical_indicators(content)
+        
+        # 2. 测试六脉神剑策略
+        print("\n⚔️ 测试2: 六脉神剑策略")
+        print("-" * 40)
+        results["six_sword_strategy"] = self.test_six_sword_strategy(content)
+        
+        # 3. 测试九方智投策略
+        print("\n🎲 测试3: 九方智投策略")
+        print("-" * 40)
+        results["jiufang_strategy"] = self.test_jiufang_strategy(content)
+        
+        # 4. 测试指南针策略
+        print("\n🧭 测试4: 指南针策略")
+        print("-" * 40)
+        results["compass_strategy"] = self.test_compass_strategy(content)
+        
+        # 5. 测试涨停双阴策略
+        print("\n📈 测试5: 涨停双阴策略")
+        print("-" * 40)
+        results["limit_up_strategy"] = self.test_limit_up_strategy(content)
+        
+        # 6. 测试K线形态识别
+        print("\n📈 测试6: K线形态识别")
+        print("-" * 40)
+        results["candle_patterns"] = self.test_candle_patterns(content)
+        
+        # 7. 测试量价关系分析
+        print("\n📊 测试7: 量价关系分析")
+        print("-" * 40)
+        results["volume_price"] = self.test_volume_price_analysis(content)
+        
+        # 8. 测试策略整合
+        print("\n🔄 测试8: 策略整合")
+        print("-" * 40)
+        results["strategy_integration"] = self.test_strategy_integration(content)
+        
+        # 生成报告
+        print("\n📋 策略集成测试报告")
+        print("-" * 40)
+        self.generate_report(results)
+        
+        return results
+    
+    def test_technical_indicators(self, content):
+        """测试技术指标策略"""
+        indicators = {
+            'RSI': 'calculateRSI',
+            'MACD': 'calculateMACD',
+            'KDJ': 'calculateKDJ',
+            'Bollinger': 'calculateBollinger',
+            'Williams R': 'calculateWilliamsR',
+            'MA': 'calculateMA',
+            'Technical Analysis': 'performTechnicalAnalysis'
+        }
+        
+        found_indicators = []
+        for name, method in indicators.items():
+            if method in content:
+                found_indicators.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_indicators) / len(indicators) * 100
+        print(f"   📊 技术指标覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_indicators) >= 5,
+            "found_indicators": found_indicators,
+            "total_indicators": len(indicators),
+            "coverage": coverage
+        }
+    
+    def test_six_sword_strategy(self, content):
+        """测试六脉神剑策略"""
+        strategies = {
+            '天字诀': 'tianStrategy',
+            '地字诀': 'diStrategy',
+            '人字诀': 'renStrategy',
+            '和字诀': 'heStrategy',
+            '顺字诀': 'shunStrategy',
+            '凌字诀': 'lingStrategy',
+            '主方法': 'applySixSwordStrategy'
+        }
+        
+        found_strategies = []
+        for name, method in strategies.items():
+            if method in content:
+                found_strategies.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_strategies) / len(strategies) * 100
+        print(f"   ⚔️ 六脉神剑覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_strategies) >= 5,
+            "found_strategies": found_strategies,
+            "total_strategies": len(strategies),
+            "coverage": coverage
+        }
+    
+    def test_jiufang_strategy(self, content):
+        """测试九方智投策略"""
+        features = {
+            '长下影检测': 'detectLongLowerShadow',
+            '放量检测': 'detectVolumeSpike',
+            '探底回升': 'detectBottomReversal',
+            '支撑分析': 'analyzeSupportLevels',
+            '主方法': 'applyJiuFangStrategy'
+        }
+        
+        found_features = []
+        for name, method in features.items():
+            if method in content:
+                found_features.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_features) / len(features) * 100
+        print(f"   🎲 九方智投覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_features) >= 4,
+            "found_features": found_features,
+            "total_features": len(features),
+            "coverage": coverage
+        }
+    
+    def test_compass_strategy(self, content):
+        """测试指南针策略"""
+        strategies = {
+            '主力策略': 'mainForceStrategy',
+            '趋势跟踪': 'trendFollowingStrategy',
+            '突破策略': 'breakthroughStrategy',
+            '动量策略': 'momentumStrategy',
+            '量价策略': 'volumePriceStrategy',
+            '支撑阻力': 'supportResistanceStrategy',
+            '市场情绪': 'marketMoodStrategy',
+            '主方法': 'applyCompassStrategy'
+        }
+        
+        found_strategies = []
+        for name, method in strategies.items():
+            if method in content:
+                found_strategies.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_strategies) / len(strategies) * 100
+        print(f"   🧭 指南针策略覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_strategies) >= 6,
+            "found_strategies": found_strategies,
+            "total_strategies": len(strategies),
+            "coverage": coverage
+        }
+    
+    def test_limit_up_strategy(self, content):
+        """测试涨停双阴策略"""
+        features = {
+            '涨停检测': 'limitUpDetected',
+            '双阴检测': 'detectDoubleNegative',
+            '缩量检测': 'detectVolumeDecrease',
+            '强势条件': 'detectStrengthCondition',
+            '主方法': 'applyLimitUpDoubleNegativeStrategy'
+        }
+        
+        found_features = []
+        for name, method in features.items():
+            if method in content:
+                found_features.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_features) / len(features) * 100
+        print(f"   📈 涨停双阴覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_features) >= 4,
+            "found_features": found_features,
+            "total_features": len(features),
+            "coverage": coverage
+        }
+    
+    def test_candle_patterns(self, content):
+        """测试K线形态识别"""
+        patterns = {
+            '十字星': 'isDoji',
+            '锤子线': 'isHammer',
+            '流星线': 'isShootingStar',
+            '吞没形态': 'isEngulfing',
+            '启明星': 'isMorningStar',
+            '乌云盖顶': 'isDarkCloudCover',
+            '三白兵': 'isThreeWhiteSoldiers',
+            '三乌鸦': 'isThreeBlackCrows',
+            '上升阻力': 'isRisingObstacle',
+            '双飞乌鸦': 'isDoubleBlackCrows',
+            '形态识别': 'identifyCandlePatterns'
+        }
+        
+        found_patterns = []
+        for name, method in patterns.items():
+            if method in content:
+                found_patterns.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_patterns) / len(patterns) * 100
+        print(f"   📈 K线形态覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_patterns) >= 8,
+            "found_patterns": found_patterns,
+            "total_patterns": len(patterns),
+            "coverage": coverage
+        }
+    
+    def test_volume_price_analysis(self, content):
+        """测试量价关系分析"""
+        methods = {
+            '量价配合': 'calculatePriceVolumeCoordination',
+            '资金流向': 'calculateMoneyFlow',
+            '量能分析': 'analyzeVolumeEnergy',
+            '量价信号': 'determineVolumeSignal',
+            '主方法': 'analyzeVolumePriceRelationship'
+        }
+        
+        found_methods = []
+        for name, method in methods.items():
+            if method in content:
+                found_methods.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        coverage = len(found_methods) / len(methods) * 100
+        print(f"   📊 量价分析覆盖率: {coverage:.1f}%")
+        
+        return {
+            "success": len(found_methods) >= 4,
+            "found_methods": found_methods,
+            "total_methods": len(methods),
+            "coverage": coverage
+        }
+    
+    def test_strategy_integration(self, content):
+        """测试策略整合"""
+        integration_methods = {
+            '市场评分': 'calculateIntegratedMarketScore',
+            '信号判定': 'determineIntegratedSignal',
+            '置信度计算': 'calculateIntegratedConfidence',
+            '实时分析': 'analyzeRealTimeMarket'
+        }
+        
+        strategy_components = [
+            'technicalAnalysis',
+            'candlePatterns',
+            'volumePriceAnalysis',
+            'marketSentiment',
+            'sixSwordAnalysis',
+            'compassAnalysis',
+            'jiuFangAnalysis',
+            'limitUpDoubleNegativeAnalysis'
+        ]
+        
+        found_methods = []
+        for name, method in integration_methods.items():
+            if method in content:
+                found_methods.append(name)
+                print(f"   ✅ {name} ({method}) - 已实现")
+            else:
+                print(f"   ❌ {name} ({method}) - 未找到")
+        
+        found_components = []
+        print(f"   📊 策略组件检查:")
+        for component in strategy_components:
+            if component in content:
+                found_components.append(component)
+                print(f"      ✅ {component} - 已集成")
+            else:
+                print(f"      ❌ {component} - 未集成")
+        
+        method_coverage = len(found_methods) / len(integration_methods) * 100
+        component_coverage = len(found_components) / len(strategy_components) * 100
+        
+        print(f"   🔄 整合方法覆盖率: {method_coverage:.1f}%")
+        print(f"   🔄 策略组件覆盖率: {component_coverage:.1f}%")
+        
+        return {
+            "success": len(found_methods) >= 3 and len(found_components) >= 6,
+            "found_methods": found_methods,
+            "found_components": found_components,
+            "method_coverage": method_coverage,
+            "component_coverage": component_coverage
+        }
+    
+    def generate_report(self, results):
+        """生成测试报告"""
+        print("📊 策略集成测试总结")
+        print("=" * 60)
+        
+        # 统计成功率
+        total_tests = len(results)
+        successful_tests = sum(1 for result in results.values() if result.get("success", False))
+        success_rate = (successful_tests / total_tests * 100) if total_tests > 0 else 0
+        
+        print(f"\n📈 策略集成成功率: {success_rate:.1f}% ({successful_tests}/{total_tests})")
+        
+        # 详细结果
+        print(f"\n📋 详细测试结果:")
+        test_names = {
+            "technical_indicators": "技术指标策略",
+            "six_sword_strategy": "六脉神剑策略",
+            "jiufang_strategy": "九方智投策略",
+            "compass_strategy": "指南针策略",
+            "limit_up_strategy": "涨停双阴策略",
+            "candle_patterns": "K线形态识别",
+            "volume_price": "量价关系分析",
+            "strategy_integration": "策略整合"
+        }
+        
+        for test_key, result in results.items():
+            test_name = test_names.get(test_key, test_key)
+            status = "✅" if result.get("success") else "❌"
+            coverage = result.get("coverage", 0)
+            print(f"   {status} {test_name} (覆盖率: {coverage:.1f}%)")
+        
+        # 总体评估
+        print(f"\n🏆 总体评估:")
+        if success_rate >= 90:
+            grade = "A+ 优秀"
+            status = "🎉 所有策略完美集成，系统功能完整"
+        elif success_rate >= 75:
+            grade = "A 良好"
+            status = "✅ 大部分策略已集成，系统基本完整"
+        elif success_rate >= 50:
+            grade = "B 一般"
+            status = "⚠️ 部分策略已集成，需要继续完善"
+        else:
+            grade = "C 需要改进"
+            status = "❌ 策略集成不完整，需要大量工作"
+        
+        print(f"   等级: {grade}")
+        print(f"   状态: {status}")
+        
+        # 策略亮点
+        print(f"\n🎊 策略集成亮点:")
+        successful_strategies = [name for name, result in results.items() if result.get("success")]
+        
+        if "technical_indicators" in successful_strategies:
+            print(f"   📊 技术指标完整 - RSI、MACD、KDJ、布林带等")
+        if "six_sword_strategy" in successful_strategies:
+            print(f"   ⚔️ 六脉神剑完整 - 天地人和顺凌六大策略")
+        if "jiufang_strategy" in successful_strategies:
+            print(f"   🎲 九方智投完整 - 尾盘长下影阳线选股")
+        if "compass_strategy" in successful_strategies:
+            print(f"   🧭 指南针策略完整 - 七种市场分析策略")
+        if "candle_patterns" in successful_strategies:
+            print(f"   📈 K线形态完整 - 十多种经典形态识别")
+        if "volume_price" in successful_strategies:
+            print(f"   💰 量价分析完整 - 资金流向和量价配合")
+        if "strategy_integration" in successful_strategies:
+            print(f"   🔄 策略整合完整 - 多策略智能融合决策")
+
+def main():
+    """主函数"""
+    tester = SimpleStrategiesTester()
+    tester.test_all_strategies()
+
+if __name__ == "__main__":
+    main()

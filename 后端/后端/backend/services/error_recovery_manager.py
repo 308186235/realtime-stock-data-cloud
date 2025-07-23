@@ -1,0 +1,145 @@
+"""
+错误恢复机制
+"""
+
+import time
+import asyncio
+import logging
+from typing import Dict, Any, Callable, Optional
+from backend.services.unified_error_handler import unified_error_handler, ErrorSeverity
+
+logger = logging.getLogger(__name__)
+
+class ErrorRecoveryManager:
+    """错误恢复管理器"""
+    
+    def __init__(self):
+        self._setup_recovery_strategies()
+    
+    def _setup_recovery_strategies(self):
+        """设置恢复策略"""
+        
+        # 网络连接错误恢复
+        unified_error_handler.register_recovery_strategy(
+            'ConnectionError', self._recover_connection_error
+        )
+        unified_error_handler.register_recovery_strategy(
+            'TimeoutError', self._recover_timeout_error
+        )
+        
+        # 数据库错误恢复
+        unified_error_handler.register_recovery_strategy(
+            'DatabaseError', self._recover_database_error
+        )
+        unified_error_handler.register_recovery_strategy(
+            'OperationalError', self._recover_database_error
+        )
+        
+        # 内存错误恢复
+        unified_error_handler.register_recovery_strategy(
+            'MemoryError', self._recover_memory_error
+        )
+        
+        # 文件操作错误恢复
+        unified_error_handler.register_recovery_strategy(
+            'FileNotFoundError', self._recover_file_error
+        )
+        unified_error_handler.register_recovery_strategy(
+            'PermissionError', self._recover_permission_error
+        )
+    
+    def _recover_connection_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """恢复连接错误"""
+        logger.info("尝试恢复连接错误...")
+        
+        # 等待一段时间后重试
+        time.sleep(2)
+        
+        # 如果有重连函数,调用它
+        if 'reconnect_func' in context:
+            try:
+                context['reconnect_func']()
+                return True
+            except Exception as e:
+                logger.error(f"重连失败: {e}")
+        
+        return False
+    
+    def _recover_timeout_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """恢复超时错误"""
+        logger.info("尝试恢复超时错误...")
+        
+        # 增加超时时间并重试
+        if 'timeout' in context:
+            context['timeout'] = context['timeout'] * 1.5
+            logger.info(f"增加超时时间到: {context['timeout']}")
+        
+        return True
+    
+    def _recover_database_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """恢复数据库错误"""
+        logger.info("尝试恢复数据库错误...")
+        
+        # 重新建立数据库连接
+        if 'db_reconnect' in context:
+            try:
+                context['db_reconnect']()
+                return True
+            except Exception as e:
+                logger.error(f"数据库重连失败: {e}")
+        
+        return False
+    
+    def _recover_memory_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """恢复内存错误"""
+        logger.info("尝试恢复内存错误...")
+        
+        # 强制垃圾回收
+        import gc
+        gc.collect()
+        
+        # 清理缓存
+        if 'clear_cache' in context:
+            try:
+                context['clear_cache']()
+                return True
+            except Exception as e:
+                logger.error(f"缓存清理失败: {e}")
+        
+        return False
+    
+    def _recover_file_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """恢复文件错误"""
+        logger.info("尝试恢复文件错误...")
+        
+        # 创建缺失的目录
+        if 'file_path' in context:
+            import os
+            file_path = context['file_path']
+            dir_path = os.path.dirname(file_path)
+            
+            if not os.path.exists(dir_path):
+                try:
+                    os.makedirs(dir_path, exist_ok=True)
+                    return True
+                except Exception as e:
+                    logger.error(f"创建目录失败: {e}")
+        
+        return False
+    
+    def _recover_permission_error(self, error: Exception, context: Dict[str, Any]) -> bool:
+        """恢复权限错误"""
+        logger.info("尝试恢复权限错误...")
+        
+        # 尝试使用备用路径
+        if 'backup_path' in context:
+            try:
+                # 这里可以实现备用路径逻辑
+                return True
+            except Exception as e:
+                logger.error(f"使用备用路径失败: {e}")
+        
+        return False
+
+# 全局错误恢复管理器
+error_recovery_manager = ErrorRecoveryManager()

@@ -2,7 +2,7 @@
 
 ## 🎯 方案概述
 
-使用rclone工具将OneDrive挂载为本地磁盘，让服务器代码直接操作本地路径，实现无缝的云端文件访问。
+使用rclone工具将OneDrive挂载为本地磁盘,让服务器代码直接操作本地路径,实现无缝的云端文件访问。
 
 ## 📋 实施步骤
 
@@ -88,7 +88,7 @@ rm /mnt/onedrive/test.txt
 
 ### 本地交易软件修改
 
-修改导出路径，直接保存到挂载的OneDrive目录：
+修改导出路径,直接保存到挂载的OneDrive目录:
 
 ```python
 # 原来的导出路径
@@ -108,7 +108,7 @@ balance_file = os.path.join(export_path, "latest_balance.json")
 
 ### 云端服务器读取
 
-在云端服务器上也挂载相同的OneDrive，直接读取文件：
+在云端服务器上也挂载相同的OneDrive,直接读取文件:
 
 ```python
 # 云端服务器读取OneDrive文件
@@ -265,7 +265,7 @@ WantedBy=multi-user.target
 
 3. **网络断开**
    ```bash
-   # rclone会自动重连，检查日志
+   # rclone会自动重连,检查日志
    tail -f /var/log/rclone.log
    ```
 
@@ -276,4 +276,4 @@ WantedBy=multi-user.target
 3. **权限控制** - 确保服务运行用户有适当权限
 4. **监控告警** - 监控挂载状态和同步情况
 
-这个方案比分享链接方案更稳定可靠，适合生产环境使用！
+这个方案比分享链接方案更稳定可靠,适合生产环境使用!

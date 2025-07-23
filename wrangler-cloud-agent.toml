@@ -1,0 +1,11 @@
+name = "cloud-agent-system"
+main = "cloudflare-agent-worker.js"
+compatibility_date = "2025-07-03"
+
+# 定时任务 - 每分钟执行一次
+[triggers]
+crons = ["* * * * *"]
+
+# 环境变量
+[vars]
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"

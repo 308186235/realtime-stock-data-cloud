@@ -1,0 +1,113 @@
+# Cloudflare Zero Trust Tunnel 配置
+# 支持移动热点网络和私有网络访问
+tunnel: 7f3d4c5e-c0e2-48d3-b5e4-8cd0ed4e71af
+credentials-file: C:\Users\锋\.cloudflared\7f3d4c5e-c0e2-48d3-b5e4-8cd0ed4e71af.json
+
+# Zero Trust 私有网络路由配置
+warp-routing:
+  enabled: true
+
+# 移动网络优化配置
+# 针对手机热点网络的连接稳定性优化
+heartbeat-interval: 10s
+grace-period: 30s
+retries: 5
+retry-interval: 15s
+
+# 网络质量监控
+metrics: 0.0.0.0:2000
+no-autoupdate: false
+
+# 入口路由配置
+# 支持多端口和多服务的路由分发
+ingress:
+  # 主API服务 (端口8000)
+  - hostname: api.aigupiao.me
+    service: http://127.0.0.1:8000
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: api.aigupiao.me
+
+  # 交易API服务 (端口8888)
+  - hostname: trading.aigupiao.me
+    service: http://127.0.0.1:8888
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: trading.aigupiao.me
+
+  # 代理后端服务 (端口9999)
+  - hostname: agent.aigupiao.me
+    service: http://127.0.0.1:9999
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: agent.aigupiao.me
+
+  # 主域名 (默认到主API)
+  - hostname: aigupiao.me
+    service: http://127.0.0.1:8000
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: aigupiao.me
+
+  # 后端服务别名
+  - hostname: backend.aigupiao.me
+    service: http://127.0.0.1:8000
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: backend.aigupiao.me
+
+  # 实时数据服务 (端口8001)
+  - hostname: realtime.aigupiao.me
+    service: http://127.0.0.1:8001
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: realtime.aigupiao.me
+
+  # 监控服务 (端口8002)
+  - hostname: monitor.aigupiao.me
+    service: http://127.0.0.1:8002
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: monitor.aigupiao.me
+
+  # 备用API服务 (端口8003)
+  - hostname: backup.aigupiao.me
+    service: http://127.0.0.1:8003
+    originRequest:
+      connectTimeout: 30s
+      tlsTimeout: 10s
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      httpHostHeader: backup.aigupiao.me
+
+  # 默认404处理
+  - service: http_status:404

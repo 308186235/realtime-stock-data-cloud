@@ -4,7 +4,7 @@ services:
   - key: PORT
     value: '10000'
   - key: MARKET_DATA_API_KEY
-    value: QT_wat5QfcJ6N9pDZM5
+    value: YOUR_STOCK_API_KEY
   - key: ENVIRONMENT
     value: production
   - key: REALTIME_DATA_ENABLED

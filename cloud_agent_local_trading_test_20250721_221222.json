@@ -1,0 +1,94 @@
+{
+  "timestamp": "2025-07-21T22:12:22.291663",
+  "test_type": "Cloud Agent to Local Trading Connectivity Test",
+  "connectivity_status": "部分连通",
+  "test_results": {
+    "local_services": {
+      "本地API服务": {
+        "status": "success",
+        "latency": 7,
+        "status_code": 200,
+        "response": {
+          "status": "healthy",
+          "timestamp": "2025-07-21T22:11:55.506465",
+          "service": "stock-trading-backend"
+        }
+      },
+      "本地交易服务": {
+        "status": "success",
+        "latency": 27,
+        "status_code": 200,
+        "response": {
+          "status": "healthy",
+          "local_trading_available": true,
+          "websocket_connected": false,
+          "timestamp": "2025-07-21T22:11:55.532576"
+        }
+      }
+    },
+    "cloud_services": {
+      "Cloudflare云服务": {
+        "status": "failed",
+        "error": "HTTPSConnectionPool(host='aigupiao.me', port=443): Read timed out. (read timeout=15)"
+      },
+      "ngrok云服务": {
+        "status": "success",
+        "latency": 688,
+        "status_code": 200,
+        "response": {
+          "status": "healthy",
+          "timestamp": "2025-07-21T22:12:12.287924",
+          "service": "stock-trading-backend"
+        }
+      }
+    },
+    "agent_decision": {
+      "云端Agent决策接口": {
+        "status": "success",
+        "latency": 558,
+        "status_code": 404,
+        "response": {
+          "detail": "Not Found"
+        }
+      },
+      "本地Agent执行接口": {
+        "status": "success",
+        "latency": 17,
+        "status_code": 404,
+        "response": {
+          "detail": "Not Found"
+        }
+      }
+    },
+    "websocket": {
+      "cloud_websocket": {
+        "status": "failed",
+        "error": "BaseEventLoop.create_connection() got an unexpected keyword argument 'timeout'"
+      }
+    },
+    "trading_chain": {
+      "step1": {
+        "status": "failed",
+        "status_code": 404
+      },
+      "step2": {
+        "status": "success",
+        "data": {
+          "success": true,
+          "message": "买入操作成功",
+          "trade_details": {
+            "action": "buy",
+            "stock_code": "000001",
+            "quantity": 100,
+            "price": 10.5,
+            "timestamp": "2025-07-21T22:12:22.288486",
+            "api_version": "1.0.0"
+          }
+        }
+      }
+    }
+  },
+  "recommendations": [
+    "修复WebSocket连接问题"
+  ]
+}

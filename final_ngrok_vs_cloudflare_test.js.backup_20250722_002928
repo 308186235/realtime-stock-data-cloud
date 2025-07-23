@@ -1,0 +1,400 @@
+/**
+ * 最终对比测试：ngrok vs Cloudflare
+ * 验证混合优化方案的最终效果
+ */
+
+const https = require('https');
+const http = require('http');
+const { performance } = require('perf_hooks');
+
+class FinalComparisonTest {
+    constructor() {
+        this.results = {
+            before_optimization: {
+                cloudflare_tunnel: 6204,  // 之前测试的结果
+                success_rate: 67
+            },
+            after_optimization: {},
+            improvement: {}
+        };
+        
+        this.ngrokUrl = 'https://2346443b1406.ngrok-free.app';
+    }
+
+    log(message, level = 'INFO') {
+        const timestamp = new Date().toLocaleTimeString();
+        const colors = {
+            'INFO': '\x1b[36m',
+            'SUCCESS': '\x1b[32m',
+            'WARNING': '\x1b[33m',
+            'ERROR': '\x1b[31m',
+            'RESET': '\x1b[0m'
+        };
+        const color = colors[level] || colors['INFO'];
+        console.log(`${color}[${timestamp}] [${level}] ${message}${colors['RESET']}`);
+    }
+
+    async runComparisonTest() {
+        this.log('🚀 开始最终对比测试：ngrok vs Cloudflare', 'INFO');
+        this.log('='.repeat(60), 'INFO');
+
+        const tests = [
+            {
+                name: '本地服务基准',
+                url: 'http://localhost:8000/api/health',
+                type: 'local',
+                expected: '<50ms'
+            },
+            {
+                name: 'ngrok隧道 (优化方案)',
+                url: `${this.ngrokUrl}/api/health`,
+                type: 'ngrok',
+                expected: '200-800ms'
+            },
+            {
+                name: 'Cloudflare隧道 (原方案)',
+                url: 'https://aigupiao.me/health',
+                type: 'cloudflare',
+                expected: '3000-8000ms'
+            }
+        ];
+
+        const results = {};
+        let successCount = 0;
+
+        for (const test of tests) {
+            this.log(`🧪 测试: ${test.name} (预期: ${test.expected})`);
+            
+            const testResults = [];
+            
+            // 进行3次测试取平均值
+            for (let i = 1; i <= 3; i++) {
+                try {
+                    const startTime = performance.now();
+                    
+                    let response;
+                    if (test.url.startsWith('https://')) {
+                        response = await this.makeHttpsRequest(test.url);
+                    } else {
+                        response = await this.makeHttpRequest(test.url);
+                    }
+                    
+                    const latency = Math.round(performance.now() - startTime);
+                    testResults.push({
+                        latency,
+                        success: response.statusCode === 200,
+                        statusCode: response.statusCode
+                    });
+                    
+                    this.log(`   第${i}次: ${latency}ms (状态码: ${response.statusCode})`, 
+                             response.statusCode === 200 ? 'SUCCESS' : 'WARNING');
+                    
+                } catch (error) {
+                    testResults.push({
+                        latency: 9999,
+                        success: false,
+                        error: error.message
+                    });
+                    this.log(`   第${i}次: 失败 - ${error.message}`, 'ERROR');
+                }
+                
+                await this.sleep(1000);
+            }
+            
+            // 计算平均结果
+            const successfulTests = testResults.filter(r => r.success);
+            const avgLatency = successfulTests.length > 0 ? 
+                Math.round(successfulTests.reduce((sum, r) => sum + r.latency, 0) / successfulTests.length) : 9999;
+            
+            const successRate = Math.round((successfulTests.length / testResults.length) * 100);
+            
+            results[test.name] = {
+                type: test.type,
+                average_latency: avgLatency,
+                success_rate: successRate,
+                successful_tests: successfulTests.length,
+                total_tests: testResults.length,
+                all_results: testResults
+            };
+            
+            if (successfulTests.length > 0) {
+                successCount++;
+                this.log(`✅ ${test.name}: 平均${avgLatency}ms (成功率: ${successRate}%)`, 'SUCCESS');
+            } else {
+                this.log(`❌ ${test.name}: 全部失败`, 'ERROR');
+            }
+            
+            console.log();
+        }
+
+        this.results.after_optimization = results;
+        this.calculateImprovement();
+        this.displayFinalComparison();
+        await this.saveReport();
+    }
+
+    calculateImprovement() {
+        this.log('📊 计算性能改善...', 'INFO');
+        
+        const results = this.results.after_optimization;
+        const before = this.results.before_optimization;
+        
+        const ngrokResult = results['ngrok隧道 (优化方案)'];
+        const cloudflareResult = results['Cloudflare隧道 (原方案)'];
+        const localResult = results['本地服务基准'];
+        
+        let improvements = {};
+        
+        // 计算ngrok vs Cloudflare的改善
+        if (ngrokResult && cloudflareResult && ngrokResult.success_rate > 0 && cloudflareResult.success_rate > 0) {
+            const latencyImprovement = Math.round(
+                ((cloudflareResult.average_latency - ngrokResult.average_latency) / cloudflareResult.average_latency) * 100
+            );
+            improvements.ngrok_vs_cloudflare = {
+                latency_improvement: latencyImprovement,
+                ngrok_latency: ngrokResult.average_latency,
+                cloudflare_latency: cloudflareResult.average_latency
+            };
+        }
+        
+        // 计算相对于优化前的改善
+        if (ngrokResult && ngrokResult.success_rate > 0) {
+            const overallImprovement = Math.round(
+                ((before.cloudflare_tunnel - ngrokResult.average_latency) / before.cloudflare_tunnel) * 100
+            );
+            improvements.overall = {
+                improvement: overallImprovement,
+                before_latency: before.cloudflare_tunnel,
+                after_latency: ngrokResult.average_latency
+            };
+        }
+        
+        this.results.improvement = improvements;
+    }
+
+    displayFinalComparison() {
+        this.log('🎉 最终对比结果', 'SUCCESS');
+        this.log('='.repeat(60), 'SUCCESS');
+        
+        const results = this.results.after_optimization;
+        const improvements = this.results.improvement;
+        
+        // 显示性能对比表
+        this.log('📊 性能对比表:', 'SUCCESS');
+        this.log('-'.repeat(60), 'INFO');
+        this.log('服务类型'.padEnd(20) + '平均延迟'.padEnd(15) + '成功率'.padEnd(10) + '评级', 'INFO');
+        this.log('-'.repeat(60), 'INFO');
+        
+        Object.entries(results).forEach(([name, result]) => {
+            let rating = '❌ 失败';
+            if (result.success_rate > 0) {
+                if (result.average_latency < 100) rating = '🏆 优秀';
+                else if (result.average_latency < 500) rating = '✅ 良好';
+                else if (result.average_latency < 1000) rating = '👍 可接受';
+                else if (result.average_latency < 3000) rating = '⚠️ 较慢';
+                else rating = '❌ 很慢';
+            }
+            
+            const nameStr = name.padEnd(20);
+            const latencyStr = result.success_rate > 0 ? `${result.average_latency}ms`.padEnd(15) : '失败'.padEnd(15);
+            const successStr = `${result.success_rate}%`.padEnd(10);
+            
+            this.log(`${nameStr}${latencyStr}${successStr}${rating}`, 'INFO');
+        });
+        
+        console.log();
+        
+        // 显示改善幅度
+        if (improvements.ngrok_vs_cloudflare) {
+            const imp = improvements.ngrok_vs_cloudflare;
+            this.log('🚀 ngrok vs Cloudflare 对比:', 'SUCCESS');
+            this.log(`   ngrok隧道: ${imp.ngrok_latency}ms`, 'SUCCESS');
+            this.log(`   Cloudflare隧道: ${imp.cloudflare_latency}ms`, 'INFO');
+            this.log(`   性能提升: ${imp.latency_improvement}%`, imp.latency_improvement > 0 ? 'SUCCESS' : 'WARNING');
+        }
+        
+        if (improvements.overall) {
+            const overall = improvements.overall;
+            this.log('\n📈 总体优化效果:', 'SUCCESS');
+            this.log(`   优化前: ${overall.before_latency}ms`, 'INFO');
+            this.log(`   优化后: ${overall.after_latency}ms`, 'SUCCESS');
+            this.log(`   总体提升: ${overall.improvement}%`, overall.improvement > 0 ? 'SUCCESS' : 'WARNING');
+        }
+        
+        console.log();
+        
+        // 最终评估
+        this.displayFinalAssessment();
+    }
+
+    displayFinalAssessment() {
+        this.log('🎯 最终评估', 'SUCCESS');
+        this.log('-'.repeat(40), 'INFO');
+        
+        const results = this.results.after_optimization;
+        const ngrokResult = results['ngrok隧道 (优化方案)'];
+        const improvements = this.results.improvement;
+        
+        let score = 0;
+        let maxScore = 100;
+        
+        // 评分标准
+        if (ngrokResult && ngrokResult.success_rate > 0) {
+            // 延迟评分 (50分)
+            if (ngrokResult.average_latency < 300) score += 50;
+            else if (ngrokResult.average_latency < 600) score += 40;
+            else if (ngrokResult.average_latency < 1000) score += 30;
+            else if (ngrokResult.average_latency < 2000) score += 20;
+            else score += 10;
+            
+            // 稳定性评分 (30分)
+            if (ngrokResult.success_rate >= 100) score += 30;
+            else if (ngrokResult.success_rate >= 80) score += 25;
+            else if (ngrokResult.success_rate >= 60) score += 20;
+            else score += 10;
+            
+            // 改善幅度评分 (20分)
+            if (improvements.overall && improvements.overall.improvement > 70) score += 20;
+            else if (improvements.overall && improvements.overall.improvement > 50) score += 15;
+            else if (improvements.overall && improvements.overall.improvement > 30) score += 10;
+            else score += 5;
+        }
+        
+        this.log(`📊 综合评分: ${score}/${maxScore}分`, score >= 80 ? 'SUCCESS' : score >= 60 ? 'WARNING' : 'ERROR');
+        
+        if (score >= 90) {
+            this.log('🏆 优化效果: 卓越！', 'SUCCESS');
+            this.log('🎉 混合优化方案完全成功！', 'SUCCESS');
+        } else if (score >= 80) {
+            this.log('✅ 优化效果: 优秀！', 'SUCCESS');
+            this.log('🎉 混合优化方案成功！', 'SUCCESS');
+        } else if (score >= 60) {
+            this.log('👍 优化效果: 良好', 'SUCCESS');
+            this.log('✅ 混合优化方案基本成功', 'SUCCESS');
+        } else {
+            this.log('⚠️ 优化效果: 需要改进', 'WARNING');
+            this.log('🔧 建议进一步优化配置', 'WARNING');
+        }
+        
+        console.log();
+        this.log('💡 建议:', 'INFO');
+        
+        if (ngrokResult && ngrokResult.average_latency < 600) {
+            this.log('   ✅ ngrok隧道性能优秀，建议作为主要方案', 'SUCCESS');
+        } else {
+            this.log('   ⚠️ 可考虑其他隧道服务或优化网络配置', 'WARNING');
+        }
+        
+        this.log('   📱 更新移动端API地址为ngrok隧道', 'INFO');
+        this.log('   🔄 定期监控隧道状态和性能', 'INFO');
+        this.log('   ☁️ 保留Cloudflare作为备用方案', 'INFO');
+    }
+
+    async saveReport() {
+        const report = {
+            timestamp: new Date().toISOString(),
+            test_type: 'Final ngrok vs Cloudflare Comparison',
+            ngrok_url: this.ngrokUrl,
+            results: this.results,
+            summary: {
+                best_solution: this.getBestSolution(),
+                recommendation: this.getRecommendation()
+            }
+        };
+
+        const fs = require('fs');
+        const filename = `final_comparison_report_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        
+        fs.writeFileSync(filename, JSON.stringify(report, null, 2), 'utf8');
+        this.log(`📄 最终对比报告已保存: ${filename}`, 'SUCCESS');
+    }
+
+    getBestSolution() {
+        const results = this.results.after_optimization;
+        let bestSolution = null;
+        let bestScore = 0;
+        
+        Object.entries(results).forEach(([name, result]) => {
+            if (result.success_rate > 0) {
+                // 简单评分：成功率 - 延迟惩罚
+                const score = result.success_rate - (result.average_latency / 100);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestSolution = name;
+                }
+            }
+        });
+        
+        return bestSolution;
+    }
+
+    getRecommendation() {
+        const ngrokResult = this.results.after_optimization['ngrok隧道 (优化方案)'];
+        
+        if (ngrokResult && ngrokResult.success_rate > 0 && ngrokResult.average_latency < 1000) {
+            return 'ngrok隧道性能优秀，建议作为主要解决方案';
+        } else {
+            return '需要进一步优化网络配置或考虑其他方案';
+        }
+    }
+
+    makeHttpRequest(url) {
+        return new Promise((resolve, reject) => {
+            const urlObj = new URL(url);
+            const options = {
+                hostname: urlObj.hostname,
+                port: urlObj.port || 80,
+                path: urlObj.pathname,
+                method: 'GET',
+                timeout: 10000
+            };
+
+            const req = http.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+            });
+
+            req.on('error', reject);
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+            req.end();
+        });
+    }
+
+    makeHttpsRequest(url) {
+        return new Promise((resolve, reject) => {
+            const urlObj = new URL(url);
+            const options = {
+                hostname: urlObj.hostname,
+                port: 443,
+                path: urlObj.pathname,
+                method: 'GET',
+                timeout: 15000
+            };
+
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+            });
+
+            req.on('error', reject);
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+            req.end();
+        });
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+
+// 运行最终对比测试
+const tester = new FinalComparisonTest();
+tester.runComparisonTest().catch(console.error);

@@ -1,0 +1,464 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Cloudflare Zero Trust 系统测试和验证脚本
+全面测试Zero Trust部署的各个组件
+"""
+
+import os
+import sys
+import json
+import time
+import logging
+import requests
+import subprocess
+import threading
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+import concurrent.futures
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('zero_trust_test.log', encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class ZeroTrustSystemTester:
+    """Zero Trust系统测试器"""
+    
+    def __init__(self):
+        self.test_config = {
+            'timeout': 15,
+            'retry_attempts': 3,
+            'concurrent_requests': 5,
+            'load_test_duration': 60,  # 秒
+            'mobile_simulation': True
+        }
+        
+        # 测试目标
+        self.test_targets = [
+            {
+                'name': 'Main API',
+                'url': 'https://api.aigupiao.me',
+                'endpoints': ['/health', '/api/status', '/api/balance'],
+                'expected_status': [200, 404, 401],  # 可接受的状态码
+                'timeout': 10
+            },
+            {
+                'name': 'Trading API',
+                'url': 'https://trading.aigupiao.me',
+                'endpoints': ['/health', '/api/positions', '/api/orders'],
+                'expected_status': [200, 404, 401],
+                'timeout': 15
+            },
+            {
+                'name': 'Agent Backend',
+                'url': 'https://agent.aigupiao.me',
+                'endpoints': ['/health', '/api/agent/status'],
+                'expected_status': [200, 404, 401],
+                'timeout': 10
+            },
+            {
+                'name': 'Realtime Data',
+                'url': 'https://realtime.aigupiao.me',
+                'endpoints': ['/health', '/api/stock/data'],
+                'expected_status': [200, 404, 401],
+                'timeout': 10
+            },
+            {
+                'name': 'Monitor Service',
+                'url': 'https://monitor.aigupiao.me',
+                'endpoints': ['/health', '/metrics'],
+                'expected_status': [200, 404, 401],
+                'timeout': 10
+            },
+            {
+                'name': 'Backup API',
+                'url': 'https://backup.aigupiao.me',
+                'endpoints': ['/health', '/api/backup/status'],
+                'expected_status': [200, 404, 401],
+                'timeout': 10
+            }
+        ]
+        
+        # 本地服务测试
+        self.local_services = [
+            {'name': 'Local Main API', 'url': 'http://127.0.0.1:8000', 'port': 8000},
+            {'name': 'Local Trading API', 'url': 'http://127.0.0.1:8888', 'port': 8888},
+            {'name': 'Local Agent Backend', 'url': 'http://127.0.0.1:9999', 'port': 9999},
+            {'name': 'Local Realtime', 'url': 'http://127.0.0.1:8001', 'port': 8001},
+            {'name': 'Local Monitor', 'url': 'http://127.0.0.1:8002', 'port': 8002},
+            {'name': 'Local Backup', 'url': 'http://127.0.0.1:8003', 'port': 8003}
+        ]
+        
+        self.test_results = {
+            'start_time': datetime.now(),
+            'tunnel_connectivity': {},
+            'local_services': {},
+            'performance_tests': {},
+            'security_tests': {},
+            'mobile_tests': {},
+            'load_tests': {},
+            'overall_status': 'UNKNOWN'
+        }
+    
+    def log(self, message: str, level: str = "INFO"):
+        """统一日志输出"""
+        if level == "ERROR":
+            logger.error(message)
+        elif level == "WARNING":
+            logger.warning(message)
+        elif level == "SUCCESS":
+            logger.info(f"✅ {message}")
+        else:
+            logger.info(message)
+    
+    def test_single_endpoint(self, url: str, timeout: int = 10) -> Dict:
+        """测试单个端点"""
+        result = {
+            'url': url,
+            'success': False,
+            'status_code': None,
+            'response_time': None,
+            'error': None,
+            'headers': {}
+        }
+        
+        try:
+            start_time = time.time()
+            response = requests.get(
+                url,
+                timeout=timeout,
+                headers={
+                    'User-Agent': 'ZeroTrust-Tester/1.0',
+                    'Accept': 'application/json,text/html,*/*'
+                },
+                allow_redirects=True
+            )
+            end_time = time.time()
+            
+            result['status_code'] = response.status_code
+            result['response_time'] = (end_time - start_time) * 1000  # 毫秒
+            result['success'] = response.status_code in [200, 404, 401, 403]  # 可接受的状态码
+            result['headers'] = dict(response.headers)
+            
+            # 检查Zero Trust相关头部
+            if 'cf-ray' in result['headers']:
+                result['cloudflare_enabled'] = True
+            if 'cf-access-authenticated-user-email' in result['headers']:
+                result['zero_trust_authenticated'] = True
+                
+        except requests.exceptions.Timeout:
+            result['error'] = "请求超时"
+        except requests.exceptions.ConnectionError:
+            result['error'] = "连接错误"
+        except requests.exceptions.SSLError:
+            result['error'] = "SSL错误"
+        except Exception as e:
+            result['error'] = str(e)
+        
+        return result
+    
+    def test_tunnel_connectivity(self) -> Dict:
+        """测试隧道连接性"""
+        self.log("🌐 测试隧道连接性...")
+        
+        results = {}
+        
+        for target in self.test_targets:
+            target_results = {
+                'name': target['name'],
+                'base_url': target['url'],
+                'endpoints': {},
+                'overall_success': False,
+                'avg_response_time': 0
+            }
+            
+            response_times = []
+            success_count = 0
+            
+            for endpoint in target['endpoints']:
+                full_url = target['url'] + endpoint
+                result = self.test_single_endpoint(full_url, target['timeout'])
+                target_results['endpoints'][endpoint] = result
+                
+                if result['success']:
+                    success_count += 1
+                    if result['response_time']:
+                        response_times.append(result['response_time'])
+                
+                self.log(f"  {target['name']}{endpoint}: "
+                        f"{'✅' if result['success'] else '❌'} "
+                        f"({result['status_code']}) "
+                        f"{result['response_time']:.0f}ms" if result['response_time'] else "N/A")
+            
+            target_results['overall_success'] = success_count > 0
+            target_results['avg_response_time'] = sum(response_times) / len(response_times) if response_times else 0
+            
+            results[target['name']] = target_results
+        
+        return results
+    
+    def test_local_services(self) -> Dict:
+        """测试本地服务"""
+        self.log("🏠 测试本地服务...")
+        
+        results = {}
+        
+        for service in self.local_services:
+            result = {
+                'name': service['name'],
+                'url': service['url'],
+                'port': service['port'],
+                'running': False,
+                'accessible': False,
+                'response_time': None
+            }
+            
+            # 检查端口是否开放
+            import socket
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result_code = sock.connect_ex(('127.0.0.1', service['port']))
+                sock.close()
+                result['running'] = result_code == 0
+            except Exception:
+                result['running'] = False
+            
+            # 如果端口开放,测试HTTP访问
+            if result['running']:
+                test_result = self.test_single_endpoint(service['url'] + '/health', 5)
+                result['accessible'] = test_result['success']
+                result['response_time'] = test_result['response_time']
+            
+            status = "✅" if result['accessible'] else ("🟡" if result['running'] else "❌")
+            self.log(f"  {service['name']}: {status} "
+                    f"端口{'开放' if result['running'] else '关闭'}, "
+                    f"HTTP{'可访问' if result['accessible'] else '不可访问'}")
+            
+            results[service['name']] = result
+        
+        return results
+    
+    def test_performance(self) -> Dict:
+        """性能测试"""
+        self.log("⚡ 执行性能测试...")
+        
+        results = {}
+        
+        # 选择几个主要端点进行性能测试
+        test_urls = [
+            'https://api.aigupiao.me/health',
+            'https://trading.aigupiao.me/health',
+            'https://agent.aigupiao.me/health'
+        ]
+        
+        for url in test_urls:
+            self.log(f"测试 {url} 性能...")
+            
+            response_times = []
+            success_count = 0
+            
+            # 执行多次请求
+            for i in range(10):
+                result = self.test_single_endpoint(url, 10)
+                if result['success'] and result['response_time']:
+                    response_times.append(result['response_time'])
+                    success_count += 1
+                time.sleep(0.5)  # 避免过于频繁的请求
+            
+            if response_times:
+                results[url] = {
+                    'success_rate': success_count / 10 * 100,
+                    'avg_response_time': sum(response_times) / len(response_times),
+                    'min_response_time': min(response_times),
+                    'max_response_time': max(response_times),
+                    'total_requests': 10,
+                    'successful_requests': success_count
+                }
+                
+                self.log(f"  成功率: {results[url]['success_rate']:.1f}%")
+                self.log(f"  平均响应时间: {results[url]['avg_response_time']:.0f}ms")
+                self.log(f"  响应时间范围: {results[url]['min_response_time']:.0f}-{results[url]['max_response_time']:.0f}ms")
+            else:
+                results[url] = {'error': '所有请求都失败'}
+        
+        return results
+    
+    def test_security_headers(self) -> Dict:
+        """安全头测试"""
+        self.log("🔒 测试安全头配置...")
+        
+        results = {}
+        security_headers = [
+            'strict-transport-security',
+            'x-content-type-options',
+            'x-frame-options',
+            'x-xss-protection',
+            'cf-ray',
+            'server'
+        ]
+        
+        test_url = 'https://api.aigupiao.me/health'
+        result = self.test_single_endpoint(test_url, 10)
+        
+        if result['success']:
+            header_results = {}
+            for header in security_headers:
+                header_value = result['headers'].get(header.lower(), None)
+                header_results[header] = {
+                    'present': header_value is not None,
+                    'value': header_value
+                }
+                
+                status = "✅" if header_value else "❌"
+                self.log(f"  {header}: {status} {header_value or '未设置'}")
+            
+            results[test_url] = header_results
+        else:
+            results[test_url] = {'error': '无法获取响应头'}
+        
+        return results
+    
+    def simulate_mobile_connection(self) -> Dict:
+        """模拟移动连接测试"""
+        self.log("📱 模拟移动连接测试...")
+        
+        results = {}
+        
+        # 模拟移动网络的请求头
+        mobile_headers = {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+        }
+        
+        test_url = 'https://api.aigupiao.me/health'
+        
+        try:
+            start_time = time.time()
+            response = requests.get(
+                test_url,
+                headers=mobile_headers,
+                timeout=15,
+                allow_redirects=True
+            )
+            end_time = time.time()
+            
+            results['mobile_simulation'] = {
+                'success': response.status_code in [200, 404, 401],
+                'status_code': response.status_code,
+                'response_time': (end_time - start_time) * 1000,
+                'headers': dict(response.headers)
+            }
+            
+            self.log(f"  移动模拟测试: {'✅' if results['mobile_simulation']['success'] else '❌'}")
+            self.log(f"  响应时间: {results['mobile_simulation']['response_time']:.0f}ms")
+            
+        except Exception as e:
+            results['mobile_simulation'] = {'error': str(e)}
+            self.log(f"  移动模拟测试失败: {e}")
+        
+        return results
+    
+    def run_comprehensive_test(self) -> Dict:
+        """运行综合测试"""
+        self.log("🚀 开始Zero Trust系统综合测试...")
+        self.log("=" * 60)
+        
+        # 1. 隧道连接性测试
+        self.test_results['tunnel_connectivity'] = self.test_tunnel_connectivity()
+        
+        # 2. 本地服务测试
+        self.test_results['local_services'] = self.test_local_services()
+        
+        # 3. 性能测试
+        self.test_results['performance_tests'] = self.test_performance()
+        
+        # 4. 安全头测试
+        self.test_results['security_tests'] = self.test_security_headers()
+        
+        # 5. 移动连接模拟
+        self.test_results['mobile_tests'] = self.simulate_mobile_connection()
+        
+        # 6. 生成测试报告
+        self.generate_test_report()
+        
+        self.log("=" * 60)
+        self.log("🎉 综合测试完成!", "SUCCESS")
+        
+        return self.test_results
+    
+    def generate_test_report(self):
+        """生成测试报告"""
+        self.log("📊 生成测试报告...")
+        
+        # 计算总体成功率
+        tunnel_success = sum(1 for result in self.test_results['tunnel_connectivity'].values() 
+                           if result['overall_success'])
+        tunnel_total = len(self.test_results['tunnel_connectivity'])
+        
+        local_success = sum(1 for result in self.test_results['local_services'].values() 
+                          if result['accessible'])
+        local_total = len(self.test_results['local_services'])
+        
+        # 确定总体状态
+        if tunnel_success >= tunnel_total * 0.8 and local_success >= local_total * 0.5:
+            self.test_results['overall_status'] = 'EXCELLENT'
+        elif tunnel_success >= tunnel_total * 0.6:
+            self.test_results['overall_status'] = 'GOOD'
+        elif tunnel_success >= tunnel_total * 0.4:
+            self.test_results['overall_status'] = 'FAIR'
+        else:
+            self.test_results['overall_status'] = 'POOR'
+        
+        # 输出报告摘要
+        self.log("📋 测试报告摘要:")
+        self.log(f"  隧道连接性: {tunnel_success}/{tunnel_total} 成功")
+        self.log(f"  本地服务: {local_success}/{local_total} 可访问")
+        self.log(f"  总体状态: {self.test_results['overall_status']}")
+        
+        # 保存详细报告
+        report_file = f"zero_trust_test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        try:
+            with open(report_file, 'w', encoding='utf-8') as f:
+                json.dump(self.test_results, f, indent=2, ensure_ascii=False, default=str)
+            self.log(f"  详细报告已保存: {report_file}")
+        except Exception as e:
+            self.log(f"  保存报告失败: {e}", "ERROR")
+
+def main():
+    """主函数"""
+    tester = ZeroTrustSystemTester()
+    
+    try:
+        results = tester.run_comprehensive_test()
+        
+        # 根据测试结果确定退出码
+        if results['overall_status'] in ['EXCELLENT', 'GOOD']:
+            print("\n✅ 系统测试通过!")
+            sys.exit(0)
+        elif results['overall_status'] == 'FAIR':
+            print("\n⚠️ 系统测试部分通过,需要关注!")
+            sys.exit(1)
+        else:
+            print("\n❌ 系统测试失败!")
+            sys.exit(2)
+            
+    except KeyboardInterrupt:
+        print("\n⚠️ 测试被用户中断")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ 测试异常: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

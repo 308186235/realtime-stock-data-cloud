@@ -1,0 +1,390 @@
+/**
+ * 检查混合优化方案实施状态
+ */
+
+const https = require('https');
+const http = require('http');
+const { performance } = require('perf_hooks');
+const { exec } = require('child_process');
+const util = require('util');
+
+const execAsync = util.promisify(exec);
+
+class ImplementationChecker {
+    constructor() {
+        this.status = {
+            services: {},
+            tunnels: {},
+            dns: {},
+            performance: {},
+            overall: 'CHECKING'
+        };
+    }
+
+    log(message, level = 'INFO') {
+        const timestamp = new Date().toLocaleTimeString();
+        const colors = {
+            'INFO': '\x1b[36m',
+            'SUCCESS': '\x1b[32m',
+            'WARNING': '\x1b[33m',
+            'ERROR': '\x1b[31m',
+            'RESET': '\x1b[0m'
+        };
+        const color = colors[level] || colors['INFO'];
+        console.log(`${color}[${timestamp}] [${level}] ${message}${colors['RESET']}`);
+    }
+
+    async checkServices() {
+        this.log('🖥️ 检查本地服务状态...');
+        
+        const services = [
+            { name: '后端服务', port: 8000 },
+            { name: '本地交易服务', port: 8888 }
+        ];
+
+        for (const service of services) {
+            try {
+                const startTime = performance.now();
+                const result = await this.makeHttpRequest(`http://localhost:${service.port}/health`);
+                const latency = Math.round(performance.now() - startTime);
+
+                this.status.services[service.name] = {
+                    running: true,
+                    latency,
+                    statusCode: result.statusCode,
+                    port: service.port
+                };
+
+                this.log(`✅ ${service.name} (端口${service.port}): ${latency}ms`, 'SUCCESS');
+            } catch (error) {
+                this.status.services[service.name] = {
+                    running: false,
+                    error: error.message,
+                    port: service.port
+                };
+                this.log(`❌ ${service.name} (端口${service.port}): 未运行`, 'ERROR');
+            }
+        }
+    }
+
+    async checkTunnels() {
+        this.log('🌐 检查隧道服务状态...');
+        
+        // 检查进程
+        try {
+            const { stdout: ngrokProc } = await execAsync('tasklist | findstr ngrok');
+            const ngrokCount = ngrokProc.split('\n').filter(line => line.includes('ngrok.exe')).length;
+            
+            this.status.tunnels.ngrok = {
+                running: ngrokCount > 0,
+                processes: ngrokCount,
+                note: ngrokCount > 0 ? `${ngrokCount}个ngrok进程运行中` : '未运行'
+            };
+            
+            if (ngrokCount > 0) {
+                this.log(`✅ ngrok隧道: ${ngrokCount}个进程运行中`, 'SUCCESS');
+            } else {
+                this.log('❌ ngrok隧道: 未运行', 'ERROR');
+            }
+        } catch (error) {
+            this.status.tunnels.ngrok = { running: false, error: error.message };
+            this.log('❌ ngrok隧道: 检查失败', 'ERROR');
+        }
+
+        try {
+            const { stdout: cfProc } = await execAsync('tasklist | findstr cloudflared');
+            const cfRunning = cfProc.includes('cloudflared.exe');
+            
+            this.status.tunnels.cloudflare = {
+                running: cfRunning,
+                note: cfRunning ? 'Cloudflare隧道运行中' : '未运行'
+            };
+            
+            if (cfRunning) {
+                this.log('✅ Cloudflare隧道: 运行中', 'SUCCESS');
+            } else {
+                this.log('❌ Cloudflare隧道: 未运行', 'ERROR');
+            }
+        } catch (error) {
+            this.status.tunnels.cloudflare = { running: false, error: error.message };
+            this.log('❌ Cloudflare隧道: 检查失败', 'ERROR');
+        }
+    }
+
+    async checkDNS() {
+        this.log('🔍 检查DNS配置...');
+        
+        try {
+            const startTime = performance.now();
+            const { stdout } = await execAsync('nslookup aigupiao.me 8.8.8.8');
+            const latency = Math.round(performance.now() - startTime);
+            
+            const isGoogleDNS = stdout.includes('dns.google') || stdout.includes('8.8.8.8');
+            const hasResponse = stdout.includes('aigupiao.me') && stdout.includes('Address');
+            
+            this.status.dns = {
+                using_google_dns: isGoogleDNS,
+                resolution_works: hasResponse,
+                latency,
+                raw_output: stdout
+            };
+            
+            if (isGoogleDNS && hasResponse) {
+                this.log(`✅ DNS配置: 使用Google DNS, 解析延迟${latency}ms`, 'SUCCESS');
+            } else {
+                this.log('⚠️ DNS配置: 可能未完全优化', 'WARNING');
+            }
+        } catch (error) {
+            this.status.dns = { error: error.message };
+            this.log('❌ DNS检查失败', 'ERROR');
+        }
+    }
+
+    async checkPerformance() {
+        this.log('⚡ 检查性能表现...');
+        
+        const tests = [
+            { name: 'Cloudflare路由', url: 'https://aigupiao.me/health' },
+            { name: 'API路由', url: 'https://api.aigupiao.me/health' },
+            { name: '本地服务', url: 'http://localhost:8888/health' }
+        ];
+
+        for (const test of tests) {
+            try {
+                const startTime = performance.now();
+                let result;
+                
+                if (test.url.startsWith('https://')) {
+                    result = await this.makeHttpsRequest(test.url);
+                } else {
+                    result = await this.makeHttpRequest(test.url);
+                }
+                
+                const latency = Math.round(performance.now() - startTime);
+                
+                this.status.performance[test.name] = {
+                    latency,
+                    success: result.statusCode === 200,
+                    statusCode: result.statusCode
+                };
+                
+                if (result.statusCode === 200) {
+                    this.log(`✅ ${test.name}: ${latency}ms`, 'SUCCESS');
+                } else {
+                    this.log(`⚠️ ${test.name}: ${latency}ms (状态码: ${result.statusCode})`, 'WARNING');
+                }
+            } catch (error) {
+                this.status.performance[test.name] = {
+                    latency: 9999,
+                    success: false,
+                    error: error.message
+                };
+                this.log(`❌ ${test.name}: 失败 - ${error.message}`, 'ERROR');
+            }
+            
+            await this.sleep(1000);
+        }
+    }
+
+    analyzeImplementationStatus() {
+        this.log('📊 分析实施状态...');
+        
+        let completedItems = 0;
+        let totalItems = 0;
+        const issues = [];
+        
+        // 检查服务
+        totalItems += 2; // 2个本地服务
+        const runningServices = Object.values(this.status.services).filter(s => s.running).length;
+        completedItems += runningServices;
+        
+        if (runningServices < 2) {
+            issues.push(`只有${runningServices}/2个本地服务运行`);
+        }
+        
+        // 检查隧道
+        totalItems += 2; // ngrok和cloudflare
+        if (this.status.tunnels.ngrok?.running) completedItems++;
+        if (this.status.tunnels.cloudflare?.running) completedItems++;
+        
+        if (!this.status.tunnels.ngrok?.running) {
+            issues.push('ngrok隧道未运行');
+        }
+        
+        // 检查DNS
+        totalItems += 1;
+        if (this.status.dns?.using_google_dns && this.status.dns?.resolution_works) {
+            completedItems++;
+        } else {
+            issues.push('DNS配置未完全优化');
+        }
+        
+        // 检查性能
+        const performanceTests = Object.values(this.status.performance);
+        const successfulTests = performanceTests.filter(t => t.success).length;
+        
+        const completionRate = Math.round((completedItems / totalItems) * 100);
+        
+        this.status.overall = {
+            completion_rate: completionRate,
+            completed_items: completedItems,
+            total_items: totalItems,
+            issues: issues,
+            performance_success_rate: performanceTests.length > 0 ? 
+                Math.round((successfulTests / performanceTests.length) * 100) : 0
+        };
+        
+        return this.status.overall;
+    }
+
+    displayStatus() {
+        this.log('📋 实施状态总结', 'SUCCESS');
+        this.log('='.repeat(60), 'INFO');
+        
+        const overall = this.status.overall;
+        
+        this.log(`🎯 完成度: ${overall.completion_rate}% (${overall.completed_items}/${overall.total_items})`, 
+                 overall.completion_rate >= 80 ? 'SUCCESS' : 'WARNING');
+        
+        this.log(`⚡ 性能测试成功率: ${overall.performance_success_rate}%`, 
+                 overall.performance_success_rate >= 70 ? 'SUCCESS' : 'WARNING');
+        
+        if (overall.issues.length > 0) {
+            this.log('⚠️ 待解决问题:', 'WARNING');
+            overall.issues.forEach(issue => {
+                this.log(`   - ${issue}`, 'WARNING');
+            });
+        } else {
+            this.log('✅ 所有组件运行正常！', 'SUCCESS');
+        }
+        
+        // 性能对比
+        const cloudflareLatency = this.status.performance['Cloudflare路由']?.latency;
+        const localLatency = this.status.performance['本地服务']?.latency;
+        
+        if (cloudflareLatency && localLatency) {
+            this.log(`📊 延迟对比:`, 'INFO');
+            this.log(`   本地服务: ${localLatency}ms`, 'INFO');
+            this.log(`   Cloudflare路由: ${cloudflareLatency}ms`, 'INFO');
+            
+            if (cloudflareLatency < 1000) {
+                this.log('🎉 延迟已显著改善！', 'SUCCESS');
+            } else if (cloudflareLatency < 3000) {
+                this.log('👍 延迟有所改善', 'SUCCESS');
+            } else {
+                this.log('⚠️ 延迟仍然较高，可能需要进一步优化', 'WARNING');
+            }
+        }
+    }
+
+    async saveReport() {
+        const report = {
+            timestamp: new Date().toISOString(),
+            implementation_status: this.status,
+            recommendations: []
+        };
+        
+        // 生成建议
+        if (this.status.overall.completion_rate < 100) {
+            report.recommendations.push('完成所有组件的部署');
+        }
+        
+        if (!this.status.tunnels.ngrok?.running) {
+            report.recommendations.push('启动ngrok隧道以获得更好的性能');
+        }
+        
+        if (this.status.performance['Cloudflare路由']?.latency > 2000) {
+            report.recommendations.push('考虑使用ngrok替代Cloudflare隧道');
+        }
+        
+        const fs = require('fs');
+        const filename = `implementation_status_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        
+        fs.writeFileSync(filename, JSON.stringify(report, null, 2), 'utf8');
+        this.log(`📄 状态报告已保存: ${filename}`, 'SUCCESS');
+    }
+
+    makeHttpRequest(url) {
+        return new Promise((resolve, reject) => {
+            const urlObj = new URL(url);
+            const options = {
+                hostname: urlObj.hostname,
+                port: urlObj.port || 80,
+                path: urlObj.pathname,
+                method: 'GET',
+                timeout: 10000
+            };
+
+            const req = http.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+            });
+
+            req.on('error', reject);
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+            req.end();
+        });
+    }
+
+    makeHttpsRequest(url) {
+        return new Promise((resolve, reject) => {
+            const urlObj = new URL(url);
+            const options = {
+                hostname: urlObj.hostname,
+                port: 443,
+                path: urlObj.pathname,
+                method: 'GET',
+                timeout: 15000
+            };
+
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve({ statusCode: res.statusCode, data }));
+            });
+
+            req.on('error', reject);
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timeout'));
+            });
+            req.end();
+        });
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async runFullCheck() {
+        this.log('🚀 开始检查混合优化方案实施状态', 'INFO');
+        this.log('='.repeat(60), 'INFO');
+
+        await this.checkServices();
+        console.log();
+
+        await this.checkTunnels();
+        console.log();
+
+        await this.checkDNS();
+        console.log();
+
+        await this.checkPerformance();
+        console.log();
+
+        this.analyzeImplementationStatus();
+        this.displayStatus();
+
+        await this.saveReport();
+
+        this.log('🎉 状态检查完成！', 'SUCCESS');
+    }
+}
+
+// 运行检查
+const checker = new ImplementationChecker();
+checker.runFullCheck().catch(console.error);

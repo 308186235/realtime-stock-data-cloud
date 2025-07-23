@@ -1,0 +1,574 @@
+#!/usr/bin/env python3
+"""
+优化Cloudflare Workers性能限制
+"""
+
+import os
+import shutil
+import re
+import json
+from datetime import datetime
+
+class CloudflareWorkersOptimizer:
+    """Cloudflare Workers性能优化器"""
+    
+    def __init__(self):
+        self.backup_dir = f"cloudflare_optimization_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.optimized_files = []
+        
+    def optimize_all_workers(self):
+        """优化所有Workers"""
+        print("⚡ 优化Cloudflare Workers性能")
+        print("=" * 50)
+        
+        # 创建备份目录
+        os.makedirs(self.backup_dir, exist_ok=True)
+        
+        # 1. 优化CPU时间限制
+        self._optimize_cpu_usage()
+        
+        # 2. 优化内存使用
+        self._optimize_memory_usage()
+        
+        # 3. 实现请求频率控制
+        self._implement_rate_limiting()
+        
+        # 4. 优化数据处理流程
+        self._optimize_data_processing()
+        
+        # 5. 创建性能监控
+        self._create_performance_monitoring()
+        
+        print(f"\n✅ Cloudflare Workers优化完成！")
+        print(f"📁 备份文件保存在: {self.backup_dir}")
+        print(f"⚡ 优化了 {len(self.optimized_files)} 个文件")
+        
+    def _optimize_cpu_usage(self):
+        """优化CPU使用"""
+        print("\n🔥 优化CPU使用...")
+        
+        # 查找所有Worker文件
+        worker_files = [
+            'cloudflare-agent-worker.js',
+            'cloudflare-chagubang-worker.js',
+            'cloudflare-realtime-agent.js',
+            'api-worker.js',
+            'trading-api-worker.js',
+            'cloudflare-api/src/index.js',
+            'cloudflare-worker/src/index.js'
+        ]
+        
+        for worker_file in worker_files:
+            if os.path.exists(worker_file):
+                self._optimize_worker_cpu(worker_file)
+    
+    def _optimize_memory_usage(self):
+        """优化内存使用"""
+        print("\n💾 优化内存使用...")
+        
+        # 创建内存优化的Worker模板
+        memory_optimized_template = '''
+// 内存优化的Worker模板
+class MemoryOptimizedWorker {
+  constructor() {
+    this.cache = new Map();
+    this.maxCacheSize = 100; // 限制缓存大小
+    this.requestCount = 0;
+  }
+  
+  // 内存安全的数据处理
+  processDataSafely(data) {
+    try {
+      // 分批处理大数据
+      if (Array.isArray(data) && data.length > 1000) {
+        return this.processBatches(data, 100);
+      }
+      
+      // 清理不必要的对象引用
+      const result = this.processSmallData(data);
+      
+      // 强制垃圾回收提示
+      if (this.requestCount % 10 === 0) {
+        this.cleanupCache();
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('数据处理错误:', error);
+      return null;
+    }
+  }
+  
+  processBatches(data, batchSize) {
+    const results = [];
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batch = data.slice(i, i + batchSize);
+      const batchResult = this.processSmallData(batch);
+      results.push(batchResult);
+      
+      // 每批处理后清理临时变量
+      batch.length = 0;
+    }
+    return results;
+  }
+  
+  processSmallData(data) {
+    // 实际数据处理逻辑
+    return data;
+  }
+  
+  cleanupCache() {
+    if (this.cache.size > this.maxCacheSize) {
+      const keysToDelete = Array.from(this.cache.keys()).slice(0, this.cache.size - this.maxCacheSize);
+      keysToDelete.forEach(key => this.cache.delete(key));
+    }
+  }
+  
+  // 内存安全的缓存操作
+  setCache(key, value) {
+    if (this.cache.size >= this.maxCacheSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, value);
+  }
+  
+  getCache(key) {
+    return this.cache.get(key);
+  }
+}
+
+// 全局实例
+const memoryOptimizedWorker = new MemoryOptimizedWorker();
+'''
+        
+        template_file = "cloudflare-optimized-template.js"
+        with open(template_file, 'w', encoding='utf-8') as f:
+            f.write(memory_optimized_template)
+        
+        self.optimized_files.append(template_file)
+        print(f"✅ 创建内存优化模板: {template_file}")
+    
+    def _implement_rate_limiting(self):
+        """实现请求频率控制"""
+        print("\n🚦 实现请求频率控制...")
+        
+        rate_limiting_code = '''
+// 请求频率控制系统
+class RateLimiter {
+  constructor() {
+    this.requests = new Map();
+    this.windowSize = 60000; // 1分钟窗口
+    this.maxRequests = 100;  // 每分钟最多100请求
+  }
+  
+  async checkRateLimit(clientId) {
+    const now = Date.now();
+    const windowStart = now - this.windowSize;
+    
+    // 获取客户端请求记录
+    let clientRequests = this.requests.get(clientId) || [];
+    
+    // 清理过期请求
+    clientRequests = clientRequests.filter(timestamp => timestamp > windowStart);
+    
+    // 检查是否超过限制
+    if (clientRequests.length >= this.maxRequests) {
+      return {
+        allowed: false,
+        resetTime: Math.min(...clientRequests) + this.windowSize,
+        remaining: 0
+      };
+    }
+    
+    // 记录新请求
+    clientRequests.push(now);
+    this.requests.set(clientId, clientRequests);
+    
+    return {
+      allowed: true,
+      resetTime: now + this.windowSize,
+      remaining: this.maxRequests - clientRequests.length
+    };
+  }
+  
+  // 清理过期数据
+  cleanup() {
+    const now = Date.now();
+    const windowStart = now - this.windowSize;
+    
+    for (const [clientId, requests] of this.requests.entries()) {
+      const validRequests = requests.filter(timestamp => timestamp > windowStart);
+      if (validRequests.length === 0) {
+        this.requests.delete(clientId);
+      } else {
+        this.requests.set(clientId, validRequests);
+      }
+    }
+  }
+}
+
+// 全局限流器
+const rateLimiter = new RateLimiter();
+
+// 定期清理
+setInterval(() => rateLimiter.cleanup(), 60000);
+'''
+        
+        rate_limiting_file = "cloudflare-rate-limiter.js"
+        with open(rate_limiting_file, 'w', encoding='utf-8') as f:
+            f.write(rate_limiting_code)
+        
+        self.optimized_files.append(rate_limiting_file)
+        print(f"✅ 创建频率控制系统: {rate_limiting_file}")
+    
+    def _optimize_data_processing(self):
+        """优化数据处理流程"""
+        print("\n📊 优化数据处理流程...")
+        
+        optimized_processor = '''
+// 优化的数据处理器
+class OptimizedDataProcessor {
+  constructor() {
+    this.processingQueue = [];
+    this.isProcessing = false;
+    this.maxQueueSize = 50;
+  }
+  
+  async processStockData(data) {
+    // 数据验证
+    if (!this.validateData(data)) {
+      throw new Error('无效的股票数据');
+    }
+    
+    // 异步处理避免阻塞
+    return new Promise((resolve, reject) => {
+      if (this.processingQueue.length >= this.maxQueueSize) {
+        reject(new Error('处理队列已满'));
+        return;
+      }
+      
+      this.processingQueue.push({
+        data,
+        resolve,
+        reject,
+        timestamp: Date.now()
+      });
+      
+      this.processQueue();
+    });
+  }
+  
+  async processQueue() {
+    if (this.isProcessing || this.processingQueue.length === 0) {
+      return;
+    }
+    
+    this.isProcessing = true;
+    
+    try {
+      while (this.processingQueue.length > 0) {
+        const task = this.processingQueue.shift();
+        
+        try {
+          const result = await this.processDataItem(task.data);
+          task.resolve(result);
+        } catch (error) {
+          task.reject(error);
+        }
+        
+        // 让出控制权，避免长时间占用CPU
+        await this.sleep(1);
+      }
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+  
+  async processDataItem(data) {
+    // 轻量级数据处理
+    const processed = {
+      code: data.code,
+      price: parseFloat(data.price),
+      change: parseFloat(data.change),
+      volume: parseInt(data.volume),
+      timestamp: Date.now()
+    };
+    
+    // 简单的技术指标计算
+    if (data.history && data.history.length > 0) {
+      processed.ma5 = this.calculateMA(data.history, 5);
+      processed.ma10 = this.calculateMA(data.history, 10);
+    }
+    
+    return processed;
+  }
+  
+  calculateMA(prices, period) {
+    if (prices.length < period) return null;
+    
+    const sum = prices.slice(-period).reduce((acc, price) => acc + parseFloat(price), 0);
+    return (sum / period).toFixed(2);
+  }
+  
+  validateData(data) {
+    return data && 
+           typeof data.code === 'string' && 
+           data.code.length > 0 &&
+           !isNaN(parseFloat(data.price));
+  }
+  
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  
+  getQueueStatus() {
+    return {
+      queueLength: this.processingQueue.length,
+      isProcessing: this.isProcessing,
+      maxQueueSize: this.maxQueueSize
+    };
+  }
+}
+
+// 全局数据处理器
+const optimizedDataProcessor = new OptimizedDataProcessor();
+'''
+        
+        processor_file = "cloudflare-optimized-processor.js"
+        with open(processor_file, 'w', encoding='utf-8') as f:
+            f.write(optimized_processor)
+        
+        self.optimized_files.append(processor_file)
+        print(f"✅ 创建优化数据处理器: {processor_file}")
+    
+    def _create_performance_monitoring(self):
+        """创建性能监控"""
+        print("\n📈 创建性能监控...")
+        
+        monitoring_code = '''
+// Cloudflare Workers性能监控
+class WorkerPerformanceMonitor {
+  constructor() {
+    this.metrics = {
+      requestCount: 0,
+      errorCount: 0,
+      totalResponseTime: 0,
+      memoryUsage: [],
+      cpuUsage: []
+    };
+    
+    this.startTime = Date.now();
+  }
+  
+  startRequest() {
+    return {
+      startTime: Date.now(),
+      startCPU: this.getCPUTime()
+    };
+  }
+  
+  endRequest(requestContext, success = true) {
+    const endTime = Date.now();
+    const responseTime = endTime - requestContext.startTime;
+    
+    this.metrics.requestCount++;
+    this.metrics.totalResponseTime += responseTime;
+    
+    if (!success) {
+      this.metrics.errorCount++;
+    }
+    
+    // 记录性能指标
+    this.recordMetrics(responseTime, requestContext);
+    
+    return {
+      responseTime,
+      success
+    };
+  }
+  
+  recordMetrics(responseTime, context) {
+    // CPU使用情况
+    const cpuTime = this.getCPUTime() - context.startCPU;
+    this.metrics.cpuUsage.push({
+      timestamp: Date.now(),
+      cpuTime,
+      responseTime
+    });
+    
+    // 保持最近100条记录
+    if (this.metrics.cpuUsage.length > 100) {
+      this.metrics.cpuUsage.shift();
+    }
+    
+    // 内存使用估算
+    const memoryEstimate = this.estimateMemoryUsage();
+    this.metrics.memoryUsage.push({
+      timestamp: Date.now(),
+      memory: memoryEstimate
+    });
+    
+    if (this.metrics.memoryUsage.length > 100) {
+      this.metrics.memoryUsage.shift();
+    }
+  }
+  
+  getCPUTime() {
+    // Worker环境中的CPU时间估算
+    return performance.now();
+  }
+  
+  estimateMemoryUsage() {
+    // 简单的内存使用估算
+    return JSON.stringify(this.metrics).length;
+  }
+  
+  getPerformanceReport() {
+    const uptime = Date.now() - this.startTime;
+    const avgResponseTime = this.metrics.requestCount > 0 
+      ? this.metrics.totalResponseTime / this.metrics.requestCount 
+      : 0;
+    
+    const errorRate = this.metrics.requestCount > 0 
+      ? (this.metrics.errorCount / this.metrics.requestCount) * 100 
+      : 0;
+    
+    return {
+      uptime,
+      requestCount: this.metrics.requestCount,
+      errorCount: this.metrics.errorCount,
+      errorRate: errorRate.toFixed(2) + '%',
+      avgResponseTime: avgResponseTime.toFixed(2) + 'ms',
+      currentMemoryEstimate: this.estimateMemoryUsage(),
+      recentCPUUsage: this.getRecentCPUUsage(),
+      status: this.getHealthStatus()
+    };
+  }
+  
+  getRecentCPUUsage() {
+    if (this.metrics.cpuUsage.length === 0) return 0;
+    
+    const recent = this.metrics.cpuUsage.slice(-10);
+    const avgCPU = recent.reduce((sum, item) => sum + item.cpuTime, 0) / recent.length;
+    return avgCPU.toFixed(2);
+  }
+  
+  getHealthStatus() {
+    const errorRate = this.metrics.requestCount > 0 
+      ? (this.metrics.errorCount / this.metrics.requestCount) * 100 
+      : 0;
+    
+    const avgResponseTime = this.metrics.requestCount > 0 
+      ? this.metrics.totalResponseTime / this.metrics.requestCount 
+      : 0;
+    
+    if (errorRate > 10 || avgResponseTime > 5000) {
+      return 'CRITICAL';
+    } else if (errorRate > 5 || avgResponseTime > 2000) {
+      return 'WARNING';
+    } else {
+      return 'HEALTHY';
+    }
+  }
+  
+  reset() {
+    this.metrics = {
+      requestCount: 0,
+      errorCount: 0,
+      totalResponseTime: 0,
+      memoryUsage: [],
+      cpuUsage: []
+    };
+    this.startTime = Date.now();
+  }
+}
+
+// 全局性能监控器
+const performanceMonitor = new WorkerPerformanceMonitor();
+
+// 性能监控中间件
+function withPerformanceMonitoring(handler) {
+  return async (request, env, ctx) => {
+    const requestContext = performanceMonitor.startRequest();
+    let success = true;
+    
+    try {
+      const response = await handler(request, env, ctx);
+      return response;
+    } catch (error) {
+      success = false;
+      throw error;
+    } finally {
+      performanceMonitor.endRequest(requestContext, success);
+    }
+  };
+}
+'''
+        
+        monitoring_file = "cloudflare-performance-monitor.js"
+        with open(monitoring_file, 'w', encoding='utf-8') as f:
+            f.write(monitoring_code)
+        
+        self.optimized_files.append(monitoring_file)
+        print(f"✅ 创建性能监控系统: {monitoring_file}")
+    
+    def _backup_file(self, file_path: str):
+        """备份文件"""
+        if not os.path.exists(file_path):
+            return
+            
+        backup_name = file_path.replace("/", "_").replace("\\", "_") + ".backup"
+        backup_path = os.path.join(self.backup_dir, backup_name)
+        
+        try:
+            shutil.copy2(file_path, backup_path)
+        except Exception as e:
+            print(f"⚠️ 备份失败 {file_path}: {e}")
+    
+    def _optimize_worker_cpu(self, worker_file: str):
+        """优化Worker CPU使用"""
+        try:
+            self._backup_file(worker_file)
+            
+            with open(worker_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # CPU优化替换
+            optimizations = [
+                # 避免同步循环
+                (r'for\s*\(\s*let\s+\w+\s*=\s*0\s*;\s*\w+\s*<\s*\w+\.length\s*;\s*\w+\+\+\s*\)', 
+                 'for (const item of items) { // 优化: 使用for-of循环'),
+                
+                # 添加异步处理
+                (r'function\s+(\w+)\s*\([^)]*\)\s*{', 
+                 r'async function \1() { // 优化: 异步处理'),
+                
+                # 添加CPU时间检查
+                (r'(while\s*\([^)]+\)\s*{)', 
+                 r'\1\n    // CPU时间检查\n    if (Date.now() - startTime > 5000) break;')
+            ]
+            
+            for pattern, replacement in optimizations:
+                content = re.sub(pattern, replacement, content)
+            
+            # 添加性能监控导入
+            if 'performanceMonitor' not in content:
+                performance_import = '''
+// 性能监控
+import { performanceMonitor, withPerformanceMonitoring } from './cloudflare-performance-monitor.js';
+'''
+                content = performance_import + content
+            
+            with open(worker_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            self.optimized_files.append(worker_file)
+            print(f"✅ 优化Worker CPU: {worker_file}")
+            
+        except Exception as e:
+            print(f"⚠️ 优化Worker失败 {worker_file}: {e}")
+
+if __name__ == "__main__":
+    optimizer = CloudflareWorkersOptimizer()
+    optimizer.optimize_all_workers()

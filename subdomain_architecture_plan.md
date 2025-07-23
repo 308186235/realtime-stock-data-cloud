@@ -92,7 +92,7 @@ ws.aigupiao.me       → Docker容器 (WebSocket)
 
 ### **响应式 vs 独立移动端**
 ```
-app.aigupiao.me      - 响应式设计，支持桌面和移动端
+app.aigupiao.me      - 响应式设计,支持桌面和移动端
 mobile.aigupiao.me   - 专门为移动端优化的轻量版本
 ```
 
@@ -131,7 +131,7 @@ Content-Security-Policy:
 ### **第1步: 配置子域名DNS**
 1. 登录Cloudflare Dashboard
 2. 进入DNS设置
-3. 添加子域名记录：
+3. 添加子域名记录:
    ```
    A    app     104.21.x.x    已代理
    A    api     104.21.x.x    已代理
@@ -148,7 +148,7 @@ cd app-frontend
 ### **第3步: 配置API子域名**
 ```bash
 # 部署后端API到api.aigupiao.me
-# 可以使用Railway、Render或Cloudflare Workers
+# 可以使用Railway,Render或Cloudflare Workers
 ```
 
 ### **第4步: 更新前端配置**
@@ -162,7 +162,7 @@ const WS_URL = 'wss://ws.aigupiao.me'
 
 ### **当前状态**
 ```
-aigupiao.me          - 主域名，显示完整应用
+aigupiao.me          - 主域名,显示完整应用
 bei-fen.pages.dev    - Cloudflare Pages默认域名
 ```
 
@@ -198,8 +198,8 @@ api.aigupiao.me      - 后端API服务
 
 ### **SEO优化**
 ```
-aigupiao.me          - Landing页面，介绍产品
-app.aigupiao.me      - 应用入口，需要登录
+aigupiao.me          - Landing页面,介绍产品
+app.aigupiao.me      - 应用入口,需要登录
 ```
 
 ### **监控和日志**
@@ -215,4 +215,4 @@ test.aigupiao.me     - 测试环境
 docs.aigupiao.me     - API文档
 ```
 
-这样的架构可以支持你未来的所有扩展需求！你觉得这个规划如何？我们可以立即开始实施第一阶段。
+这样的架构可以支持你未来的所有扩展需求!你觉得这个规划如何?我们可以立即开始实施第一阶段。

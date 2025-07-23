@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""
+MCP全面网络诊断工具
+检查aigupiao.me域名,DNS,Cloudflare配置,隧道状态等
+"""
+
+import socket
+import subprocess
+import requests
+import time
+import json
+from datetime import datetime
+import sys
+import os
+
+class MCPNetworkDiagnostic:
+    def __init__(self):
+        self.domain = "aigupiao.me"
+        self.api_domain = "api.aigupiao.me"
+        self.results = {}
+        
+    def log(self, message, level="INFO"):
+        """记录诊断日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        colors = {
+            "INFO": "\033[36m",    # 青色
+            "SUCCESS": "\033[32m", # 绿色
+            "WARNING": "\033[33m", # 黄色
+            "ERROR": "\033[31m",   # 红色
+            "RESET": "\033[0m"     # 重置
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+        
+    def check_dns_resolution(self):
+        """检查DNS解析"""
+        self.log("🔍 检查DNS解析...")
+        
+        domains_to_check = [self.domain, self.api_domain]
+        dns_results = {}
+        
+        for domain in domains_to_check:
+            try:
+                # 获取IPv4地址
+                ipv4_addresses = socket.getaddrinfo(domain, None, socket.AF_INET)
+                ipv4_list = list(set([addr[4][0] for addr in ipv4_addresses]))
+                
+                # 获取IPv6地址
+                try:
+                    ipv6_addresses = socket.getaddrinfo(domain, None, socket.AF_INET6)
+                    ipv6_list = list(set([addr[4][0] for addr in ipv6_addresses]))
+                except:
+                    ipv6_list = []
+                
+                dns_results[domain] = {
+                    'status': 'SUCCESS',
+                    'ipv4': ipv4_list,
+                    'ipv6': ipv6_list
+                }
+                
+                self.log(f"✅ {domain} DNS解析成功", "SUCCESS")
+                self.log(f"   IPv4: {', '.join(ipv4_list)}", "INFO")
+                if ipv6_list:
+                    self.log(f"   IPv6: {', '.join(ipv6_list)}", "INFO")
+                    
+            except Exception as e:
+                dns_results[domain] = {
+                    'status': 'FAILED',
+                    'error': str(e)
+                }
+                self.log(f"❌ {domain} DNS解析失败: {e}", "ERROR")
+        
+        self.results['dns_resolution'] = dns_results
+        return dns_results
+    
+    def check_ping_latency(self):
+        """检查Ping延迟"""
+        self.log("🏓 检查Ping延迟...")
+        
+        ping_results = {}
+        domains_to_ping = [self.domain, self.api_domain]
+        
+        for domain in domains_to_ping:
+            try:
+                # Windows ping命令
+                result = subprocess.run(
+                    ['ping', '-n', '4', domain],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0:
+                    # 解析ping结果
+                    output = result.stdout
+                    if "平均 =" in output:
+                        avg_line = [line for line in output.split('\n') if '平均 =' in line][0]
+                        avg_time = avg_line.split('平均 = ')[1].replace('ms', '').strip()
+                        
+                        ping_results[domain] = {
+                            'status': 'SUCCESS',
+                            'average_latency': avg_time,
+                            'raw_output': output
+                        }
+                        self.log(f"✅ {domain} Ping成功,平均延迟: {avg_time}ms", "SUCCESS")
+                    else:
+                        ping_results[domain] = {
+                            'status': 'PARTIAL',
+                            'message': 'Ping成功但无法解析延迟',
+                            'raw_output': output
+                        }
+                        self.log(f"⚠️ {domain} Ping部分成功", "WARNING")
+                else:
+                    ping_results[domain] = {
+                        'status': 'FAILED',
+                        'error': result.stderr,
+                        'raw_output': result.stdout
+                    }
+                    self.log(f"❌ {domain} Ping失败", "ERROR")
+                    
+            except Exception as e:
+                ping_results[domain] = {
+                    'status': 'ERROR',
+                    'error': str(e)
+                }
+                self.log(f"❌ {domain} Ping异常: {e}", "ERROR")
+        
+        self.results['ping_latency'] = ping_results
+        return ping_results
+    
+    def check_http_connectivity(self):
+        """检查HTTP连接"""
+        self.log("🌐 检查HTTP连接...")
+        
+        http_results = {}
+        test_urls = [
+            f"https://{self.domain}",
+            f"https://{self.domain}/health",
+            f"https://{self.api_domain}",
+            f"https://{self.api_domain}/health"
+        ]
+        
+        for url in test_urls:
+            try:
+                start_time = time.time()
+                response = requests.get(url, timeout=15, verify=True)
+                end_time = time.time()
+                
+                latency = round((end_time - start_time) * 1000)
+                
+                http_results[url] = {
+                    'status': 'SUCCESS',
+                    'status_code': response.status_code,
+                    'latency_ms': latency,
+                    'headers': dict(response.headers),
+                    'content_length': len(response.content)
+                }
+                
+                self.log(f"✅ {url} HTTP连接成功", "SUCCESS")
+                self.log(f"   状态码: {response.status_code}, 延迟: {latency}ms", "INFO")
+                
+            except requests.exceptions.Timeout:
+                http_results[url] = {
+                    'status': 'TIMEOUT',
+                    'error': 'Request timeout (15s)'
+                }
+                self.log(f"⏰ {url} HTTP连接超时", "WARNING")
+                
+            except requests.exceptions.ConnectionError as e:
+                http_results[url] = {
+                    'status': 'CONNECTION_ERROR',
+                    'error': str(e)
+                }
+                self.log(f"❌ {url} HTTP连接错误: {e}", "ERROR")
+                
+            except Exception as e:
+                http_results[url] = {
+                    'status': 'ERROR',
+                    'error': str(e)
+                }
+                self.log(f"❌ {url} HTTP异常: {e}", "ERROR")
+        
+        self.results['http_connectivity'] = http_results
+        return http_results
+    
+    def check_local_services(self):
+        """检查本地服务"""
+        self.log("🖥️ 检查本地服务...")
+        
+        local_results = {}
+        services_to_check = [
+            {'name': '后端服务', 'port': 8000, 'url': 'http://localhost:8000/health'},
+            {'name': '本地交易服务', 'port': 8888, 'url': 'http://localhost:8888/health'}
+        ]
+        
+        for service in services_to_check:
+            try:
+                # 检查端口是否监听
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result = sock.connect_ex(('localhost', service['port']))
+                sock.close()
+                
+                if result == 0:
+                    # 端口开放,尝试HTTP请求
+                    try:
+                        response = requests.get(service['url'], timeout=5)
+                        local_results[service['name']] = {
+                            'status': 'RUNNING',
+                            'port': service['port'],
+                            'http_status': response.status_code,
+                            'response': response.text[:200] + '...' if len(response.text) > 200 else response.text
+                        }
+                        self.log(f"✅ {service['name']} 运行正常 (端口{service['port']})", "SUCCESS")
+                    except Exception as e:
+                        local_results[service['name']] = {
+                            'status': 'PORT_OPEN_HTTP_FAILED',
+                            'port': service['port'],
+                            'error': str(e)
+                        }
+                        self.log(f"⚠️ {service['name']} 端口开放但HTTP失败", "WARNING")
+                else:
+                    local_results[service['name']] = {
+                        'status': 'NOT_RUNNING',
+                        'port': service['port']
+                    }
+                    self.log(f"❌ {service['name']} 未运行 (端口{service['port']})", "ERROR")
+                    
+            except Exception as e:
+                local_results[service['name']] = {
+                    'status': 'ERROR',
+                    'error': str(e)
+                }
+                self.log(f"❌ {service['name']} 检查异常: {e}", "ERROR")
+        
+        self.results['local_services'] = local_results
+        return local_results
+    
+    def check_cloudflare_tunnel(self):
+        """检查Cloudflare隧道"""
+        self.log("☁️ 检查Cloudflare隧道...")
+        
+        tunnel_results = {}
+        
+        # 检查cloudflared进程
+        try:
+            result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq cloudflared.exe'], 
+                                  capture_output=True, text=True)
+            
+            if 'cloudflared.exe' in result.stdout:
+                tunnel_results['process'] = {
+                    'status': 'RUNNING',
+                    'details': result.stdout
+                }
+                self.log("✅ Cloudflared进程正在运行", "SUCCESS")
+            else:
+                tunnel_results['process'] = {
+                    'status': 'NOT_RUNNING'
+                }
+                self.log("❌ Cloudflared进程未运行", "ERROR")
+                
+        except Exception as e:
+            tunnel_results['process'] = {
+                'status': 'ERROR',
+                'error': str(e)
+            }
+            self.log(f"❌ 检查Cloudflared进程异常: {e}", "ERROR")
+        
+        # 检查配置文件
+        config_file = "config-new.yml"
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config_content = f.read()
+                
+                tunnel_results['config'] = {
+                    'status': 'EXISTS',
+                    'content': config_content
+                }
+                self.log("✅ Cloudflare隧道配置文件存在", "SUCCESS")
+                
+                # 解析配置
+                if 'api.aigupiao.me' in config_content:
+                    self.log("✅ 配置包含api.aigupiao.me", "SUCCESS")
+                else:
+                    self.log("⚠️ 配置未包含api.aigupiao.me", "WARNING")
+                    
+            except Exception as e:
+                tunnel_results['config'] = {
+                    'status': 'READ_ERROR',
+                    'error': str(e)
+                }
+                self.log(f"❌ 读取配置文件异常: {e}", "ERROR")
+        else:
+            tunnel_results['config'] = {
+                'status': 'NOT_EXISTS'
+            }
+            self.log("❌ Cloudflare隧道配置文件不存在", "ERROR")
+        
+        self.results['cloudflare_tunnel'] = tunnel_results
+        return tunnel_results
+    
+    def run_comprehensive_diagnosis(self):
+        """运行全面诊断"""
+        self.log("🚀 开始MCP全面网络诊断", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 执行所有检查
+        self.check_dns_resolution()
+        print()
+        
+        self.check_ping_latency()
+        print()
+        
+        self.check_http_connectivity()
+        print()
+        
+        self.check_local_services()
+        print()
+        
+        self.check_cloudflare_tunnel()
+        print()
+        
+        # 生成诊断报告
+        self.generate_diagnosis_report()
+        
+    def generate_diagnosis_report(self):
+        """生成诊断报告"""
+        self.log("📊 生成诊断报告", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 保存详细结果到文件
+        report_file = f"mcp_network_diagnosis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(report_file, 'w', encoding='utf-8') as f:
+            json.dump(self.results, f, ensure_ascii=False, indent=2)
+        
+        self.log(f"📄 详细报告已保存到: {report_file}", "SUCCESS")
+        
+        # 生成问题总结
+        issues = []
+        
+        # DNS问题
+        dns_results = self.results.get('dns_resolution', {})
+        for domain, result in dns_results.items():
+            if result.get('status') != 'SUCCESS':
+                issues.append(f"DNS解析失败: {domain}")
+        
+        # HTTP连接问题
+        http_results = self.results.get('http_connectivity', {})
+        for url, result in http_results.items():
+            if result.get('status') not in ['SUCCESS']:
+                issues.append(f"HTTP连接问题: {url} - {result.get('status')}")
+        
+        # 本地服务问题
+        local_results = self.results.get('local_services', {})
+        for service, result in local_results.items():
+            if result.get('status') != 'RUNNING':
+                issues.append(f"本地服务问题: {service} - {result.get('status')}")
+        
+        # Cloudflare隧道问题
+        tunnel_results = self.results.get('cloudflare_tunnel', {})
+        if tunnel_results.get('process', {}).get('status') != 'RUNNING':
+            issues.append("Cloudflare隧道进程未运行")
+        
+        # 输出问题总结
+        if issues:
+            self.log("⚠️ 发现的问题:", "WARNING")
+            for i, issue in enumerate(issues, 1):
+                self.log(f"   {i}. {issue}", "WARNING")
+        else:
+            self.log("✅ 未发现明显问题", "SUCCESS")
+        
+        self.log("🎯 诊断完成!", "SUCCESS")
+
+if __name__ == "__main__":
+    diagnostic = MCPNetworkDiagnostic()
+    diagnostic.run_comprehensive_diagnosis()

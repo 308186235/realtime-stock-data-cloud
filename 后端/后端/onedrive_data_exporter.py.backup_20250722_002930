@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""
+OneDrive数据导出器
+将所有交易数据导出为JSON格式到OneDrive本地同步文件夹
+包括：W(持仓)、E(成交)、R(委托)、余额(Win API)
+"""
+
+import os
+import json
+import time
+import win32api
+import win32con
+import win32gui
+from datetime import datetime
+from pathlib import Path
+
+# 导入现有模块
+from trader_core import (
+    switch_to_trading_software,
+    ensure_caps_lock_on,
+    click_center_area,
+    click_table_area,
+    generate_unique_filename,
+    cleanup_old_export_files
+)
+from fixed_balance_reader import get_balance_fixed
+
+class OneDriveDataExporter:
+    """OneDrive数据导出器"""
+    
+    def __init__(self):
+        # OneDrive本地同步路径
+        self.onedrive_path = Path("C:/Users/锋/OneDrive/TradingData")
+        
+        # 确保目录存在
+        self.onedrive_path.mkdir(parents=True, exist_ok=True)
+        
+        print(f"📁 OneDrive导出路径: {self.onedrive_path}")
+    
+    def export_page_data(self, key_code, page_name, data_type):
+        """导出指定页面的数据"""
+        print(f"\n📊 导出{page_name}数据 (按键: {hex(key_code)})")
+        print("-" * 50)
+        
+        try:
+            # 1. 切换到交易软件
+            if not switch_to_trading_software():
+                print("❌ 无法切换到交易软件")
+                return None
+            
+            # 2. 确保Caps Lock开启
+            ensure_caps_lock_on()
+            time.sleep(0.1)
+            
+            # 3. 点击中央区域获取焦点
+            click_center_area()
+            time.sleep(0.2)
+            
+            # 4. 发送页面切换按键
+            print(f"   发送{page_name}页面切换键...")
+            win32api.keybd_event(key_code, 0, 0, 0)  # 按下
+            win32api.keybd_event(key_code, 0, win32con.KEYEVENTF_KEYUP, 0)  # 释放
+            time.sleep(1.0)  # 等待页面加载
+            
+            # 5. 生成临时文件名
+            temp_filename = generate_unique_filename(page_name)
+            print(f"   临时文件: {temp_filename}")
+            
+            # 6. 点击表格区域
+            click_table_area()
+            time.sleep(0.2)
+            
+            # 7. 全选数据 (Ctrl+A)
+            win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+            win32api.keybd_event(ord('A'), 0, 0, 0)
+            win32api.keybd_event(ord('A'), 0, win32con.KEYEVENTF_KEYUP, 0)
+            win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+            time.sleep(0.2)
+            
+            # 8. 复制数据 (Ctrl+C)
+            win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+            win32api.keybd_event(ord('C'), 0, 0, 0)
+            win32api.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
+            win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+            time.sleep(0.5)
+            
+            # 9. 获取剪贴板数据
+            import win32clipboard
+            try:
+                win32clipboard.OpenClipboard()
+                clipboard_data = win32clipboard.GetClipboardData()
+                win32clipboard.CloseClipboard()
+                
+                if clipboard_data:
+                    print(f"   ✅ 成功获取{page_name}数据")
+                    return self.parse_clipboard_data(clipboard_data, data_type)
+                else:
+                    print(f"   ❌ 剪贴板数据为空")
+                    return None
+                    
+            except Exception as e:
+                print(f"   ❌ 读取剪贴板失败: {e}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ 导出{page_name}数据失败: {e}")
+            return None
+    
+    def parse_clipboard_data(self, clipboard_data, data_type):
+        """解析剪贴板数据为JSON格式"""
+        try:
+            lines = clipboard_data.strip().split('\n')
+            if len(lines) < 2:
+                return None
+            
+            # 第一行是表头
+            headers = [h.strip() for h in lines[0].split('\t')]
+            
+            # 解析数据行
+            data_rows = []
+            for line in lines[1:]:
+                if line.strip():
+                    values = [v.strip() for v in line.split('\t')]
+                    if len(values) == len(headers):
+                        row_data = dict(zip(headers, values))
+                        data_rows.append(row_data)
+            
+            # 构建JSON数据
+            json_data = {
+                "export_id": f"{data_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "timestamp": datetime.now().isoformat(),
+                "source": "dongwu_securities_onedrive_export",
+                "data_type": data_type,
+                "export_method": "automated_onedrive_sync",
+                "software": "东吴证券网上股票交易系统5.0",
+                "export_note": f"自动导出到OneDrive - {datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "headers": headers,
+                "data": data_rows,
+                "summary": {
+                    "total_records": len(data_rows),
+                    "export_time": datetime.now().isoformat()
+                }
+            }
+            
+            return json_data
+            
+        except Exception as e:
+            print(f"   ❌ 解析数据失败: {e}")
+            return None
+    
+    def export_positions(self):
+        """导出持仓数据 (W键)"""
+        return self.export_page_data(0x57, "持仓", "positions")
+    
+    def export_transactions(self):
+        """导出成交数据 (E键)"""
+        return self.export_page_data(0x45, "成交", "transactions")
+    
+    def export_orders(self):
+        """导出委托数据 (R键)"""
+        return self.export_page_data(0x52, "委托", "orders")
+    
+    def export_balance(self):
+        """导出余额数据 (Win API)"""
+        print(f"\n💰 导出余额数据 (Win API)")
+        print("-" * 50)
+        
+        try:
+            # 使用现有的Win API余额获取功能
+            balance_data = get_balance_fixed()
+            
+            if balance_data:
+                # 转换为标准JSON格式
+                json_data = {
+                    "export_id": f"balance_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "dongwu_securities_winapi",
+                    "data_type": "balance",
+                    "export_method": "winapi_onedrive_sync",
+                    "software": "东吴证券网上股票交易系统5.0",
+                    "export_note": f"Win API余额导出到OneDrive - {datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                    "balance": {
+                        "total_assets": balance_data.get("total_assets", 0.0),
+                        "available_cash": balance_data.get("available_cash", 0.0),
+                        "market_value": balance_data.get("market_value", 0.0),
+                        "frozen_amount": balance_data.get("frozen_amount", 0.0)
+                    },
+                    "summary": {
+                        "data_source": "win_api",
+                        "export_time": datetime.now().isoformat()
+                    }
+                }
+                
+                print("   ✅ 成功获取余额数据")
+                return json_data
+            else:
+                print("   ❌ Win API余额获取失败")
+                return None
+                
+        except Exception as e:
+            print(f"❌ 导出余额数据失败: {e}")
+            return None
+    
+    def save_to_onedrive(self, data, filename):
+        """保存数据到OneDrive本地同步文件夹"""
+        if not data:
+            return False
+        
+        try:
+            file_path = self.onedrive_path / filename
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            print(f"   ✅ 已保存到OneDrive: {file_path}")
+            return True
+            
+        except Exception as e:
+            print(f"   ❌ 保存到OneDrive失败: {e}")
+            return False
+    
+    def export_all_data(self):
+        """导出所有数据到OneDrive"""
+        print("🚀 开始导出所有交易数据到OneDrive")
+        print("=" * 60)
+        
+        results = {}
+        
+        # 1. 导出持仓数据
+        positions_data = self.export_positions()
+        if positions_data:
+            if self.save_to_onedrive(positions_data, "latest_positions.json"):
+                results["positions"] = "success"
+            else:
+                results["positions"] = "save_failed"
+        else:
+            results["positions"] = "export_failed"
+        
+        time.sleep(1)
+        
+        # 2. 导出成交数据
+        transactions_data = self.export_transactions()
+        if transactions_data:
+            if self.save_to_onedrive(transactions_data, "latest_transactions.json"):
+                results["transactions"] = "success"
+            else:
+                results["transactions"] = "save_failed"
+        else:
+            results["transactions"] = "export_failed"
+        
+        time.sleep(1)
+        
+        # 3. 导出委托数据
+        orders_data = self.export_orders()
+        if orders_data:
+            if self.save_to_onedrive(orders_data, "latest_orders.json"):
+                results["orders"] = "success"
+            else:
+                results["orders"] = "save_failed"
+        else:
+            results["orders"] = "export_failed"
+        
+        time.sleep(1)
+        
+        # 4. 导出余额数据
+        balance_data = self.export_balance()
+        if balance_data:
+            if self.save_to_onedrive(balance_data, "latest_balance.json"):
+                results["balance"] = "success"
+            else:
+                results["balance"] = "save_failed"
+        else:
+            results["balance"] = "export_failed"
+        
+        # 显示结果
+        print("\n📋 导出结果汇总:")
+        print("=" * 60)
+        for data_type, status in results.items():
+            status_icon = "✅" if status == "success" else "❌"
+            print(f"{status_icon} {data_type}: {status}")
+        
+        return results
+
+# 全局实例
+onedrive_exporter = OneDriveDataExporter()
+
+def export_all_to_onedrive():
+    """导出所有数据到OneDrive的便捷接口"""
+    return onedrive_exporter.export_all_data()
+
+if __name__ == "__main__":
+    print("🚀 OneDrive数据导出器")
+    print("将导出所有交易数据到OneDrive本地同步文件夹")
+    input("按回车开始导出...")
+    
+    results = export_all_to_onedrive()
+    
+    print(f"\n🎯 导出完成！文件将自动同步到OneDrive云端")
+    print(f"📁 本地路径: {onedrive_exporter.onedrive_path}")

@@ -1,0 +1,286 @@
+/**
+ * 真实的云服务器到本地交易延迟测试
+ * 测试 aigupiao.me → 本地8888端口 的真实延迟
+ */
+
+const https = require('https');
+const http = require('http');
+const { performance } = require('perf_hooks');
+
+async function testRealLatency() {
+  console.log('🚀 真实云服务器到本地交易延迟测试');
+  console.log('='.repeat(60));
+  console.log('架构: aigupiao.me → 本地电脑(8888端口)\n');
+  
+  // 1. 测试本地交易服务器
+  console.log('📍 1. 测试本地交易服务器 (localhost:8888)');
+  console.log('-'.repeat(50));
+  
+  try {
+    const startTime = performance.now();
+    const localResult = await makeLocalRequest('GET', '/health');
+    const localLatency = Math.round(performance.now() - startTime);
+    
+    console.log(`✅ 本地服务器响应: ${localLatency}ms`);
+    console.log(`📊 状态: ${localResult.data.status}`);
+    console.log(`🔧 交易模块: ${localResult.data.local_trading_available ? '可用' : '不可用'}`);
+    console.log(`🌐 WebSocket: ${localResult.data.websocket_connected ? '已连接' : '未连接'}`);
+    
+  } catch (error) {
+    console.log(`❌ 本地服务器测试失败: ${error.message}`);
+    return;
+  }
+  
+  // 2. 测试云服务器连接
+  console.log('\n🌐 2. 测试云服务器连接 (aigupiao.me)');
+  console.log('-'.repeat(50));
+  
+  try {
+    const startTime = performance.now();
+    const cloudResult = await makeCloudRequest('GET', '/health');
+    const cloudLatency = Math.round(performance.now() - startTime);
+    
+    console.log(`✅ 云服务器响应: ${cloudLatency}ms`);
+    console.log(`📊 状态码: ${cloudResult.statusCode}`);
+    
+  } catch (error) {
+    console.log(`❌ 云服务器连接失败: ${error.message}`);
+  }
+  
+  // 3. 测试云端到本地的交易API
+  console.log('\n🔗 3. 测试云端到本地交易API');
+  console.log('-'.repeat(50));
+  
+  const tradingTests = [
+    {
+      name: '云端Agent买入指令',
+      method: 'POST',
+      path: '/api/agent/buy',
+      data: {
+        stock_code: '000001',
+        quantity: 100,
+        price: 10.50,
+        agent_id: 'test_agent'
+      }
+    },
+    {
+      name: '云端Agent卖出指令',
+      method: 'POST', 
+      path: '/api/agent/sell',
+      data: {
+        stock_code: '000001',
+        quantity: 100,
+        price: 10.60,
+        agent_id: 'test_agent'
+      }
+    },
+    {
+      name: '云端Agent导出请求',
+      method: 'POST',
+      path: '/api/agent/export/holdings',
+      data: {
+        agent_id: 'test_agent'
+      }
+    }
+  ];
+  
+  for (const test of tradingTests) {
+    try {
+      console.log(`\n🧪 测试: ${test.name}`);
+      const startTime = performance.now();
+      
+      const result = await makeCloudRequest(test.method, test.path, test.data);
+      const totalLatency = Math.round(performance.now() - startTime);
+      
+      console.log(`⏱️ 总延迟: ${totalLatency}ms`);
+      console.log(`📊 状态码: ${result.statusCode}`);
+      
+      if (result.data) {
+        console.log(`📄 响应: ${JSON.stringify(result.data).substring(0, 100)}...`);
+      }
+      
+    } catch (error) {
+      console.log(`❌ ${test.name} 失败: ${error.message}`);
+    }
+    
+    // 避免请求过快
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  
+  // 4. 直接测试本地交易执行
+  console.log('\n🖥️ 4. 直接测试本地交易执行');
+  console.log('-'.repeat(50));
+  
+  const localTests = [
+    {
+      name: '本地买入交易',
+      method: 'POST',
+      path: '/trade',
+      data: {
+        action: 'buy',
+        stock_code: '000001',
+        quantity: 100,
+        price: 10.50
+      }
+    },
+    {
+      name: '本地数据导出',
+      method: 'POST',
+      path: '/export',
+      data: {
+        data_type: 'holdings'
+      }
+    }
+  ];
+  
+  for (const test of localTests) {
+    try {
+      console.log(`\n🧪 测试: ${test.name}`);
+      const startTime = performance.now();
+      
+      const result = await makeLocalRequest(test.method, test.path, test.data);
+      const latency = Math.round(performance.now() - startTime);
+      
+      console.log(`⏱️ 延迟: ${latency}ms`);
+      console.log(`📊 状态码: ${result.statusCode}`);
+      
+      if (result.data) {
+        console.log(`📄 响应: ${JSON.stringify(result.data).substring(0, 200)}...`);
+      }
+      
+    } catch (error) {
+      console.log(`❌ ${test.name} 失败: ${error.message}`);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  console.log('\n🎯 测试完成!');
+  console.log('='.repeat(60));
+}
+
+function makeLocalRequest(method, path, data) {
+  return new Promise((resolve, reject) => {
+    const postData = data ? JSON.stringify(data) : null;
+    
+    const options = {
+      hostname: 'localhost',
+      port: 8888,
+      path: path,
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    };
+    
+    if (postData) {
+      options.headers['Content-Length'] = Buffer.byteLength(postData);
+    }
+    
+    const req = http.request(options, (res) => {
+      let responseData = '';
+      
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+      
+      res.on('end', () => {
+        try {
+          const data = responseData ? JSON.parse(responseData) : null;
+          resolve({
+            statusCode: res.statusCode,
+            data: data,
+            raw: responseData
+          });
+        } catch (error) {
+          resolve({
+            statusCode: res.statusCode,
+            data: responseData,
+            raw: responseData
+          });
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(error);
+    });
+    
+    req.setTimeout(10000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    
+    if (postData) {
+      req.write(postData);
+    }
+    
+    req.end();
+  });
+}
+
+function makeCloudRequest(method, path, data) {
+  return new Promise((resolve, reject) => {
+    const postData = data ? JSON.stringify(data) : null;
+    
+    const options = {
+      hostname: 'aigupiao.me',
+      port: 443,
+      path: path,
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'Real-Cloud-Local-Trading-Test/1.0'
+      }
+    };
+    
+    if (postData) {
+      options.headers['Content-Length'] = Buffer.byteLength(postData);
+    }
+    
+    const req = https.request(options, (res) => {
+      let responseData = '';
+      
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+      
+      res.on('end', () => {
+        try {
+          const data = responseData ? JSON.parse(responseData) : null;
+          resolve({
+            statusCode: res.statusCode,
+            data: data,
+            raw: responseData
+          });
+        } catch (error) {
+          resolve({
+            statusCode: res.statusCode,
+            data: responseData,
+            raw: responseData
+          });
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(error);
+    });
+    
+    req.setTimeout(15000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    
+    if (postData) {
+      req.write(postData);
+    }
+    
+    req.end();
+  });
+}
+
+// 运行测试
+testRealLatency().catch(console.error);

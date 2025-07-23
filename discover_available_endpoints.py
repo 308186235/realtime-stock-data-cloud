@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""
+发现本地交易服务实际可用的端点
+"""
+
+import requests
+import time
+import json
+from datetime import datetime
+
+class EndpointDiscoverer:
+    def __init__(self):
+        self.config = {
+            'local_trading': 'http://localhost:8888',
+            'cloud_trading': 'https://2346443b1406.ngrok-free.app'
+        }
+        
+        self.session = requests.Session()
+        self.discovered_endpoints = {}
+    
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    def discover_common_endpoints(self):
+        """发现常见端点"""
+        self.log("🔍 发现可用端点...")
+        
+        # 常见的API端点模式
+        common_endpoints = [
+            # 基础端点
+            '/',
+            '/health',
+            '/status',
+            '/ping',
+            '/info',
+            '/version',
+            
+            # 数据查询端点
+            '/api/health',
+            '/api/status',
+            '/api/balance',
+            '/api/positions',
+            '/api/trades',
+            '/api/orders',
+            '/api/history',
+            '/api/funds',
+            '/api/account',
+            '/api/portfolio',
+            
+            # 交易端点
+            '/trade',
+            '/api/trade',
+            '/trading/buy',
+            '/trading/sell',
+            '/order',
+            '/api/order',
+            
+            # 导出端点
+            '/export',
+            '/api/export',
+            '/export/trades',
+            '/export/positions',
+            '/export/balance',
+            '/download',
+            
+            # 实时数据端点
+            '/realtime',
+            '/api/realtime',
+            '/stream',
+            '/ws',
+            '/websocket',
+            
+            # 管理端点
+            '/admin',
+            '/config',
+            '/settings',
+            '/logs'
+        ]
+        
+        available_endpoints = {}
+        
+        for endpoint in common_endpoints:
+            self.log(f"🧪 测试端点: {endpoint}")
+            
+            # 测试本地端点
+            local_result = self.test_endpoint(f"{self.config['local_trading']}{endpoint}")
+            
+            # 测试云端端点
+            cloud_result = self.test_endpoint(f"{self.config['cloud_trading']}{endpoint}")
+            
+            if local_result['accessible'] or cloud_result['accessible']:
+                available_endpoints[endpoint] = {
+                    'local': local_result,
+                    'cloud': cloud_result
+                }
+                
+                status = "✅ 可用" if local_result['accessible'] else "⚠️ 仅云端"
+                self.log(f"   {status}: {endpoint}", "SUCCESS" if local_result['accessible'] else "WARNING")
+                
+                # 如果有数据,显示样本
+                if local_result.get('data'):
+                    self.show_endpoint_sample(endpoint, local_result['data'])
+                elif cloud_result.get('data'):
+                    self.show_endpoint_sample(endpoint, cloud_result['data'])
+        
+        self.discovered_endpoints = available_endpoints
+        return available_endpoints
+    
+    def test_endpoint(self, url):
+        """测试单个端点"""
+        try:
+            # 先尝试GET请求
+            start_time = time.perf_counter()
+            response = self.session.get(url, timeout=10)
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            result = {
+                'accessible': response.status_code in [200, 201, 202],
+                'status_code': response.status_code,
+                'latency': round(latency, 2),
+                'method': 'GET',
+                'content_type': response.headers.get('content-type', ''),
+                'content_length': len(response.content)
+            }
+            
+            if result['accessible']:
+                try:
+                    # 尝试解析JSON
+                    data = response.json()
+                    result['data_type'] = 'json'
+                    result['data'] = data
+                except json.JSONDecodeError:
+                    # 文本数据
+                    result['data_type'] = 'text'
+                    result['data'] = response.text[:200]  # 只保存前200字符
+            
+            return result
+            
+        except requests.exceptions.Timeout:
+            return {'accessible': False, 'error': 'timeout'}
+        except Exception as e:
+            return {'accessible': False, 'error': str(e)}
+    
+    def show_endpoint_sample(self, endpoint, data):
+        """显示端点数据样本"""
+        if isinstance(data, dict):
+            keys = list(data.keys())[:5]  # 只显示前5个键
+            self.log(f"     📋 数据字段: {keys}", "INFO")
+            
+            # 显示一些有意义的值
+            for key in keys:
+                value = data[key]
+                if isinstance(value, (str, int, float)) and len(str(value)) < 50:
+                    self.log(f"     📊 {key}: {value}", "INFO")
+                elif isinstance(value, list):
+                    self.log(f"     📊 {key}: [{len(value)}个项目]", "INFO")
+                elif isinstance(value, dict):
+                    self.log(f"     📊 {key}: {{对象}}", "INFO")
+        
+        elif isinstance(data, list):
+            self.log(f"     📊 数组数据: {len(data)}个项目", "INFO")
+            if len(data) > 0 and isinstance(data[0], dict):
+                sample_keys = list(data[0].keys())[:3]
+                self.log(f"     📋 样本字段: {sample_keys}", "INFO")
+        
+        elif isinstance(data, str):
+            preview = data[:100] + "..." if len(data) > 100 else data
+            self.log(f"     📄 文本预览: {preview}", "INFO")
+    
+    def test_trading_specific_endpoints(self):
+        """测试交易相关的特定端点"""
+        self.log("💰 测试交易相关端点...")
+        
+        # 基于已知的交易软件功能测试
+        trading_endpoints = [
+            # 基础功能
+            {'path': '/health', 'method': 'GET', 'description': '健康检查'},
+            {'path': '/status', 'method': 'GET', 'description': '状态查询'},
+            
+            # 交易功能
+            {'path': '/trade', 'method': 'POST', 'description': '执行交易', 'data': {
+                'action': 'buy', 'stock_code': '000001', 'quantity': 100, 'price': 10.50
+            }},
+            
+            # 查询功能
+            {'path': '/balance', 'method': 'GET', 'description': '余额查询'},
+            {'path': '/positions', 'method': 'GET', 'description': '持仓查询'},
+            {'path': '/orders', 'method': 'GET', 'description': '订单查询'},
+            {'path': '/trades', 'method': 'GET', 'description': '成交查询'},
+            
+            # 导出功能
+            {'path': '/export', 'method': 'POST', 'description': '数据导出', 'data': {
+                'type': 'positions', 'format': 'json'
+            }},
+            {'path': '/export/positions', 'method': 'GET', 'description': '导出持仓'},
+            {'path': '/export/trades', 'method': 'GET', 'description': '导出成交'},
+            
+            # 其他功能
+            {'path': '/account', 'method': 'GET', 'description': '账户信息'},
+            {'path': '/market', 'method': 'GET', 'description': '市场数据'},
+            {'path': '/quotes', 'method': 'GET', 'description': '行情数据'}
+        ]
+        
+        trading_results = {}
+        
+        for endpoint in trading_endpoints:
+            self.log(f"🧪 测试: {endpoint['description']} ({endpoint['path']})")
+            
+            try:
+                start_time = time.perf_counter()
+                
+                if endpoint['method'] == 'POST':
+                    # POST请求
+                    response = self.session.post(
+                        f"{self.config['local_trading']}{endpoint['path']}",
+                        json=endpoint.get('data', {}),
+                        timeout=15
+                    )
+                else:
+                    # GET请求
+                    response = self.session.get(
+                        f"{self.config['local_trading']}{endpoint['path']}",
+                        timeout=15
+                    )
+                
+                latency = (time.perf_counter() - start_time) * 1000
+                
+                result = {
+                    'success': response.status_code in [200, 201, 202],
+                    'status_code': response.status_code,
+                    'latency': round(latency, 2),
+                    'method': endpoint['method'],
+                    'description': endpoint['description']
+                }
+                
+                if result['success']:
+                    try:
+                        data = response.json()
+                        result['data_type'] = 'json'
+                        result['data'] = data
+                        
+                        self.log(f"   ✅ 成功: {endpoint['description']} ({round(latency, 2)}ms)", "SUCCESS")
+                        
+                        # 显示关键数据
+                        if isinstance(data, dict):
+                            important_keys = ['balance', 'positions', 'trades', 'orders', 'status', 'result']
+                            found_keys = [k for k in important_keys if k in data]
+                            if found_keys:
+                                self.log(f"     📊 包含数据: {found_keys}", "SUCCESS")
+                        
+                    except json.JSONDecodeError:
+                        result['data_type'] = 'text'
+                        result['data'] = response.text[:200]
+                        self.log(f"   ✅ 成功: {endpoint['description']} (文本响应)", "SUCCESS")
+                
+                else:
+                    result['error'] = f"HTTP {response.status_code}"
+                    if response.status_code == 404:
+                        self.log(f"   ❌ 端点不存在: {endpoint['path']}", "ERROR")
+                    elif response.status_code == 500:
+                        self.log(f"   ⚠️ 服务器错误: {endpoint['path']}", "WARNING")
+                    else:
+                        self.log(f"   ⚠️ 状态码 {response.status_code}: {endpoint['path']}", "WARNING")
+                
+                trading_results[endpoint['path']] = result
+                
+            except Exception as e:
+                trading_results[endpoint['path']] = {
+                    'success': False,
+                    'error': str(e),
+                    'description': endpoint['description']
+                }
+                self.log(f"   ❌ 异常: {endpoint['description']} - {e}", "ERROR")
+            
+            time.sleep(0.5)  # 短暂间隔
+        
+        return trading_results
+    
+    def test_cloud_accessibility(self):
+        """测试云端可访问性"""
+        self.log("☁️ 测试云端可访问性...")
+        
+        # 获取所有可用的本地端点
+        available_local = [path for path, info in self.discovered_endpoints.items() 
+                          if info['local']['accessible']]
+        
+        cloud_accessible = {}
+        
+        for endpoint in available_local:
+            self.log(f"🌐 测试云端访问: {endpoint}")
+            
+            try:
+                response = self.session.get(
+                    f"{self.config['cloud_trading']}{endpoint}",
+                    timeout=15
+                )
+                
+                cloud_accessible[endpoint] = {
+                    'accessible': response.status_code in [200, 201, 202],
+                    'status_code': response.status_code,
+                    'matches_local': False
+                }
+                
+                if cloud_accessible[endpoint]['accessible']:
+                    # 比较云端和本地的响应
+                    try:
+                        cloud_data = response.json()
+                        local_data = self.discovered_endpoints[endpoint]['local'].get('data')
+                        
+                        if local_data and cloud_data:
+                            # 简单比较数据结构
+                            if isinstance(cloud_data, dict) and isinstance(local_data, dict):
+                                common_keys = set(cloud_data.keys()) & set(local_data.keys())
+                                cloud_accessible[endpoint]['matches_local'] = len(common_keys) > 0
+                                cloud_accessible[endpoint]['common_keys'] = list(common_keys)
+                        
+                        self.log(f"   ✅ 云端可访问: {endpoint}", "SUCCESS")
+                        
+                    except json.JSONDecodeError:
+                        self.log(f"   ✅ 云端可访问: {endpoint} (非JSON)", "SUCCESS")
+                else:
+                    self.log(f"   ❌ 云端不可访问: {endpoint} (状态码: {response.status_code})", "ERROR")
+                
+            except Exception as e:
+                cloud_accessible[endpoint] = {
+                    'accessible': False,
+                    'error': str(e)
+                }
+                self.log(f"   ❌ 云端访问异常: {endpoint} - {e}", "ERROR")
+        
+        return cloud_accessible
+    
+    def display_discovery_summary(self, trading_results, cloud_results):
+        """显示发现总结"""
+        self.log("📊 端点发现总结", "SUCCESS")
+        self.log("=" * 60, "SUCCESS")
+        
+        # 统计可用端点
+        total_discovered = len(self.discovered_endpoints)
+        local_accessible = len([e for e in self.discovered_endpoints.values() if e['local']['accessible']])
+        
+        self.log(f"🔍 发现端点总数: {total_discovered}", "INFO")
+        self.log(f"📍 本地可访问: {local_accessible}", "SUCCESS" if local_accessible > 0 else "ERROR")
+        
+        # 显示可用的端点
+        if local_accessible > 0:
+            self.log("✅ 可用端点列表:", "SUCCESS")
+            for path, info in self.discovered_endpoints.items():
+                if info['local']['accessible']:
+                    data_info = ""
+                    if info['local'].get('data_type') == 'json':
+                        data_info = " (JSON数据)"
+                    elif info['local'].get('data_type') == 'text':
+                        data_info = " (文本数据)"
+                    
+                    self.log(f"   • {path}{data_info}", "SUCCESS")
+        
+        # 显示交易功能测试结果
+        successful_trading = [path for path, result in trading_results.items() if result.get('success')]
+        if successful_trading:
+            self.log("💰 可用交易功能:", "SUCCESS")
+            for path in successful_trading:
+                desc = trading_results[path].get('description', path)
+                self.log(f"   • {desc} ({path})", "SUCCESS")
+        
+        # 显示云端可访问性
+        cloud_accessible = len([r for r in cloud_results.values() if r.get('accessible')])
+        if cloud_accessible > 0:
+            self.log(f"☁️ 云端可访问端点: {cloud_accessible}个", "SUCCESS")
+        else:
+            self.log("☁️ 云端访问: 无可用端点", "ERROR")
+        
+        # 最终结论
+        print()
+        self.log("🎯 最终结论:", "SUCCESS")
+        
+        if local_accessible > 0 and cloud_accessible > 0:
+            self.log("🎉 云端Agent可以访问本地交易数据!", "SUCCESS")
+            self.log(f"✅ 发现{local_accessible}个本地端点,{cloud_accessible}个云端可访问", "SUCCESS")
+        elif local_accessible > 0:
+            self.log("⚠️ 本地有数据端点,但云端访问有问题", "WARNING")
+            self.log("💡 建议检查ngrok隧道配置", "INFO")
+        else:
+            self.log("❌ 未发现可用的数据端点", "ERROR")
+            self.log("💡 可能需要启动相应的数据服务", "INFO")
+    
+    def run_discovery(self):
+        """运行端点发现"""
+        self.log("🚀 开始发现可用端点", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 1. 发现通用端点
+        self.discover_common_endpoints()
+        print()
+        
+        # 2. 测试交易相关端点
+        trading_results = self.test_trading_specific_endpoints()
+        print()
+        
+        # 3. 测试云端可访问性
+        cloud_results = self.test_cloud_accessibility()
+        print()
+        
+        # 4. 显示总结
+        self.display_discovery_summary(trading_results, cloud_results)
+        
+        self.log("🎉 端点发现完成!", "SUCCESS")
+
+if __name__ == "__main__":
+    discoverer = EndpointDiscoverer()
+    discoverer.run_discovery()

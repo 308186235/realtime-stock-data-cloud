@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""
+项目清理脚本 - 保留核心功能，删除冗余文件
+"""
+
+import os
+import shutil
+import glob
+from pathlib import Path
+
+def cleanup_project():
+    """清理项目，保留核心功能"""
+    
+    # 要保留的核心目录和文件
+    keep_dirs = {
+        'backend',           # 后端核心代码
+        '移动端/炒股养家',    # 主要前端项目
+        '后端',              # 后端目录
+        'cloudflare-api',    # Cloudflare API
+        'supabase',          # 数据库配置
+        'config',            # 配置文件
+        'data',              # 数据目录
+        'logs',              # 日志目录
+    }
+    
+    # 要保留的核心文件
+    keep_files = {
+        'aigupiao-api-fix-worker.js',     # 修复的Worker
+        'wrangler-aigupiao-fix.toml',     # Worker配置
+        'package.json',                   # 依赖配置
+        'requirements.txt',               # Python依赖
+        'README.md',                      # 说明文档
+        'trader_api.py',                  # 交易API
+        'trader_export.py',               # 导出功能
+        'chagubang_receiver.py',          # 茶股帮接收器
+        'backup_api_service.py',          # 备份API服务
+    }
+    
+    # 要删除的文件类型
+    delete_patterns = [
+        '*.backup_*',           # 备份文件
+        '*.syntax_backup_*',    # 语法备份
+        '*_backup_*',           # 各种备份
+        '*.pyc',                # Python缓存
+        '*.log',                # 日志文件
+        '*.tmp',                # 临时文件
+        '*.cache',              # 缓存文件
+        '*.old',                # 旧文件
+        'backup_*',             # 备份目录
+        '*_old',                # 旧目录
+        'node_modules',         # Node模块（保留主要的）
+        '__pycache__',          # Python缓存目录
+        '.git',                 # Git目录
+        'venv',                 # 虚拟环境
+        'dist',                 # 构建输出
+        'build',                # 构建目录
+    ]
+    
+    # 要删除的具体目录
+    delete_dirs = [
+        'backup_deleted_*',
+        'backup_unused_*',
+        '*_backup_*',
+        'cloudflare_optimization_backup_*',
+        'config_optimization_backup_*',
+        'frontend_config_backup_*',
+        'error_handling_backup_*',
+        'performance_fix_backup_*',
+        'monitoring_logging_backup_*',
+        'resource_fix_backup_*',
+        'security_backup_*',
+        'sensitive_data_backup_*',
+        'remaining_issues_backup_*',
+        'trading_risk_backup_*',
+        'repo_fix_backup_*',
+        'deps_backup_*',
+        'high_priority_backup_*',
+        'port_fix_backup_*',
+        'remaining_high_backup_*',
+        'validation_backup_*',
+        'localhost_fix_*',
+        'frontend_api_fix_*',
+        'domain_fix_*',
+        'config_backup_*',
+        'stock_data',           # 大量股票数据文件
+        '1',                    # 数字目录
+        '11',                   # 数字目录
+        '呵呵',                 # 测试项目
+        '炒股养家_old',         # 旧版本
+        '炒股养家_template_backup',  # 模板备份
+        'stock-trading-backend', # 重复的后端
+        'stock-trading-api',     # 重复的API
+        'stock-api-js',          # 重复的JS API
+        'vercel-trading',        # Vercel部署
+        'vercel-frontend',       # Vercel前端
+        'trading-vercel-deploy', # Vercel交易部署
+        'relay-service',         # 中继服务
+        'enhanced_websocket_system', # 增强WebSocket
+        'monitoring',            # 监控系统
+        'cloud_deployment',      # 云部署
+        'cloud_test',            # 云测试
+        'subdomains',            # 子域名
+        'rclone',                # OneDrive同步
+        'cfst',                  # 网络工具
+        'frp',                   # 内网穿透
+    ]
+    
+    print("🧹 开始清理项目...")
+    
+    # 删除匹配模式的文件
+    for pattern in delete_patterns:
+        for file_path in glob.glob(pattern, recursive=True):
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    print(f"删除文件: {file_path}")
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                    print(f"删除目录: {file_path}")
+            except Exception as e:
+                print(f"删除失败 {file_path}: {e}")
+    
+    # 删除指定目录
+    for dir_pattern in delete_dirs:
+        for dir_path in glob.glob(dir_pattern):
+            if os.path.isdir(dir_path):
+                try:
+                    shutil.rmtree(dir_path)
+                    print(f"删除目录: {dir_path}")
+                except Exception as e:
+                    print(f"删除目录失败 {dir_path}: {e}")
+    
+    # 删除多余的文档文件
+    doc_patterns = [
+        '*_README.md',
+        '*_GUIDE.md',
+        '*_REPORT.md',
+        '*_SUMMARY.md',
+        '*_ANALYSIS.md',
+        '*_COMPLETE.md',
+        '*_FINAL.md',
+        '*指南.md',
+        '*报告.md',
+        '*说明.md',
+        '*完成.md',
+        '*分析.md',
+    ]
+    
+    for pattern in doc_patterns:
+        for file_path in glob.glob(pattern):
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"删除文档: {file_path}")
+                except Exception as e:
+                    print(f"删除文档失败 {file_path}: {e}")
+    
+    print("✅ 项目清理完成！")
+    print("\n📁 保留的核心结构:")
+    print("- backend/          # 后端核心代码")
+    print("- 移动端/炒股养家/   # 主要前端项目")  
+    print("- 后端/             # 后端目录")
+    print("- aigupiao-api-fix-worker.js  # 修复的Worker")
+    print("- wrangler-aigupiao-fix.toml  # Worker配置")
+    print("- 核心交易和API文件")
+
+if __name__ == "__main__":
+    cleanup_project()

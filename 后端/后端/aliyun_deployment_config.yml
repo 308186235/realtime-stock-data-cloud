@@ -1,0 +1,371 @@
+# 阿里云混合交易系统部署配置
+# 本配置文件定义了完整的部署架构和参数
+
+# ===========================================
+# 系统架构配置
+# ===========================================
+architecture:
+  type: "hybrid"  # 混合架构
+  local_environment: "windows"
+  cloud_provider: "aliyun"
+  connection_type: "zero_trust_vpn"
+
+# ===========================================
+# 本地环境配置 (Windows)
+# ===========================================
+local_environment:
+  # 操作系统
+  os: "Windows 10/11"
+  
+  # 交易软件
+  trading_software:
+    name: "东吴证券网上交易系统"
+    version: "5.0"
+    installation_path: "C:/Program Files/东吴证券"
+    window_titles:
+      - "网上股票交易系统5.0"
+      - "网上股票交易系统"
+      - "东吴证券"
+  
+  # Python环境
+  python:
+    version: "3.11+"
+    packages:
+      - "fastapi>=0.104.0"
+      - "uvicorn>=0.24.0"
+      - "aiohttp>=3.9.0"
+      - "pywin32>=306"
+      - "requests>=2.31.0"
+      - "pandas>=2.1.0"
+      - "numpy>=1.24.0"
+  
+  # 本地API服务
+  local_api:
+    host: "127.0.0.1"
+    port: 8000
+    ssl_enabled: true
+    cert_file: "certs/local_api.crt"
+    key_file: "certs/local_api.key"
+  
+  # 文件路径
+  paths:
+    base_directory: "E:/交易8 - 副本"
+    export_directory: "C:/mnt/onedrive/TradingData"
+    backup_directory: "E:/交易8 - 副本/backups"
+    log_directory: "E:/交易8 - 副本/logs"
+  
+  # Zero Trust连接
+  zero_trust:
+    tunnel_name: "aigupiao-tunnel"
+    config_file: "config.yml"
+    cloudflared_path: "cloudflared.exe"
+    public_hostname: "api.aigupiao.me"
+
+# ===========================================
+# 阿里云环境配置
+# ===========================================
+aliyun_environment:
+  # 基础配置
+  region: "cn-hangzhou"
+  availability_zone: "cn-hangzhou-h"
+  
+  # ECS实例配置 (Ubuntu系统)
+  ecs:
+    instance_type: "ecs.c6.large"  # 2vCPU 4GB内存
+    image_id: "ubuntu_22_04_x64_20G_alibase_20240220.vhd"  # Ubuntu 22.04 LTS
+    system_disk:
+      category: "cloud_essd"
+      size: 40  # GB
+    data_disk:
+      category: "cloud_essd"
+      size: 100  # GB
+    security_group: "sg-trading-system"
+    vpc_id: "vpc-trading-network"
+    vswitch_id: "vsw-trading-subnet"
+    # Ubuntu系统配置
+    os_config:
+      username: "ubuntu"
+      ssh_key: "trading-system-key"
+      packages:
+        - "python3.11"
+        - "python3-pip"
+        - "nginx"
+        - "supervisor"
+        - "redis-server"
+        - "mysql-client"
+        - "curl"
+        - "wget"
+        - "git"
+  
+  # RDS数据库配置
+  rds:
+    engine: "MySQL"
+    version: "8.0"
+    instance_class: "mysql.n2.medium.1"  # 2核4GB
+    storage: 100  # GB
+    storage_type: "cloud_essd"
+    database_name: "trading_system"
+    username: "trading_admin"
+    # password: 通过环境变量设置
+  
+  # OSS存储配置
+  oss:
+    bucket_name: "trading-data-backup"
+    storage_class: "Standard"
+    access_control: "private"
+    versioning: true
+    lifecycle_rules:
+      - name: "delete_old_backups"
+        status: "Enabled"
+        expiration_days: 90
+  
+  # SLB负载均衡配置
+  slb:
+    type: "Application"
+    address_type: "internet"
+    bandwidth: 10  # Mbps
+    listeners:
+      - port: 443
+        protocol: "HTTPS"
+        backend_port: 8080
+        ssl_certificate: "cert-trading-system"
+  
+  # 监控配置
+  monitoring:
+    cms_enabled: true
+    log_service_enabled: true
+    alert_rules:
+      - name: "high_cpu_usage"
+        metric: "CPUUtilization"
+        threshold: 80
+        comparison: "GreaterThanThreshold"
+      - name: "high_memory_usage"
+        metric: "MemoryUtilization"
+        threshold: 85
+        comparison: "GreaterThanThreshold"
+
+# ===========================================
+# 应用配置
+# ===========================================
+application:
+  # 云端API服务 (Ubuntu部署)
+  cloud_api:
+    name: "trading-cloud-api"
+    port: 8080
+    workers: 4
+    max_requests: 1000
+    timeout: 30
+    # Ubuntu系统路径
+    app_path: "/opt/trading-system"
+    log_path: "/var/log/trading-system"
+    pid_path: "/var/run/trading-system"
+    # 系统服务配置
+    systemd_service: true
+    nginx_proxy: true
+    ssl_enabled: true
+    
+  # 数据库配置
+  database:
+    host: "${RDS_HOST}"
+    port: 3306
+    database: "trading_system"
+    username: "${DB_USERNAME}"
+    password: "${DB_PASSWORD}"
+    pool_size: 10
+    max_overflow: 20
+    
+  # Redis缓存配置
+  redis:
+    host: "${REDIS_HOST}"
+    port: 6379
+    password: "${REDIS_PASSWORD}"
+    db: 0
+    max_connections: 10
+    
+  # 消息队列配置
+  message_queue:
+    type: "redis"
+    broker_url: "redis://${REDIS_HOST}:6379/1"
+    result_backend: "redis://${REDIS_HOST}:6379/2"
+
+# ===========================================
+# 安全配置
+# ===========================================
+security:
+  # API安全
+  api_security:
+    authentication: "JWT"
+    jwt_secret: "${JWT_SECRET}"
+    jwt_expiration: 3600  # 1小时
+    rate_limiting:
+      requests_per_minute: 100
+      burst_size: 20
+  
+  # 网络安全
+  network_security:
+    allowed_ips:
+      - "0.0.0.0/0"  # 通过Zero Trust控制访问
+    ssl_enabled: true
+    ssl_certificate: "cert-trading-system"
+    
+  # 数据加密
+  encryption:
+    data_at_rest: true
+    data_in_transit: true
+    encryption_algorithm: "AES-256"
+
+# ===========================================
+# 监控和日志配置
+# ===========================================
+monitoring:
+  # 应用监控
+  application_monitoring:
+    enabled: true
+    metrics_endpoint: "/metrics"
+    health_check_endpoint: "/health"
+    
+  # 日志配置
+  logging:
+    level: "INFO"
+    format: "json"
+    rotation: "daily"
+    retention_days: 30
+    
+  # 告警配置
+  alerting:
+    channels:
+      - type: "email"
+        recipients: ["admin@example.com"]
+      - type: "sms"
+        recipients: ["+86138xxxxxxxx"]
+    rules:
+      - name: "service_down"
+        condition: "service_unavailable"
+        severity: "critical"
+      - name: "high_error_rate"
+        condition: "error_rate > 5%"
+        severity: "warning"
+
+# ===========================================
+# 部署配置
+# ===========================================
+deployment:
+  # 部署策略
+  strategy: "blue_green"
+  
+  # 环境配置
+  environments:
+    development:
+      replicas: 1
+      resources:
+        cpu: "0.5"
+        memory: "1Gi"
+    
+    staging:
+      replicas: 2
+      resources:
+        cpu: "1"
+        memory: "2Gi"
+    
+    production:
+      replicas: 3
+      resources:
+        cpu: "2"
+        memory: "4Gi"
+  
+  # 自动扩缩容
+  autoscaling:
+    enabled: true
+    min_replicas: 2
+    max_replicas: 10
+    target_cpu_utilization: 70
+    target_memory_utilization: 80
+
+# ===========================================
+# 数据同步配置
+# ===========================================
+data_sync:
+  # 同步策略
+  strategy: "real_time"
+  
+  # 同步间隔
+  intervals:
+    market_data: 5  # 秒
+    account_data: 30  # 秒
+    trading_data: 10  # 秒
+    backup_data: 300  # 秒
+  
+  # 数据源
+  sources:
+    local_api: "https://api.aigupiao.me"
+    onedrive_mount: "C:/mnt/onedrive/TradingData"
+    
+  # 数据目标
+  targets:
+    oss_bucket: "trading-data-backup"
+    rds_database: "trading_system"
+    redis_cache: "trading_cache"
+
+# ===========================================
+# 业务配置
+# ===========================================
+business:
+  # 交易配置
+  trading:
+    market_hours:
+      start: "09:30"
+      end: "15:00"
+      timezone: "Asia/Shanghai"
+    
+    risk_limits:
+      max_single_position: 0.1  # 10%
+      max_daily_loss: 0.05      # 5%
+      max_leverage: 1.0         # 1倍
+      min_cash_ratio: 0.1       # 10%
+    
+    order_limits:
+      max_order_size: 10000
+      min_order_size: 100
+      max_orders_per_minute: 10
+  
+  # 分析配置
+  analysis:
+    ai_models:
+      trend_analysis: "lstm_v2"
+      risk_assessment: "random_forest_v1"
+      portfolio_optimization: "markowitz_v1"
+    
+    data_sources:
+      - "local_trading_data"
+      - "market_data_api"
+      - "news_sentiment_api"
+    
+    update_frequency:
+      model_training: "daily"
+      prediction_update: "hourly"
+      risk_assessment: "real_time"
+
+# ===========================================
+# 环境变量模板
+# ===========================================
+environment_variables:
+  # 数据库
+  DB_HOST: "your-rds-host.mysql.rds.aliyuncs.com"
+  DB_USERNAME: "trading_admin"
+  DB_PASSWORD: "your-secure-password"
+  
+  # Redis
+  REDIS_HOST: "your-redis-host.redis.rds.aliyuncs.com"
+  REDIS_PASSWORD: "your-redis-password"
+  
+  # API密钥
+  JWT_SECRET: "your-jwt-secret-key"
+  LOCAL_API_KEY: "your-local-api-key"
+  
+  # 阿里云访问密钥
+  ALIBABA_CLOUD_ACCESS_KEY_ID: "your-access-key-id"
+  ALIBABA_CLOUD_ACCESS_KEY_SECRET: "your-access-key-secret"
+  
+  # OSS配置
+  OSS_ENDPOINT: "oss-cn-hangzhou.aliyuncs.com"
+  OSS_BUCKET: "trading-data-backup"

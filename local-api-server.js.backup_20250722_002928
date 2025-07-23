@@ -1,0 +1,201 @@
+/**
+ * 本地API服务器 - 用于测试前端连接
+ * 模拟云端API的所有功能
+ */
+
+const http = require('http');
+const url = require('url');
+
+// CORS headers
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Max-Age': '86400',
+  'Content-Type': 'application/json'
+};
+
+// 模拟数据
+const mockData = {
+  health: {
+    status: 'healthy',
+    service: 'AI股票交易API - 本地测试版',
+    version: '6.0.0',
+    data_source: 'Local Mock Data',
+    timestamp: new Date().toISOString(),
+    note: '本地测试服务器，模拟云端API功能'
+  },
+  
+  chagubangHealth: {
+    success: true,
+    data: {
+      status: 'healthy',
+      service: '茶股帮数据服务',
+      connection_status: 'connected',
+      active_token: 'QT_wat5Q...',
+      data_received_today: 1500,
+      last_data_time: new Date().toISOString(),
+      market_status: 'open',
+      timestamp: new Date().toISOString()
+    }
+  },
+  
+  virtualAccounts: {
+    success: true,
+    data: [
+      {
+        id: 'virtual-account-1',
+        account_name: '云端虚拟交易账户',
+        broker_type: 'virtual',
+        total_assets: 1000000,
+        available_cash: 850000,
+        market_value: 150000,
+        profit_loss: 25000,
+        profit_loss_percent: 2.56,
+        created_at: '2025-07-15T00:00:00Z',
+        updated_at: new Date().toISOString()
+      }
+    ]
+  },
+  
+  agentAnalysis: {
+    success: true,
+    data: {
+      message: 'Agent分析功能状态',
+      analysis_status: 'active',
+      last_analysis: new Date().toISOString(),
+      total_decisions: 45,
+      today_decisions: 12,
+      success_rate: 87.5,
+      current_strategy: 'momentum_trend',
+      risk_level: 'medium'
+    }
+  }
+};
+
+// 请求处理函数
+function handleRequest(req, res) {
+  const parsedUrl = url.parse(req.url, true);
+  const path = parsedUrl.pathname;
+  const method = req.method;
+
+  // 设置CORS头
+  Object.keys(corsHeaders).forEach(key => {
+    res.setHeader(key, corsHeaders[key]);
+  });
+
+  // 处理OPTIONS请求
+  if (method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  console.log(`${new Date().toISOString()} - ${method} ${path}`);
+
+  try {
+    // 路由处理
+    if (path === '/api/health') {
+      res.writeHead(200);
+      res.end(JSON.stringify(mockData.health));
+      return;
+    }
+
+    if (path === '/api/chagubang/health') {
+      res.writeHead(200);
+      res.end(JSON.stringify(mockData.chagubangHealth));
+      return;
+    }
+
+    if (path === '/api/chagubang/start' && method === 'POST') {
+      const response = {
+        success: true,
+        message: '茶股帮连接启动成功',
+        data: {
+          status: 'connected',
+          host: 'l1.chagubang.com',
+          port: 6380,
+          token: 'QT_wat5Q...',
+          timestamp: new Date().toISOString()
+        }
+      };
+      res.writeHead(200);
+      res.end(JSON.stringify(response));
+      return;
+    }
+
+    if (path === '/api/virtual-account/accounts') {
+      res.writeHead(200);
+      res.end(JSON.stringify(mockData.virtualAccounts));
+      return;
+    }
+
+    if (path === '/api/agent-analysis') {
+      res.writeHead(200);
+      res.end(JSON.stringify(mockData.agentAnalysis));
+      return;
+    }
+
+    // 404处理
+    const notFoundResponse = {
+      success: false,
+      message: 'API端点不存在',
+      path: path,
+      method: method,
+      available_endpoints: [
+        '/api/health',
+        '/api/chagubang/health',
+        '/api/chagubang/start',
+        '/api/virtual-account/accounts',
+        '/api/agent-analysis'
+      ],
+      timestamp: new Date().toISOString()
+    };
+    
+    res.writeHead(404);
+    res.end(JSON.stringify(notFoundResponse));
+
+  } catch (error) {
+    console.error('请求处理错误:', error);
+    const errorResponse = {
+      success: false,
+      error: error.message,
+      path: path,
+      timestamp: new Date().toISOString()
+    };
+    
+    res.writeHead(500);
+    res.end(JSON.stringify(errorResponse));
+  }
+}
+
+// 创建服务器
+const server = http.createServer(handleRequest);
+const PORT = 3000;
+
+server.listen(PORT, () => {
+  console.log('🚀 本地API服务器启动成功！');
+  console.log(`📍 服务地址: http://localhost:${PORT}`);
+  console.log('📋 可用端点:');
+  console.log('   - GET  /api/health                    - 健康检查');
+  console.log('   - GET  /api/chagubang/health          - 茶股帮健康状态');
+  console.log('   - POST /api/chagubang/start           - 启动茶股帮连接');
+  console.log('   - GET  /api/virtual-account/accounts  - 虚拟账户信息');
+  console.log('   - GET  /api/agent-analysis            - Agent分析状态');
+  console.log('');
+  console.log('💡 使用方法:');
+  console.log('   1. 修改前端配置文件中的API地址为: http://localhost:3000');
+  console.log('   2. 启动前端应用进行测试');
+  console.log('   3. 验证所有功能正常工作');
+  console.log('');
+  console.log('⚠️  注意: 这是本地测试服务器，使用模拟数据');
+});
+
+// 优雅关闭
+process.on('SIGINT', () => {
+  console.log('\n🛑 正在关闭服务器...');
+  server.close(() => {
+    console.log('✅ 服务器已关闭');
+    process.exit(0);
+  });
+});

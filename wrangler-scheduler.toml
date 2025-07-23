@@ -1,0 +1,14 @@
+name = "chagubang-scheduler"
+main = "cloudflare-scheduler.js"
+compatibility_date = "2025-07-03"
+
+# 定时任务 - 每3分钟执行一次
+[triggers]
+crons = ["*/3 * * * *"]
+
+# 环境变量
+[vars]
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+
+# 密钥 (使用 wrangler secret put 设置)
+# wrangler secret put SUPABASE_ANON_KEY

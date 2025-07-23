@@ -1,0 +1,233 @@
+# Cloudflare Zero Trust 访问策略配置
+# 为交易系统配置身份验证和网络访问控制
+
+# 应用程序访问策略
+applications:
+  # 主API应用
+  - name: "Trading API - Main"
+    domain: "api.aigupiao.me"
+    type: "self_hosted"
+    session_duration: "24h"
+    policies:
+      - name: "Allow Authenticated Users"
+        decision: "allow"
+        include:
+          - email_domain: ["qq.com", "gmail.com", "163.com", "126.com"]
+        require:
+          - email_verified: true
+        exclude: []
+    
+  # 交易API应用
+  - name: "Trading API - Core"
+    domain: "trading.aigupiao.me"
+    type: "self_hosted"
+    session_duration: "12h"
+    policies:
+      - name: "Restricted Trading Access"
+        decision: "allow"
+        include:
+          - email: ["308186235@qq.com"]  # 主用户邮箱
+        require:
+          - email_verified: true
+          - mfa: true  # 要求多因素认证
+        exclude: []
+    
+  # 代理后端应用
+  - name: "Agent Backend"
+    domain: "agent.aigupiao.me"
+    type: "self_hosted"
+    session_duration: "8h"
+    policies:
+      - name: "Agent Access Control"
+        decision: "allow"
+        include:
+          - email: ["308186235@qq.com"]
+        require:
+          - email_verified: true
+          - mfa: true
+        exclude: []
+
+# 网络访问策略
+network_policies:
+  # 私有网络访问策略
+  - name: "Local Trading System Access"
+    action: "allow"
+    traffic: "127.0.0.1/32"
+    identity:
+      - email: ["308186235@qq.com"]
+    device_posture: []
+    
+  # 本地API端口访问
+  - name: "Trading Ports Access"
+    action: "allow"
+    traffic: 
+      - "127.0.0.1:8000"  # 主API
+      - "127.0.0.1:8888"  # 交易API
+      - "127.0.0.1:9999"  # 代理后端
+      - "127.0.0.1:8001"  # 实时数据
+      - "127.0.0.1:8002"  # 监控
+      - "127.0.0.1:8003"  # 备用API
+    identity:
+      - email_domain: ["qq.com"]
+    device_posture: []
+
+# DNS策略
+dns_policies:
+  # 安全DNS解析
+  - name: "Secure DNS for Trading"
+    action: "allow"
+    dns_types: ["A", "AAAA", "CNAME"]
+    destinations:
+      - "*.aigupiao.me"
+      - "api.aigupiao.me"
+      - "trading.aigupiao.me"
+      - "agent.aigupiao.me"
+    identity:
+      - email_domain: ["qq.com", "gmail.com"]
+    
+  # 阻止恶意域名
+  - name: "Block Malicious Domains"
+    action: "block"
+    dns_types: ["A", "AAAA"]
+    destinations:
+      - "*.malware.com"
+      - "*.phishing.net"
+    identity: []
+
+# 设备信任策略
+device_trust:
+  # 设备注册要求
+  - name: "Device Registration Required"
+    platform: ["windows", "android", "ios"]
+    require_warp: true
+    require_gateway: true
+    
+  # 设备合规检查
+  - name: "Device Compliance"
+    checks:
+      - os_version_min: "10.0"  # Windows 10+
+      - antivirus_running: true
+      - firewall_enabled: true
+      - disk_encryption: false  # 可选，根据需要启用
+
+# 会话管理
+session_management:
+  # 会话超时设置
+  timeout_settings:
+    idle_timeout: "2h"      # 空闲2小时后超时
+    absolute_timeout: "24h" # 绝对24小时后超时
+    
+  # 并发会话限制
+  concurrent_sessions:
+    max_sessions_per_user: 3
+    max_sessions_per_device: 2
+    
+  # 会话刷新策略
+  refresh_policy:
+    require_fresh_auth: false
+    refresh_interval: "4h"
+
+# 审计和日志
+audit_settings:
+  # 访问日志
+  access_logs:
+    enabled: true
+    retention_days: 90
+    include_request_body: false
+    include_response_body: false
+    
+  # 认证日志
+  auth_logs:
+    enabled: true
+    retention_days: 180
+    log_failed_attempts: true
+    log_successful_logins: true
+    
+  # 网络活动日志
+  network_logs:
+    enabled: true
+    retention_days: 30
+    log_dns_queries: true
+    log_network_connections: true
+
+# 移动网络优化
+mobile_optimization:
+  # 连接保持设置
+  connection_settings:
+    keep_alive_interval: "30s"
+    connection_timeout: "60s"
+    retry_attempts: 5
+    retry_backoff: "exponential"
+    
+  # 网络切换处理
+  network_switching:
+    auto_reconnect: true
+    reconnect_delay: "5s"
+    preserve_session: true
+    
+  # 数据压缩
+  compression:
+    enabled: true
+    level: "medium"
+    exclude_types: ["image", "video", "audio"]
+
+# 故障转移配置
+failover:
+  # 备用连接
+  backup_connections:
+    enabled: true
+    backup_tunnels: []
+    
+  # 健康检查
+  health_checks:
+    enabled: true
+    interval: "30s"
+    timeout: "10s"
+    failure_threshold: 3
+    
+  # 自动恢复
+  auto_recovery:
+    enabled: true
+    recovery_delay: "60s"
+    max_recovery_attempts: 10
+
+# 性能优化
+performance:
+  # 缓存设置
+  caching:
+    enabled: true
+    cache_duration: "5m"
+    cache_size: "100MB"
+    
+  # 连接池
+  connection_pooling:
+    enabled: true
+    max_connections: 100
+    idle_timeout: "300s"
+    
+  # 压缩传输
+  compression:
+    enabled: true
+    algorithms: ["gzip", "br"]
+    min_size: "1KB"
+
+# 安全增强
+security_enhancements:
+  # TLS设置
+  tls:
+    min_version: "1.2"
+    cipher_suites: ["ECDHE-RSA-AES256-GCM-SHA384", "ECDHE-RSA-AES128-GCM-SHA256"]
+    
+  # 请求限制
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 1000
+    burst_size: 100
+    
+  # 安全头
+  security_headers:
+    enabled: true
+    hsts: true
+    content_type_nosniff: true
+    frame_options: "DENY"
+    xss_protection: true

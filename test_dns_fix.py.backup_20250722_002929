@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""
+测试DNS修复效果
+"""
+
+import requests
+import time
+from datetime import datetime
+
+def test_domain_access():
+    """测试域名访问"""
+    print("🧪 测试DNS修复效果")
+    print("=" * 50)
+    
+    # 测试的URL列表
+    test_urls = [
+        "https://aigupiao.me",
+        "https://aigupiao.me/health",
+        "https://api.aigupiao.me/api/health",
+        "https://api.aigupiao.me/api/account-balance",
+        "https://agent.aigupiao.me/api/tokens",
+        "https://mobile.aigupiao.me"
+    ]
+    
+    results = {}
+    
+    for url in test_urls:
+        print(f"\n🔍 测试: {url}")
+        try:
+            start_time = time.time()
+            response = requests.get(url, timeout=10)
+            end_time = time.time()
+            
+            response_time = round((end_time - start_time) * 1000, 2)
+            
+            if response.status_code == 200:
+                print(f"✅ 成功 - 状态码: {response.status_code}, 响应时间: {response_time}ms")
+                try:
+                    data = response.json()
+                    print(f"   响应数据: {data}")
+                except:
+                    print(f"   响应内容: {response.text[:100]}...")
+                results[url] = "SUCCESS"
+            elif response.status_code == 403:
+                print(f"❌ 403错误 - DNS问题仍然存在")
+                if "Error 1000" in response.text:
+                    print("   确认: Cloudflare Error 1000 - DNS points to prohibited IP")
+                results[url] = "DNS_ERROR"
+            else:
+                print(f"⚠️ 状态码: {response.status_code}")
+                print(f"   响应: {response.text[:200]}...")
+                results[url] = f"HTTP_{response.status_code}"
+                
+        except requests.exceptions.ConnectTimeout:
+            print(f"⏰ 连接超时")
+            results[url] = "TIMEOUT"
+        except requests.exceptions.ConnectionError as e:
+            print(f"❌ 连接错误: {e}")
+            results[url] = "CONNECTION_ERROR"
+        except Exception as e:
+            print(f"❌ 其他错误: {e}")
+            results[url] = "ERROR"
+    
+    # 生成测试报告
+    print("\n" + "=" * 50)
+    print("📊 测试结果汇总")
+    print("=" * 50)
+    
+    success_count = 0
+    dns_error_count = 0
+    
+    for url, status in results.items():
+        if status == "SUCCESS":
+            print(f"✅ {url} - 正常")
+            success_count += 1
+        elif status == "DNS_ERROR":
+            print(f"❌ {url} - DNS错误")
+            dns_error_count += 1
+        else:
+            print(f"⚠️ {url} - {status}")
+    
+    print(f"\n📈 统计:")
+    print(f"   成功: {success_count}/{len(test_urls)}")
+    print(f"   DNS错误: {dns_error_count}/{len(test_urls)}")
+    
+    if dns_error_count > 0:
+        print(f"\n🔧 建议:")
+        print(f"   1. 检查Cloudflare Workers路由配置")
+        print(f"   2. 确认域名DNS记录正确")
+        print(f"   3. 等待DNS传播完成(可能需要几分钟)")
+    
+    if success_count == len(test_urls):
+        print(f"\n🎉 所有测试通过！DNS修复成功！")
+        return True
+    else:
+        print(f"\n⚠️ 还有问题需要解决")
+        return False
+
+if __name__ == "__main__":
+    test_domain_access()

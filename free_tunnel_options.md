@@ -10,7 +10,7 @@
 | **serveo.net** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ | 无 | ⭐⭐⭐ |
 | **localhost.run** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ | 无 | ⭐⭐⭐ |
 
-## 🥇 **最推荐：Cloudflare Tunnel**
+## 🥇 **最推荐:Cloudflare Tunnel**
 
 ### 优势
 - ✅ **企业级稳定性** - Cloudflare全球CDN
@@ -22,10 +22,10 @@
 
 ### 使用方法
 ```bash
-# 方法1：快速隧道（推荐）
+# 方法1:快速隧道(推荐)
 cloudflared tunnel --url http://localhost:8000
 
-# 方法2：自定义域名（需要域名）
+# 方法2:自定义域名(需要域名)
 cloudflared tunnel create my-tunnel
 cloudflared tunnel route dns my-tunnel api.yourdomain.com
 cloudflared tunnel run my-tunnel
@@ -35,16 +35,16 @@ cloudflared tunnel run my-tunnel
 
 ### **1. serveo.net**
 ```bash
-# SSH隧道，简单易用
+# SSH隧道,简单易用
 ssh -R 80:localhost:8000 serveo.net
-# 访问地址：https://随机子域名.serveo.net
+# 访问地址:https://随机子域名.serveo.net
 ```
 
 ### **2. localhost.run**
 ```bash
-# SSH隧道，支持自定义子域名
+# SSH隧道,支持自定义子域名
 ssh -R 80:localhost:8000 ssh.localhost.run
-# 访问地址：https://随机子域名.localhost.run
+# 访问地址:https://随机子域名.localhost.run
 ```
 
 ### **3. 免费frp服务器**
@@ -83,10 +83,10 @@ ssh -R 80:localhost:8000 ssh.localhost.run
 
 ## 💡 **选择建议**
 
-### **立即可用（推荐顺序）**
-1. **Cloudflare Tunnel** - 最稳定，企业级
-2. **ngrok** - 已经在用，继续用也可以
-3. **serveo.net** - 简单，但需要SSH
+### **立即可用(推荐顺序)**
+1. **Cloudflare Tunnel** - 最稳定,企业级
+2. **ngrok** - 已经在用,继续用也可以
+3. **serveo.net** - 简单,但需要SSH
 4. **localhost.run** - 类似serveo
 
 ### **长期使用**
@@ -97,7 +97,7 @@ ssh -R 80:localhost:8000 ssh.localhost.run
 ## ⚠️ **注意事项**
 
 ### 免费服务限制
-- **ngrok**: 每月流量限制，URL会变化
+- **ngrok**: 每月流量限制,URL会变化
 - **免费frp**: 服务器可能不稳定
 - **SSH隧道**: 依赖SSH连接稳定性
 
@@ -110,8 +110,8 @@ ssh -R 80:localhost:8000 ssh.localhost.run
 
 **当前阶段**: 
 1. 先试试 `python setup_cloudflare_simple.py`
-2. 如果不行，继续用ngrok
-3. 备选：serveo.net 或 localhost.run
+2. 如果不行,继续用ngrok
+3. 备选:serveo.net 或 localhost.run
 
 **长期规划**:
 1. 购买域名 + Cloudflare Tunnel

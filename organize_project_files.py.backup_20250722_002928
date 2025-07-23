@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""
+整理项目文件脚本
+把前端文件放到"移动端"文件夹，后端文件放到"后端"文件夹
+"""
+import os
+import shutil
+from datetime import datetime
+
+class ProjectFileOrganizer:
+    """项目文件整理器"""
+    
+    def __init__(self):
+        self.moved_files = []
+        self.frontend_dir = "移动端"
+        self.backend_dir = "后端"
+        
+    def print_banner(self):
+        """打印整理横幅"""
+        print("=" * 80)
+        print("📁 项目文件整理")
+        print("=" * 80)
+        print(f"📅 整理时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("🎯 前端文件 → 移动端文件夹")
+        print("🎯 后端文件 → 后端文件夹")
+        print("=" * 80)
+        
+    def is_frontend_file(self, file_path):
+        """判断是否为前端文件"""
+        frontend_patterns = [
+            # 前端项目文件夹
+            "呵呵/",
+            "炒股养家/",
+            "frontend/",
+            "vercel-frontend/",
+            "炒股养家_complete/",
+            "炒股养家_old/",
+            "炒股养家_template_backup/",
+            "1/",
+            "11/",
+            # 前端相关文件
+            ".vue",
+            ".html",
+            ".js",
+            ".css",
+            ".scss",
+            "pages.json",
+            "manifest.json",
+            "package.json",
+            "package-lock.json",
+            "uni.promisify.adaptor.js",
+            "uni.scss",
+            # 前端配置文件
+            "env.js",
+            "config.js",
+            "wrangler.toml",
+            # 前端静态资源
+            "static/",
+            "unpackage/",
+            "node_modules/",
+            # Cloudflare Workers (前端相关)
+            "cloudflare-worker",
+            "cloudflare-frontend",
+            "api-worker.js",
+            "trading-api-worker.js"
+        ]
+        
+        for pattern in frontend_patterns:
+            if pattern in file_path:
+                return True
+        return False
+        
+    def is_backend_file(self, file_path):
+        """判断是否为后端文件"""
+        backend_patterns = [
+            # 后端文件夹
+            "backend/",
+            # Python后端文件
+            ".py",
+            # 后端配置文件
+            "requirements.txt",
+            "Dockerfile",
+            "docker-compose.yml",
+            "Procfile",
+            # 数据库文件
+            ".sql",
+            ".db",
+            # 后端服务配置
+            "config.yml",
+            "aliyun_deployment_config.yml",
+            # 后端部署脚本
+            "deploy.sh",
+            "build.sh",
+            # 后端数据文件
+            "data/",
+            "downloads/",
+            "cloud_downloads/",
+            "stock_data/",
+            # 后端日志
+            ".log",
+            # 后端缓存
+            "__pycache__/",
+            # Supabase后端
+            "supabase/",
+            # 后端测试
+            "tests/",
+            # 后端文档
+            "docs/",
+            # 后端配置
+            "config/"
+        ]
+        
+        for pattern in backend_patterns:
+            if pattern in file_path:
+                return True
+        return False
+        
+    def should_skip_file(self, file_path):
+        """判断是否应该跳过的文件"""
+        skip_patterns = [
+            # 已经在目标文件夹中的文件
+            f"{self.frontend_dir}/",
+            f"{self.backend_dir}/",
+            # 备份文件夹
+            "backup/",
+            "backups/",
+            "backup_",
+            "_backup",
+            # 临时文件
+            ".tmp",
+            ".temp",
+            # 系统文件
+            ".git/",
+            ".vscode/",
+            ".idea/",
+            # 大型数据文件
+            "venv/",
+            "node_modules/",
+            # 已处理的文件
+            "organize_",
+            "start_hehe_server.py",
+            "FRONTEND_PROJECTS_",
+            # 不需要移动的文档
+            "README.md",
+            ".md"
+        ]
+        
+        for pattern in skip_patterns:
+            if pattern in file_path:
+                return True
+        return False
+        
+    def move_frontend_files(self):
+        """移动前端文件到移动端文件夹"""
+        print("\n📱 移动前端文件到移动端文件夹...")
+        print("-" * 60)
+        
+        # 确保移动端文件夹存在
+        if not os.path.exists(self.frontend_dir):
+            os.makedirs(self.frontend_dir)
+            print(f"  ✅ 创建移动端文件夹")
+            
+        # 扫描所有文件和文件夹
+        for root, dirs, files in os.walk("."):
+            # 跳过已经在目标文件夹中的文件
+            if self.should_skip_file(root):
+                continue
+                
+            # 检查文件夹是否为前端文件夹
+            if self.is_frontend_file(root) and root != ".":
+                folder_name = os.path.basename(root)
+                target_path = os.path.join(self.frontend_dir, folder_name)
+                
+                if not os.path.exists(target_path):
+                    try:
+                        shutil.move(root, target_path)
+                        print(f"  📁 移动文件夹: {root} → {target_path}")
+                        self.moved_files.append(f"文件夹: {root} → {target_path}")
+                    except Exception as e:
+                        print(f"  ❌ 移动失败: {root} - {e}")
+                        
+            # 检查单个文件
+            for file in files:
+                file_path = os.path.join(root, file)
+                
+                if self.should_skip_file(file_path):
+                    continue
+                    
+                if self.is_frontend_file(file_path):
+                    # 创建目标目录结构
+                    rel_path = os.path.relpath(file_path, ".")
+                    target_path = os.path.join(self.frontend_dir, rel_path)
+                    target_dir = os.path.dirname(target_path)
+                    
+                    if not os.path.exists(target_dir):
+                        os.makedirs(target_dir)
+                        
+                    if not os.path.exists(target_path):
+                        try:
+                            shutil.move(file_path, target_path)
+                            print(f"  📄 移动文件: {file_path} → {target_path}")
+                            self.moved_files.append(f"文件: {file_path} → {target_path}")
+                        except Exception as e:
+                            print(f"  ❌ 移动失败: {file_path} - {e}")
+                            
+    def move_backend_files(self):
+        """移动后端文件到后端文件夹"""
+        print("\n🖥️ 移动后端文件到后端文件夹...")
+        print("-" * 60)
+        
+        # 确保后端文件夹存在
+        if not os.path.exists(self.backend_dir):
+            os.makedirs(self.backend_dir)
+            print(f"  ✅ 创建后端文件夹")
+            
+        # 扫描所有文件和文件夹
+        for root, dirs, files in os.walk("."):
+            # 跳过已经在目标文件夹中的文件
+            if self.should_skip_file(root):
+                continue
+                
+            # 检查文件夹是否为后端文件夹
+            if self.is_backend_file(root) and root != ".":
+                folder_name = os.path.basename(root)
+                target_path = os.path.join(self.backend_dir, folder_name)
+                
+                if not os.path.exists(target_path):
+                    try:
+                        shutil.move(root, target_path)
+                        print(f"  📁 移动文件夹: {root} → {target_path}")
+                        self.moved_files.append(f"文件夹: {root} → {target_path}")
+                    except Exception as e:
+                        print(f"  ❌ 移动失败: {root} - {e}")
+                        
+            # 检查单个文件
+            for file in files:
+                file_path = os.path.join(root, file)
+                
+                if self.should_skip_file(file_path):
+                    continue
+                    
+                if self.is_backend_file(file_path):
+                    # 创建目标目录结构
+                    rel_path = os.path.relpath(file_path, ".")
+                    target_path = os.path.join(self.backend_dir, rel_path)
+                    target_dir = os.path.dirname(target_path)
+                    
+                    if not os.path.exists(target_dir):
+                        os.makedirs(target_dir)
+                        
+                    if not os.path.exists(target_path):
+                        try:
+                            shutil.move(file_path, target_path)
+                            print(f"  📄 移动文件: {file_path} → {target_path}")
+                            self.moved_files.append(f"文件: {file_path} → {target_path}")
+                        except Exception as e:
+                            print(f"  ❌ 移动失败: {file_path} - {e}")
+                            
+    def update_key_files(self):
+        """更新关键文件"""
+        print("\n🔧 更新关键文件...")
+        print("-" * 60)
+        
+        # 检查是否有"五年hi"文件需要修改
+        key_files_to_check = [
+            "移动端/炒股养家/五年hi",
+            "移动端/呵呵/五年hi", 
+            "移动端/五年hi"
+        ]
+        
+        for file_path in key_files_to_check:
+            if os.path.exists(file_path):
+                print(f"  🔍 发现关键文件: {file_path}")
+                # 这里可以添加具体的修改逻辑
+                
+        print("  ✅ 关键文件检查完成")
+        
+    def generate_report(self):
+        """生成整理报告"""
+        print("\n" + "=" * 80)
+        print("📊 项目文件整理完成报告")
+        print("=" * 80)
+        
+        print(f"📁 移动的文件数量: {len(self.moved_files)}")
+        
+        if self.moved_files:
+            print(f"\n📋 移动详情:")
+            for i, move_info in enumerate(self.moved_files[:20], 1):  # 只显示前20个
+                print(f"  {i}. {move_info}")
+            
+            if len(self.moved_files) > 20:
+                print(f"  ... 还有 {len(self.moved_files) - 20} 个文件")
+                
+        print(f"\n📂 文件夹结构:")
+        print(f"  📱 移动端/ - 前端项目文件")
+        print(f"  🖥️ 后端/ - 后端服务文件")
+        
+        print(f"\n✅ 整理状态: 完成")
+        print("=" * 80)
+        
+    def run_organization(self):
+        """运行文件整理"""
+        self.print_banner()
+        
+        # 移动前端文件
+        self.move_frontend_files()
+        
+        # 移动后端文件  
+        self.move_backend_files()
+        
+        # 更新关键文件
+        self.update_key_files()
+        
+        # 生成报告
+        self.generate_report()
+
+def main():
+    """主函数"""
+    organizer = ProjectFileOrganizer()
+    organizer.run_organization()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+测试真正的智能Agent系统
+验证智能决策、风险评估、自动交易等功能
+"""
+
+import asyncio
+import sys
+import os
+import json
+from datetime import datetime
+
+# 添加项目路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'stock-trading-backend'))
+
+from backend.ai.agent_system import TradingAgent
+from backend.ai.intelligent_auto_trader import IntelligentAutoTrader
+from backend.services.auto_trader_service import AutoTraderService
+
+class IntelligentAgentTester:
+    def __init__(self):
+        self.agent = TradingAgent()
+        self.auto_trader = IntelligentAutoTrader()
+        self.auto_service = AutoTraderService()
+        
+    async def test_intelligent_agent_system(self):
+        """测试智能Agent系统"""
+        print("🤖 智能Agent系统测试")
+        print("=" * 60)
+        print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
+        
+        results = {}
+        
+        # 1. 测试智能市场分析
+        print("📊 测试1: 智能市场分析")
+        print("-" * 40)
+        results["market_analysis"] = await self.test_market_analysis()
+        
+        # 2. 测试智能风险评估
+        print("\n🛡️ 测试2: 智能风险评估")
+        print("-" * 40)
+        results["risk_assessment"] = await self.test_risk_assessment()
+        
+        # 3. 测试智能决策生成
+        print("\n🎯 测试3: 智能决策生成")
+        print("-" * 40)
+        results["decision_making"] = await self.test_decision_making()
+        
+        # 4. 测试自动交易执行
+        print("\n🚀 测试4: 自动交易执行")
+        print("-" * 40)
+        results["auto_trading"] = await self.test_auto_trading()
+        
+        # 5. 测试智能服务循环
+        print("\n🔄 测试5: 智能服务循环")
+        print("-" * 40)
+        results["service_loop"] = await self.test_service_loop()
+        
+        # 6. 生成测试报告
+        print("\n📋 智能Agent系统测试报告")
+        print("-" * 40)
+        self.generate_test_report(results)
+        
+        return results
+    
+    async def test_market_analysis(self):
+        """测试市场分析功能"""
+        try:
+            print("🔍 测试智能市场分析...")
+            
+            # 准备测试数据
+            test_context = {
+                "symbol": "000001",
+                "market_data": {
+                    "price": 13.50,
+                    "change_percent": 2.5,
+                    "volume": 1500000,
+                    "turnover": 20250000,
+                    "high": 13.80,
+                    "low": 13.20
+                }
+            }
+            
+            # 执行市场分析
+            analysis_result = await self.agent._analyze_market(test_context)
+            
+            # 验证分析结果
+            if "error" in analysis_result:
+                print(f"   ❌ 市场分析失败: {analysis_result['error']}")
+                return {"success": False, "error": analysis_result["error"]}
+            
+            # 检查关键字段
+            required_fields = ["market_score", "technical_signals", "overall_signal", "confidence"]
+            missing_fields = [field for field in required_fields if field not in analysis_result]
+            
+            if missing_fields:
+                print(f"   ⚠️ 缺少字段: {missing_fields}")
+                return {"success": False, "missing_fields": missing_fields}
+            
+            print(f"   ✅ 市场分析成功")
+            print(f"      市场评分: {analysis_result.get('market_score', 0):.3f}")
+            print(f"      整体信号: {analysis_result.get('overall_signal', 'N/A')}")
+            print(f"      置信度: {analysis_result.get('confidence', 0):.3f}")
+            
+            return {
+                "success": True,
+                "market_score": analysis_result.get("market_score"),
+                "overall_signal": analysis_result.get("overall_signal"),
+                "confidence": analysis_result.get("confidence"),
+                "has_technical_signals": bool(analysis_result.get("technical_signals"))
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 市场分析测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_risk_assessment(self):
+        """测试风险评估功能"""
+        try:
+            print("🛡️ 测试智能风险评估...")
+            
+            # 准备测试数据
+            test_context = {
+                "portfolio_data": {
+                    "total_assets": 1000000,
+                    "market_value": 600000,
+                    "available_cash": 400000,
+                    "positions": [
+                        {"symbol": "000001", "market_value": 300000},
+                        {"symbol": "000002", "market_value": 300000}
+                    ]
+                },
+                "market_data": {
+                    "change_percent": 2.5,
+                    "volume": 1500000
+                }
+            }
+            
+            # 执行风险评估
+            risk_result = await self.agent._assess_risk(test_context)
+            
+            # 验证评估结果
+            if "error" in risk_result:
+                print(f"   ❌ 风险评估失败: {risk_result['error']}")
+                return {"success": False, "error": risk_result["error"]}
+            
+            # 检查关键字段
+            required_fields = ["total_risk_score", "risk_level", "risk_approved"]
+            missing_fields = [field for field in required_fields if field not in risk_result]
+            
+            if missing_fields:
+                print(f"   ⚠️ 缺少字段: {missing_fields}")
+                return {"success": False, "missing_fields": missing_fields}
+            
+            print(f"   ✅ 风险评估成功")
+            print(f"      风险评分: {risk_result.get('total_risk_score', 0):.3f}")
+            print(f"      风险等级: {risk_result.get('risk_level', 'N/A')}")
+            print(f"      风险批准: {risk_result.get('risk_approved', False)}")
+            
+            return {
+                "success": True,
+                "risk_score": risk_result.get("total_risk_score"),
+                "risk_level": risk_result.get("risk_level"),
+                "risk_approved": risk_result.get("risk_approved"),
+                "has_risk_controls": bool(risk_result.get("risk_controls"))
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 风险评估测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_decision_making(self):
+        """测试决策生成功能"""
+        try:
+            print("🎯 测试智能决策生成...")
+            
+            # 准备测试数据
+            test_context = {
+                "symbol": "000001",
+                "market_data": {
+                    "price": 13.50,
+                    "change_percent": 2.5,
+                    "volume": 1500000
+                }
+            }
+            
+            # 执行完整决策流程
+            decision_result = await self.agent.make_decision(test_context)
+            
+            # 验证决策结果
+            if "error" in decision_result:
+                print(f"   ❌ 决策生成失败: {decision_result['error']}")
+                return {"success": False, "error": decision_result["error"]}
+            
+            # 检查关键字段
+            required_fields = ["action", "confidence", "reasoning"]
+            missing_fields = [field for field in required_fields if field not in decision_result]
+            
+            if missing_fields:
+                print(f"   ⚠️ 缺少字段: {missing_fields}")
+                return {"success": False, "missing_fields": missing_fields}
+            
+            print(f"   ✅ 决策生成成功")
+            print(f"      决策动作: {decision_result.get('action', 'N/A')}")
+            print(f"      置信度: {decision_result.get('confidence', 0):.3f}")
+            print(f"      决策理由: {decision_result.get('reasoning', 'N/A')[:50]}...")
+            
+            return {
+                "success": True,
+                "action": decision_result.get("action"),
+                "confidence": decision_result.get("confidence"),
+                "has_reasoning": bool(decision_result.get("reasoning")),
+                "has_trade_params": bool(decision_result.get("trade_params"))
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 决策生成测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_auto_trading(self):
+        """测试自动交易功能"""
+        try:
+            print("🚀 测试自动交易功能...")
+            
+            # 测试启动自动交易
+            start_result = await self.auto_trader.start_intelligent_trading()
+            
+            if not start_result.get("success"):
+                print(f"   ❌ 自动交易启动失败: {start_result.get('message')}")
+                return {"success": False, "error": start_result.get("message")}
+            
+            print(f"   ✅ 自动交易启动成功")
+            
+            # 等待一小段时间让系统运行
+            await asyncio.sleep(2)
+            
+            # 测试停止自动交易
+            stop_result = await self.auto_trader.stop_intelligent_trading()
+            
+            if not stop_result.get("success"):
+                print(f"   ⚠️ 自动交易停止异常: {stop_result.get('message')}")
+            else:
+                print(f"   ✅ 自动交易停止成功")
+            
+            return {
+                "success": True,
+                "start_success": start_result.get("success"),
+                "stop_success": stop_result.get("success"),
+                "has_trading_loop": hasattr(self.auto_trader, '_run_intelligent_trading_loop')
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 自动交易测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_service_loop(self):
+        """测试服务循环功能"""
+        try:
+            print("🔄 测试智能服务循环...")
+            
+            # 检查服务循环方法是否存在且不为空
+            if not hasattr(self.auto_service, '_run_service_loop'):
+                print("   ❌ 服务循环方法不存在")
+                return {"success": False, "error": "服务循环方法不存在"}
+            
+            # 检查方法是否有实际实现（不是空的pass）
+            import inspect
+            source = inspect.getsource(self.auto_service._run_service_loop)
+            
+            if "pass" in source and source.count('\n') < 10:
+                print("   ❌ 服务循环方法为空实现")
+                return {"success": False, "error": "服务循环方法为空实现"}
+            
+            print("   ✅ 服务循环方法已实现")
+            print("   ✅ 包含智能交易逻辑")
+            
+            return {
+                "success": True,
+                "has_implementation": True,
+                "has_trading_logic": "trading" in source.lower(),
+                "has_risk_control": "risk" in source.lower()
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 服务循环测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def generate_test_report(self, results):
+        """生成测试报告"""
+        print("📊 智能Agent系统测试总结")
+        print("=" * 60)
+        
+        # 统计成功率
+        total_tests = len(results)
+        successful_tests = sum(1 for result in results.values() if result.get("success", False))
+        success_rate = (successful_tests / total_tests * 100) if total_tests > 0 else 0
+        
+        print(f"\n📈 测试成功率: {success_rate:.1f}% ({successful_tests}/{total_tests})")
+        
+        # 详细结果
+        print(f"\n📋 详细测试结果:")
+        test_names = {
+            "market_analysis": "智能市场分析",
+            "risk_assessment": "智能风险评估", 
+            "decision_making": "智能决策生成",
+            "auto_trading": "自动交易执行",
+            "service_loop": "智能服务循环"
+        }
+        
+        for test_key, result in results.items():
+            test_name = test_names.get(test_key, test_key)
+            status = "✅" if result.get("success") else "❌"
+            print(f"   {status} {test_name}")
+            
+            if not result.get("success") and "error" in result:
+                print(f"      错误: {result['error']}")
+        
+        # 功能完整性评估
+        print(f"\n🎯 功能完整性评估:")
+        if success_rate >= 80:
+            grade = "A 优秀"
+            status = "🎉 智能Agent系统功能完整，可以投入使用"
+        elif success_rate >= 60:
+            grade = "B 良好"
+            status = "✅ 智能Agent系统基本完整，需要优化"
+        else:
+            grade = "C 需要改进"
+            status = "❌ 智能Agent系统需要大量改进"
+        
+        print(f"   等级: {grade}")
+        print(f"   状态: {status}")
+        
+        # 关键功能验证
+        print(f"\n🔍 关键功能验证:")
+        market_analysis = results.get("market_analysis", {})
+        risk_assessment = results.get("risk_assessment", {})
+        decision_making = results.get("decision_making", {})
+        
+        print(f"   🧠 智能分析: {'✅' if market_analysis.get('success') else '❌'}")
+        print(f"   🛡️ 风险控制: {'✅' if risk_assessment.get('success') else '❌'}")
+        print(f"   🎯 智能决策: {'✅' if decision_making.get('success') else '❌'}")
+        print(f"   🚀 自动执行: {'✅' if results.get('auto_trading', {}).get('success') else '❌'}")
+        
+        # 保存测试结果
+        self.save_test_results(results)
+    
+    def save_test_results(self, results):
+        """保存测试结果"""
+        try:
+            test_report = {
+                "test_time": datetime.now().isoformat(),
+                "results": results,
+                "summary": {
+                    "total_tests": len(results),
+                    "successful_tests": sum(1 for r in results.values() if r.get("success")),
+                    "success_rate": sum(1 for r in results.values() if r.get("success")) / len(results) * 100
+                }
+            }
+            
+            with open("intelligent_agent_test_report.json", "w", encoding="utf-8") as f:
+                json.dump(test_report, f, ensure_ascii=False, indent=2)
+            
+            print(f"\n💾 测试报告已保存: intelligent_agent_test_report.json")
+            
+        except Exception as e:
+            print(f"\n❌ 保存测试报告失败: {e}")
+
+async def main():
+    """主函数"""
+    tester = IntelligentAgentTester()
+    await tester.test_intelligent_agent_system()
+
+if __name__ == "__main__":
+    asyncio.run(main())

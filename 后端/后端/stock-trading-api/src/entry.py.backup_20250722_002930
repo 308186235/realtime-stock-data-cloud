@@ -1,0 +1,139 @@
+from workers import Response, handler
+import json
+from datetime import datetime
+
+# 股票数据API配置
+STOCK_API_CONFIG = {
+    "host": "l1.chagubang.com",
+    "port": 6380,
+    "token": "process.env.STOCK_API_KEY"
+}
+
+# Supabase配置
+SUPABASE_CONFIG = {
+    "url": "https://process.env.SUPABASE_URL",
+    "anon_key": "process.env.SUPABASE_ANON_KEY
+}
+
+class StockDataAPI:
+    """股票数据API处理类"""
+
+    def __init__(self):
+        pass
+
+    async def get_stock_quote(self, stock_code: str):
+        """获取股票实时行情"""
+        try:
+            # 模拟股票数据（实际应该连接到茶股帮API）
+            mock_data = {
+                "code": stock_code,
+                "name": f"股票{stock_code}",
+                "price": 12.34,
+                "change": 0.56,
+                "change_percent": 4.75,
+                "volume": 1234567,
+                "timestamp": datetime.now().isoformat()
+            }
+            return mock_data
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def get_market_overview(self):
+        """获取市场概览"""
+        try:
+            overview = {
+                "shanghai_index": {"value": 3200.45, "change": 1.23},
+                "shenzhen_index": {"value": 2100.67, "change": -0.89},
+                "total_volume": 45678901234,
+                "timestamp": datetime.now().isoformat()
+            }
+            return overview
+        except Exception as e:
+            return {"error": str(e)}
+
+@handler
+async def on_fetch(request, env):
+    """处理HTTP请求"""
+    try:
+        url = request.url
+        method = request.method
+
+        # 解析URL路径
+        path = url.split('/')[-1] if '/' in url else ''
+
+        # CORS头部
+        cors_headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        }
+
+        # 处理OPTIONS预检请求
+        if method == "OPTIONS":
+            return Response("", headers=cors_headers)
+
+        # 初始化API处理器
+        api = StockDataAPI()
+
+        # 路由处理
+        if method == "GET":
+            if path == "health":
+                return Response(
+                    json.dumps({"status": "healthy", "timestamp": datetime.now().isoformat()}),
+                    headers={**cors_headers, "Content-Type": "application/json"}
+                )
+
+            elif path.startswith("quote"):
+                # 获取股票代码参数
+                stock_code = "000001"  # 默认股票代码
+                if "?" in url:
+                    params = url.split("?")[1]
+                    if "code=" in params:
+                        stock_code = params.split("code=")[1].split("&")[0]
+
+                data = await api.get_stock_quote(stock_code)
+                return Response(
+                    json.dumps(data, ensure_ascii=False),
+                    headers={**cors_headers, "Content-Type": "application/json"}
+                )
+
+            elif path == "market":
+                data = await api.get_market_overview()
+                return Response(
+                    json.dumps(data, ensure_ascii=False),
+                    headers={**cors_headers, "Content-Type": "application/json"}
+                )
+
+            else:
+                # 默认响应
+                welcome_data = {
+                    "message": "🚀 股票交易API - Cloudflare Workers Python版本",
+                    "version": "1.0.0",
+                    "endpoints": {
+                        "/health": "健康检查",
+                        "/quote?code=000001": "获取股票行情",
+                        "/market": "获取市场概览"
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+                return Response(
+                    json.dumps(welcome_data, ensure_ascii=False),
+                    headers={**cors_headers, "Content-Type": "application/json"}
+                )
+
+        else:
+            return Response(
+                json.dumps({"error": "Method not allowed"}),
+                status=405,
+                headers={**cors_headers, "Content-Type": "application/json"}
+            )
+
+    except Exception as e:
+        return Response(
+            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            status=500,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Content-Type": "application/json"
+            }
+        )

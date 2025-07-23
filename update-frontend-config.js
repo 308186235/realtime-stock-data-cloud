@@ -1,0 +1,96 @@
+/**
+ * 前端配置更新脚本
+ * 将前端API地址更新为混合架构代理服务器
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// 配置
+const FRONTEND_PATH = 'E:\\正式\\移动端';
+const PROXY_URL = 'https://aigupiao.me';
+const CLOUD_URL = 'https://api.aigupiao.me';
+
+// 需要更新的文件列表
+const CONFIG_FILES = [
+  'js/config.js',
+  'js/api.js',
+  'pages/index/index.js',
+  'pages/account/account.js',
+  'pages/trading/trading.js'
+];
+
+console.log('🔧 开始更新前端配置...\n');
+
+// 更新配置文件
+CONFIG_FILES.forEach(file => {
+  const filePath = path.join(FRONTEND_PATH, file);
+  
+  if (fs.existsSync(filePath)) {
+    try {
+      let content = fs.readFileSync(filePath, 'utf8');
+      
+      // 替换API地址
+      const originalContent = content;
+      content = content.replace(/https:\/\/api\.aigupiao\.me/g, PROXY_URL);
+      content = content.replace(/https:\/\/ai-stock-trading-agent\.308186235\.workers\.dev/g, PROXY_URL);
+      
+      if (content !== originalContent) {
+        fs.writeFileSync(filePath, content, 'utf8');
+        console.log(`✅ 已更新: ${file}`);
+      } else {
+        console.log(`⏭️  跳过: ${file} (无需更新)`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ 更新失败: ${file} - ${error.message}`);
+    }
+  } else {
+    console.log(`⚠️  文件不存在: ${file}`);
+  }
+});
+
+// 创建配置文件
+const configContent = `
+// 混合架构配置 - 自动生成
+const API_CONFIG = {
+  // 本地代理服务器 (推荐)
+  LOCAL_PROXY: '${PROXY_URL}',
+  
+  // 云端备份地址
+  CLOUD_BACKUP: '${CLOUD_URL}',
+  
+  // 当前使用的API地址
+  BASE_URL: '${PROXY_URL}',
+  
+  // 健康检查间隔 (毫秒)
+  HEALTH_CHECK_INTERVAL: 30000,
+  
+  // 超时设置
+  TIMEOUT: 10000,
+  
+  // 重试次数
+  MAX_RETRIES: 3
+};
+
+// 导出配置
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = API_CONFIG;
+}
+
+console.log('📡 API配置已更新为混合架构模式');
+console.log('🚀 本地代理: ${PROXY_URL}');
+console.log('☁️  云端备份: ${CLOUD_URL}');
+`;
+
+const configPath = path.join(FRONTEND_PATH, 'js', 'hybrid-config.js');
+fs.writeFileSync(configPath, configContent, 'utf8');
+
+console.log(`\n✅ 配置更新完成!`);
+console.log(`📁 配置文件: ${configPath}`);
+console.log(`\n🎯 使用说明:`);
+console.log(`1. 使用云端服务器: https://aigupiao.me`);
+console.log(`2. 确保本地Worker运行: http://127.0.0.1:8787`);
+console.log(`3. 前端现在将优先使用本地服务 (60ms响应)`);
+console.log(`4. 本地服务不可用时自动切换到云端备份`);
+console.log(`\n🚀 享受高速的本地+云端混合架构!`);

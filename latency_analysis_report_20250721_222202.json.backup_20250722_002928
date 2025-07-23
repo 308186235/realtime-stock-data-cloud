@@ -1,0 +1,155 @@
+{
+  "timestamp": "2025-07-21T22:22:02.181734",
+  "analysis_type": "Latency Analysis and Optimization",
+  "results": {
+    "network_latency": {
+      "本地API": {
+        "avg": 15,
+        "min": 8,
+        "max": 18,
+        "all": [
+          8.180799981346354,
+          14.782199985347688,
+          15.697099996032193,
+          16.524899983778596,
+          18.390200013527647
+        ]
+      },
+      "本地交易": {
+        "avg": 18,
+        "min": 15,
+        "max": 26,
+        "all": [
+          25.893099984386936,
+          16.763199993874878,
+          15.90199998463504,
+          14.973999990615994,
+          15.430700004799291
+        ]
+      },
+      "ngrok隧道": {
+        "avg": 586,
+        "min": 477,
+        "max": 748,
+        "all": [
+          747.5125000055414,
+          623.0114999925718,
+          565.1488000003155,
+          477.30050000245683,
+          516.8597000010777
+        ]
+      }
+    },
+    "operation_breakdown": {
+      "简单健康检查": {
+        "avg": 16,
+        "all": [
+          28.033900016453117,
+          17.691400018520653,
+          2.740500000072643
+        ]
+      },
+      "交易状态查询": {
+        "avg": 23,
+        "all": [
+          26.020400022389367,
+          20.713900012196973,
+          20.830800000112504
+        ]
+      },
+      "模拟交易（最小数据）": {
+        "avg": 24,
+        "all": [
+          28.60220000729896,
+          23.910599993541837,
+          20.9733999799937
+        ]
+      },
+      "复杂交易（完整数据）": {
+        "avg": 7659,
+        "all": [
+          7694.004199991468,
+          7634.75820000167,
+          7648.055099998601
+        ]
+      }
+    },
+    "concurrent_performance": {
+      "1并发": {
+        "total_time": 18,
+        "avg_latency": 17,
+        "success_rate": 100,
+        "throughput": 54.36
+      },
+      "2并发": {
+        "total_time": 5,
+        "avg_latency": 3,
+        "success_rate": 100,
+        "throughput": 443.78
+      },
+      "5并发": {
+        "total_time": 14,
+        "avg_latency": 10,
+        "success_rate": 100,
+        "throughput": 347.6
+      },
+      "10并发": {
+        "total_time": 14,
+        "avg_latency": 8,
+        "success_rate": 100,
+        "throughput": 714.33
+      }
+    },
+    "optimized_requests": {
+      "会话复用": {
+        "avg_latency": 2,
+        "success_rate": 100,
+        "timeout": 10
+      },
+      "短超时": {
+        "avg_latency": 7,
+        "success_rate": 100,
+        "timeout": 5
+      },
+      "极短超时": {
+        "avg_latency": 12,
+        "success_rate": 100,
+        "timeout": 2
+      }
+    },
+    "latency_analysis": {
+      "network_overhead": {
+        "local_api": 15,
+        "local_trading": 18,
+        "ngrok_tunnel": 586,
+        "tunnel_overhead": 571
+      },
+      "operation_overhead": {
+        "health_check": 16,
+        "simple_trade": 24,
+        "complex_trade": 7659,
+        "trade_processing_time": 7643
+      }
+    },
+    "recommendations": [
+      {
+        "type": "network",
+        "priority": "high",
+        "issue": "ngrok隧道开销过大: 571ms",
+        "solution": "考虑使用更快的隧道服务或直接VPN连接"
+      },
+      {
+        "type": "processing",
+        "priority": "high",
+        "issue": "交易处理时间过长: 7643ms",
+        "solution": "优化本地交易软件响应速度，检查是否有阻塞操作"
+      },
+      {
+        "type": "timeout",
+        "priority": "low",
+        "issue": "可以进一步优化超时设置",
+        "solution": "使用10秒超时可获得最佳性能"
+      }
+    ]
+  }
+}

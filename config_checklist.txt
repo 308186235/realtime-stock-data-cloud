@@ -1,7 +1,7 @@
 股票数据服务配置检查清单
 ==============================
 
-API Key: QT_wat5QfcJ6N9pDZM5
+API Key: YOUR_STOCK_API_KEY
 卖家: HU591
 
 需要获取的信息:

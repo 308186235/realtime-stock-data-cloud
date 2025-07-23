@@ -1,0 +1,213 @@
+"""
+仓位管理系统
+"""
+
+import time
+import json
+import logging
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+class PositionType(Enum):
+    """仓位类型"""
+    LONG = "long"   # 多头
+    SHORT = "short" # 空头
+
+@dataclass
+class PositionInfo:
+    """仓位信息"""
+    stock_code: str
+    position_type: PositionType
+    quantity: int
+    avg_price: float
+    current_price: float
+    market_value: float
+    unrealized_pnl: float
+    realized_pnl: float
+    entry_time: float
+    last_update_time: float
+
+class PositionManager:
+    """仓位管理器"""
+
+    def __init__(self, total_capital: float = 100000):
+        self.total_capital = total_capital
+        self.positions: Dict[str, PositionInfo] = {}
+        self.cash_balance = total_capital
+        self.reserved_cash = 0  # 预留现金
+
+    def calculate_position_size(self, stock_code: str, price: float,
+                              risk_pct: float = 0.02) -> int:
+        """计算仓位大小"""
+        # 基于风险百分比计算仓位
+        risk_amount = self.total_capital * risk_pct
+
+        # 假设止损比例为8%
+        stop_loss_pct = 0.08
+        position_value = risk_amount / stop_loss_pct
+
+        # 计算股票数量(手数,100股为一手)
+        quantity = int(position_value / price / 100) * 100
+
+        # 确保不超过可用资金
+        max_quantity = int(self.cash_balance / price / 100) * 100
+        quantity = min(quantity, max_quantity)
+
+        logger.info(f"计算仓位 {stock_code}: 风险金额 {risk_amount:.2f}, 建议数量 {quantity}")
+        return quantity
+
+    def add_position(self, stock_code: str, quantity: int, price: float,
+                    position_type: PositionType = PositionType.LONG) -> bool:
+        """添加仓位"""
+        trade_value = quantity * price
+
+        # 检查资金是否充足
+        if trade_value > self.cash_balance:
+            logger.error(f"资金不足: 需要 {trade_value:.2f}, 可用 {self.cash_balance:.2f}")
+            return False
+
+        current_time = time.time()
+
+        if stock_code in self.positions:
+            # 更新现有仓位
+            existing_pos = self.positions[stock_code]
+            total_quantity = existing_pos.quantity + quantity
+            total_value = existing_pos.quantity * existing_pos.avg_price + trade_value
+            new_avg_price = total_value / total_quantity
+
+            existing_pos.quantity = total_quantity
+            existing_pos.avg_price = new_avg_price
+            existing_pos.current_price = price
+            existing_pos.market_value = total_quantity * price
+            existing_pos.last_update_time = current_time
+
+            logger.info(f"更新仓位 {stock_code}: 数量 {total_quantity}, 均价 {new_avg_price:.2f}")
+        else:
+            # 创建新仓位
+            position = PositionInfo(
+                stock_code=stock_code,
+                position_type=position_type,
+                quantity=quantity,
+                avg_price=price,
+                current_price=price,
+                market_value=trade_value,
+                unrealized_pnl=0,
+                realized_pnl=0,
+                entry_time=current_time,
+                last_update_time=current_time
+            )
+
+            self.positions[stock_code] = position
+            logger.info(f"新建仓位 {stock_code}: 数量 {quantity}, 价格 {price:.2f}")
+
+        # 更新现金余额
+        self.cash_balance -= trade_value
+        return True
+
+    def reduce_position(self, stock_code: str, quantity: int, price: float) -> bool:
+        """减少仓位"""
+        if stock_code not in self.positions:
+            logger.error(f"仓位不存在: {stock_code}")
+            return False
+
+        position = self.positions[stock_code]
+
+        if quantity > position.quantity:
+            logger.error(f"减仓数量超过持仓: {quantity} > {position.quantity}")
+            return False
+
+        # 计算实现盈亏
+        realized_pnl = (price - position.avg_price) * quantity
+        position.realized_pnl += realized_pnl
+
+        # 更新仓位
+        position.quantity -= quantity
+        position.current_price = price
+        position.market_value = position.quantity * price
+        position.last_update_time = time.time()
+
+        # 更新现金余额
+        self.cash_balance += quantity * price
+
+        # 如果仓位清零,删除记录
+        if position.quantity == 0:
+            del self.positions[stock_code]
+            logger.info(f"清仓 {stock_code}: 实现盈亏 {realized_pnl:.2f}")
+        else:
+            logger.info(f"减仓 {stock_code}: 数量 {quantity}, 实现盈亏 {realized_pnl:.2f}")
+
+        return True
+
+    def update_prices(self, price_data: Dict[str, float]):
+        """更新价格数据"""
+        for stock_code, price in price_data.items():
+            if stock_code in self.positions:
+                position = self.positions[stock_code]
+                position.current_price = price
+                position.market_value = position.quantity * price
+                position.unrealized_pnl = (price - position.avg_price) * position.quantity
+                position.last_update_time = time.time()
+
+    def get_portfolio_summary(self) -> Dict:
+        """获取投资组合摘要"""
+        total_market_value = sum(pos.market_value for pos in self.positions.values())
+        total_unrealized_pnl = sum(pos.unrealized_pnl for pos in self.positions.values())
+        total_realized_pnl = sum(pos.realized_pnl for pos in self.positions.values())
+
+        return {
+            "total_capital": self.total_capital,
+            "cash_balance": self.cash_balance,
+            "total_market_value": total_market_value,
+            "total_assets": self.cash_balance + total_market_value,
+            "total_unrealized_pnl": total_unrealized_pnl,
+            "total_realized_pnl": total_realized_pnl,
+            "total_pnl": total_unrealized_pnl + total_realized_pnl,
+            "position_count": len(self.positions),
+            "asset_allocation": {
+                "cash_pct": (self.cash_balance / self.total_capital) * 100,
+                "stock_pct": (total_market_value / self.total_capital) * 100
+            }
+        }
+
+    def get_position_details(self) -> List[Dict]:
+        """获取仓位详情"""
+        return [
+            {
+                "stock_code": pos.stock_code,
+                "position_type": pos.position_type.value,
+                "quantity": pos.quantity,
+                "avg_price": pos.avg_price,
+                "current_price": pos.current_price,
+                "market_value": pos.market_value,
+                "unrealized_pnl": pos.unrealized_pnl,
+                "unrealized_pnl_pct": (pos.unrealized_pnl / (pos.avg_price * pos.quantity)) * 100,
+                "weight": (pos.market_value / self.total_capital) * 100
+            }
+            for pos in self.positions.values()
+        ]
+
+    def check_position_limits(self, stock_code: str, quantity: int, price: float) -> Tuple[bool, str]:
+        """检查仓位限制"""
+        trade_value = quantity * price
+
+        # 检查单股仓位限制(不超过总资金的10%)
+        max_single_position = self.total_capital * 0.1
+        current_value = self.positions.get(stock_code, PositionInfo("", PositionType.LONG, 0, 0, 0, 0, 0, 0, 0, 0)).market_value
+
+        if current_value + trade_value > max_single_position:
+            return False, f"单股仓位超限: {current_value + trade_value:.2f} > {max_single_position:.2f}"
+
+        # 检查总仓位限制(不超过总资金的80%)
+        total_position_value = sum(pos.market_value for pos in self.positions.values())
+        max_total_position = self.total_capital * 0.8
+
+        if total_position_value + trade_value > max_total_position:
+            return False, f"总仓位超限: {total_position_value + trade_value:.2f} > {max_total_position:.2f}"
+
+        return True, "仓位检查通过"
+
+# 全局仓位管理器实例
+position_manager = PositionManager()

@@ -1,0 +1,56 @@
+{
+  "timestamp": "2025-07-21T22:18:07.212876",
+  "test_type": "Complete Cloud Agent to Local Trading Chain Test",
+  "test_results": {
+    "http_api": {
+      "HTTP健康检查": {
+        "status": "success",
+        "latency": 507,
+        "status_code": 404,
+        "response": "<!DOCTYPE html>\n<html class=\"h-full\" lang=\"en-US\" dir=\"ltr\">\n  <head>\n    <link rel=\"preload\" href=\"https://cdn.ngrok.com/static/fonts/euclid-square/EuclidSquare-Regular-WebS.woff\" as=\"font\" type=\"fon"
+      },
+      "HTTP交易接口": {
+        "status": "success",
+        "latency": 925,
+        "status_code": 404,
+        "response": "<!DOCTYPE html>\n<html class=\"h-full\" lang=\"en-US\" dir=\"ltr\">\n  <head>\n    <link rel=\"preload\" href=\"https://cdn.ngrok.com/static/fonts/euclid-square/EuclidSquare-Regular-WebS.woff\" as=\"font\" type=\"fon"
+      },
+      "本地交易直连": {
+        "status": "success",
+        "latency": 7646,
+        "status_code": 200,
+        "response": {
+          "success": true,
+          "message": "买入操作成功",
+          "trade_details": {
+            "action": "buy",
+            "stock_code": "000001",
+            "quantity": 100,
+            "price": 10.5,
+            "timestamp": "2025-07-21T22:18:07.209328",
+            "api_version": "1.0.0"
+          }
+        }
+      }
+    },
+    "performance_analysis": {
+      "websocket": {
+        "success_rate": 0,
+        "average_latency": 0,
+        "successful_commands": 0,
+        "total_commands": 0
+      },
+      "http_api": {
+        "success_rate": 100,
+        "average_latency": 3026,
+        "successful_requests": 3,
+        "total_requests": 3
+      }
+    }
+  },
+  "summary": {
+    "websocket_available": false,
+    "http_api_available": true,
+    "overall_connectivity": "good"
+  }
+}

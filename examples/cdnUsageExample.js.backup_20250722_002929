@@ -1,0 +1,106 @@
+/**
+ * 最优CDN使用示例
+ * 展示如何使用MCP发现的最快CDN
+ */
+
+import smartCDNService from '../services/smartCDNService.js';
+import optimizedLatencyMonitor from '../services/optimizedLatencyMonitor.js';
+import CDN_CONFIG from '../config/cdnConfig.js';
+
+// 示例1: 获取当前最优CDN
+async function getCurrentOptimalCDN() {
+  const cdn = await smartCDNService.selectOptimalCDN();
+  console.log('当前最优CDN:', cdn.name, '延迟:', cdn.actualLatency + 'ms');
+  return cdn;
+}
+
+// 示例2: 智能请求 (自动故障转移)
+async function smartAPIRequest(apiPath) {
+  try {
+    const response = await smartCDNService.smartRequest(
+      `https://aigupiao.me/api${apiPath}`,
+      {
+        method: 'GET',
+        header: {
+          'Accept': 'application/json'
+        }
+      }
+    );
+    
+    console.log('API请求成功:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('API请求失败:', error.message);
+    throw error;
+  }
+}
+
+// 示例3: 延迟监控
+async function startLatencyMonitoring() {
+  // 注册延迟更新回调
+  optimizedLatencyMonitor.onLatencyUpdate((data) => {
+    console.log('延迟更新:', {
+      移动端到云端: data.mobileToCloud + 'ms',
+      云端到交易: data.cloudToTrading + 'ms',
+      云端到股票数据: data.stockDataToCloud + 'ms'
+    });
+  });
+  
+  // 开始监控 (每30秒测试一次)
+  optimizedLatencyMonitor.startMonitoring(30000);
+  
+  // 立即测试一次
+  const result = await optimizedLatencyMonitor.measureLatency();
+  console.log('当前延迟:', result);
+  
+  return result;
+}
+
+// 示例4: CDN状态报告
+function getCDNStatusReport() {
+  const report = smartCDNService.getStatusReport();
+  
+  console.log('CDN状态报告:');
+  console.log('- 当前CDN:', report.currentCDN.name);
+  console.log('- 延迟:', report.currentCDN.actualLatency + 'ms');
+  console.log('- 可用CDN数量:', report.allCDNs.length);
+  console.log('- 故障转移次数:', report.failoverHistory.length);
+  console.log('- 优化建议:', report.recommendations);
+  
+  return report;
+}
+
+// 示例5: 强制刷新CDN选择
+async function refreshCDNSelection() {
+  console.log('强制刷新CDN选择...');
+  const newCDN = await smartCDNService.forceRefresh();
+  console.log('新选择的CDN:', newCDN.name, '延迟:', newCDN.actualLatency + 'ms');
+  return newCDN;
+}
+
+// 导出示例函数
+export {
+  getCurrentOptimalCDN,
+  smartAPIRequest,
+  startLatencyMonitoring,
+  getCDNStatusReport,
+  refreshCDNSelection
+};
+
+// 如果直接运行此文件，执行演示
+if (typeof window === 'undefined' && require.main === module) {
+  (async () => {
+    console.log('🚀 最优CDN使用演示开始\n');
+    
+    // 1. 获取最优CDN
+    await getCurrentOptimalCDN();
+    
+    // 2. 开始延迟监控
+    await startLatencyMonitoring();
+    
+    // 3. 获取状态报告
+    getCDNStatusReport();
+    
+    console.log('\n🎉 演示完成！');
+  })().catch(console.error);
+}

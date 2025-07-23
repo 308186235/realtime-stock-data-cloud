@@ -1,0 +1,372 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+云端Agent REST API服务
+真正的远程调用接口,支持所有交易功能包括买卖操作
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import threading
+import time
+from datetime import datetime
+import json
+import traceback
+from enhanced_cloud_caller import SmartTradingAgent
+from real_trading_executor import RealTradingExecutor
+
+app = Flask(__name__)
+CORS(app)  # 允许跨域请求
+
+# 全局智能交易Agent
+trading_agent = SmartTradingAgent()
+# 真实交易执行器
+trading_executor = RealTradingExecutor()
+
+# API状态
+api_status = {
+    "version": "1.0.0",
+    "start_time": datetime.now().isoformat(),
+    "total_requests": 0,
+    "successful_requests": 0,
+    "failed_requests": 0
+}
+
+def log_request(endpoint, success=True, error_msg=None):
+    """记录API请求"""
+    api_status["total_requests"] += 1
+    if success:
+        api_status["successful_requests"] += 1
+    else:
+        api_status["failed_requests"] += 1
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    status = "SUCCESS" if success else "FAILED"
+    print(f"[{timestamp}] {endpoint} - {status}")
+    if error_msg:
+        print(f"    Error: {error_msg}")
+
+@app.route('/api/status', methods=['GET'])
+def get_api_status():
+    """获取API状态"""
+    try:
+        system_status = trading_agent.get_system_status()
+        
+        response = {
+            "api_status": api_status,
+            "trading_system": system_status,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        log_request("/api/status", True)
+        return jsonify(response), 200
+        
+    except Exception as e:
+        error_msg = f"获取状态失败: {str(e)}"
+        log_request("/api/status", False, error_msg)
+        return jsonify({"error": error_msg}), 500
+
+@app.route('/api/balance', methods=['GET'])
+def get_account_balance():
+    """获取账户余额"""
+    try:
+        print("🌐 云端API请求: 获取账户余额")
+        
+        balance_result = trading_agent.get_balance_with_connection_check()
+        
+        if balance_result['success']:
+            response = {
+                "success": True,
+                "data": balance_result['data'],
+                "connection_info": balance_result.get('connection_info', {}),
+                "timestamp": balance_result['timestamp'],
+                "message": "余额获取成功"
+            }
+            log_request("/api/balance", True)
+            return jsonify(response), 200
+        else:
+            log_request("/api/balance", False, balance_result.get('message'))
+            return jsonify(balance_result), 400
+            
+    except Exception as e:
+        error_msg = f"获取余额异常: {str(e)}"
+        log_request("/api/balance", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+@app.route('/api/export/<data_type>', methods=['POST'])
+def export_trading_data(data_type):
+    """导出交易数据"""
+    try:
+        valid_types = ['holdings', 'orders', 'transactions']
+        if data_type not in valid_types:
+            return jsonify({
+                "success": False, 
+                "error": f"无效的数据类型,支持: {valid_types}"
+            }), 400
+        
+        print(f"🌐 云端API请求: 导出{data_type}数据")
+        
+        export_result = trading_agent.export_data_with_connection_check(data_type)
+        
+        if export_result['success']:
+            log_request(f"/api/export/{data_type}", True)
+            return jsonify(export_result), 200
+        else:
+            log_request(f"/api/export/{data_type}", False, export_result.get('message'))
+            return jsonify(export_result), 400
+            
+    except Exception as e:
+        error_msg = f"导出数据异常: {str(e)}"
+        log_request(f"/api/export/{data_type}", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+@app.route('/api/trading/buy', methods=['POST'])
+def place_buy_order():
+    """下买单"""
+    try:
+        data = request.get_json()
+        
+        # 验证必需参数
+        required_fields = ['stock_code', 'price', 'quantity']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "success": False,
+                    "error": f"缺少必需参数: {field}"
+                }), 400
+        
+        stock_code = data['stock_code']
+        price = float(data['price'])
+        quantity = int(data['quantity'])
+        confirm = data.get('confirm', False)  # 是否确认提交
+        
+        print(f"🌐 云端API请求: 买入 {stock_code} {quantity}股 @{price}元")
+        
+        # 调用买入功能
+        buy_result = execute_buy_order(stock_code, price, quantity, confirm)
+        
+        if buy_result['success']:
+            log_request("/api/trading/buy", True)
+            return jsonify(buy_result), 200
+        else:
+            log_request("/api/trading/buy", False, buy_result.get('message'))
+            return jsonify(buy_result), 400
+            
+    except Exception as e:
+        error_msg = f"买入操作异常: {str(e)}"
+        log_request("/api/trading/buy", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+@app.route('/api/trading/sell', methods=['POST'])
+def place_sell_order():
+    """下卖单"""
+    try:
+        data = request.get_json()
+        
+        # 验证必需参数
+        required_fields = ['stock_code', 'price', 'quantity']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "success": False,
+                    "error": f"缺少必需参数: {field}"
+                }), 400
+        
+        stock_code = data['stock_code']
+        price = float(data['price'])
+        quantity = int(data['quantity'])
+        confirm = data.get('confirm', False)
+        
+        print(f"🌐 云端API请求: 卖出 {stock_code} {quantity}股 @{price}元")
+        
+        # 调用卖出功能
+        sell_result = execute_sell_order(stock_code, price, quantity, confirm)
+        
+        if sell_result['success']:
+            log_request("/api/trading/sell", True)
+            return jsonify(sell_result), 200
+        else:
+            log_request("/api/trading/sell", False, sell_result.get('message'))
+            return jsonify(sell_result), 400
+            
+    except Exception as e:
+        error_msg = f"卖出操作异常: {str(e)}"
+        log_request("/api/trading/sell", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+@app.route('/api/trading/cancel', methods=['POST'])
+def cancel_order():
+    """撤单"""
+    try:
+        data = request.get_json()
+        
+        if 'order_id' not in data:
+            return jsonify({
+                "success": False,
+                "error": "缺少必需参数: order_id"
+            }), 400
+        
+        order_id = data['order_id']
+        print(f"🌐 云端API请求: 撤单 {order_id}")
+        
+        # 调用撤单功能
+        cancel_result = execute_cancel_order(order_id)
+        
+        if cancel_result['success']:
+            log_request("/api/trading/cancel", True)
+            return jsonify(cancel_result), 200
+        else:
+            log_request("/api/trading/cancel", False, cancel_result.get('message'))
+            return jsonify(cancel_result), 400
+            
+    except Exception as e:
+        error_msg = f"撤单操作异常: {str(e)}"
+        log_request("/api/trading/cancel", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+@app.route('/api/monitoring/start', methods=['POST'])
+def start_monitoring():
+    """启动后台监控"""
+    try:
+        print("🌐 云端API请求: 启动后台监控")
+        
+        trading_agent.start_smart_monitoring()
+        
+        response = {
+            "success": True,
+            "message": "后台监控已启动",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        log_request("/api/monitoring/start", True)
+        return jsonify(response), 200
+        
+    except Exception as e:
+        error_msg = f"启动监控异常: {str(e)}"
+        log_request("/api/monitoring/start", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+@app.route('/api/monitoring/stop', methods=['POST'])
+def stop_monitoring():
+    """停止后台监控"""
+    try:
+        print("🌐 云端API请求: 停止后台监控")
+        
+        trading_agent.stop_smart_monitoring()
+        
+        response = {
+            "success": True,
+            "message": "后台监控已停止",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        log_request("/api/monitoring/stop", True)
+        return jsonify(response), 200
+        
+    except Exception as e:
+        error_msg = f"停止监控异常: {str(e)}"
+        log_request("/api/monitoring/stop", False, error_msg)
+        return jsonify({"success": False, "error": error_msg}), 500
+
+def execute_buy_order(stock_code, price, quantity, confirm=False):
+    """执行买入订单"""
+    try:
+        # 确保连接正常
+        if not trading_agent.caller.ensure_connection():
+            return {
+                "success": False,
+                "message": "交易软件连接失败",
+                "error_type": "connection_failed"
+            }
+
+        # 调用真实的买入执行器
+        print(f"🌐 执行真实买入操作: {stock_code} {quantity}股 @{price}元")
+        result = trading_executor.execute_buy_order(stock_code, price, quantity, confirm)
+
+        return result
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"买入操作失败: {str(e)}",
+            "error_type": "execution_error"
+        }
+
+def execute_sell_order(stock_code, price, quantity, confirm=False):
+    """执行卖出订单"""
+    try:
+        # 确保连接正常
+        if not trading_agent.caller.ensure_connection():
+            return {
+                "success": False,
+                "message": "交易软件连接失败",
+                "error_type": "connection_failed"
+            }
+
+        # 调用真实的卖出执行器
+        print(f"🌐 执行真实卖出操作: {stock_code} {quantity}股 @{price}元")
+        result = trading_executor.execute_sell_order(stock_code, price, quantity, confirm)
+
+        return result
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"卖出操作失败: {str(e)}",
+            "error_type": "execution_error"
+        }
+
+def execute_cancel_order(order_id):
+    """执行撤单"""
+    try:
+        # 确保连接正常
+        if not trading_agent.caller.ensure_connection():
+            return {
+                "success": False,
+                "message": "交易软件连接失败",
+                "error_type": "connection_failed"
+            }
+
+        # 调用真实的撤单执行器
+        print(f"🌐 执行真实撤单操作: {order_id}")
+        result = trading_executor.execute_cancel_order(order_id)
+
+        return result
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"撤单操作失败: {str(e)}",
+            "error_type": "execution_error"
+        }
+
+if __name__ == '__main__':
+    print("🚀 启动云端Agent REST API服务")
+    print("=" * 60)
+    
+    # 启动后台监控
+    print("🧠 启动智能交易监控...")
+    trading_agent.start_smart_monitoring()
+    
+    print("📋 API接口列表:")
+    print("   GET  /api/status              - 获取系统状态")
+    print("   GET  /api/balance             - 获取账户余额")
+    print("   POST /api/export/<type>       - 导出数据 (holdings/orders/transactions)")
+    print("   POST /api/trading/buy         - 下买单")
+    print("   POST /api/trading/sell        - 下卖单")
+    print("   POST /api/trading/cancel      - 撤单")
+    print("   POST /api/monitoring/start    - 启动监控")
+    print("   POST /api/monitoring/stop     - 停止监控")
+    
+    print(f"\n✅ API服务器启动成功!")
+    print(f"🌐 服务地址: http://localhost:5000")
+    print(f"💡 云端Agent现在可以通过HTTP API远程调用所有交易功能!")
+    
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=False)
+    except KeyboardInterrupt:
+        print("\n👋 用户停止API服务")
+        trading_agent.stop_smart_monitoring()
+    except Exception as e:
+        print(f"❌ API服务异常: {e}")
+        trading_agent.stop_smart_monitoring()

@@ -1,0 +1,583 @@
+#!/usr/bin/env python3
+"""
+测试云端Agent获取本地交易数据的能力
+包括成交记录、导出数据、持仓信息等
+"""
+
+import requests
+import time
+import json
+import asyncio
+import websockets
+from datetime import datetime, timedelta
+import os
+
+class CloudAgentDataAccessTester:
+    def __init__(self):
+        self.config = {
+            # 本地服务地址
+            'local_trading': 'http://localhost:8888',
+            'local_api': 'http://localhost:8000',
+            
+            # 云端访问地址 (通过ngrok)
+            'cloud_trading': 'https://2346443b1406.ngrok-free.app',
+            'cloud_ws': 'wss://2346443b1406.ngrok-free.app/ws',
+            
+            # 测试配置
+            'timeout': 30
+        }
+        
+        self.test_results = {}
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'CloudAgentDataTester/1.0',
+            'Accept': 'application/json'
+        })
+    
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    def test_basic_data_endpoints(self):
+        """测试基础数据端点"""
+        self.log("📊 测试基础数据端点...")
+        
+        # 定义要测试的数据端点
+        data_endpoints = [
+            {'name': '账户余额', 'endpoint': '/balance', 'method': 'GET', 'expected_data': ['balance', 'available']},
+            {'name': '持仓信息', 'endpoint': '/positions', 'method': 'GET', 'expected_data': ['positions', 'holdings']},
+            {'name': '当日成交', 'endpoint': '/trades', 'method': 'GET', 'expected_data': ['trades', 'transactions']},
+            {'name': '委托订单', 'endpoint': '/orders', 'method': 'GET', 'expected_data': ['orders', 'pending']},
+            {'name': '历史记录', 'endpoint': '/history', 'method': 'GET', 'expected_data': ['history', 'records']},
+            {'name': '资金流水', 'endpoint': '/funds', 'method': 'GET', 'expected_data': ['funds', 'cash_flow']},
+            {'name': '交易统计', 'endpoint': '/statistics', 'method': 'GET', 'expected_data': ['stats', 'summary']}
+        ]
+        
+        basic_results = {}
+        
+        for endpoint_info in data_endpoints:
+            self.log(f"🧪 测试: {endpoint_info['name']}")
+            
+            # 测试本地访问
+            local_result = self.test_endpoint_access(
+                'local',
+                f"{self.config['local_trading']}{endpoint_info['endpoint']}",
+                endpoint_info['method']
+            )
+            
+            # 测试云端访问
+            cloud_result = self.test_endpoint_access(
+                'cloud',
+                f"{self.config['cloud_trading']}{endpoint_info['endpoint']}",
+                endpoint_info['method']
+            )
+            
+            basic_results[endpoint_info['name']] = {
+                'local': local_result,
+                'cloud': cloud_result,
+                'expected_data': endpoint_info['expected_data'],
+                'cloud_accessible': cloud_result.get('success', False)
+            }
+            
+            # 分析数据内容
+            if cloud_result.get('success') and cloud_result.get('data'):
+                self.analyze_data_content(endpoint_info['name'], cloud_result['data'], endpoint_info['expected_data'])
+            
+            print()
+        
+        self.test_results['basic_data_endpoints'] = basic_results
+        return basic_results
+    
+    def test_endpoint_access(self, access_type, url, method):
+        """测试端点访问"""
+        try:
+            start_time = time.perf_counter()
+            
+            if method == 'GET':
+                response = self.session.get(url, timeout=self.config['timeout'])
+            elif method == 'POST':
+                response = self.session.post(url, json={}, timeout=self.config['timeout'])
+            else:
+                return {'success': False, 'error': f'Unsupported method: {method}'}
+            
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            result = {
+                'success': response.status_code == 200,
+                'status_code': response.status_code,
+                'latency': round(latency, 2),
+                'response_size': len(response.content)
+            }
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    result['data'] = data
+                    result['data_type'] = 'json'
+                    result['data_keys'] = list(data.keys()) if isinstance(data, dict) else []
+                    
+                    self.log(f"   ✅ {access_type}访问: {round(latency, 2)}ms, 数据大小: {len(response.content)}字节", "SUCCESS")
+                    
+                except json.JSONDecodeError:
+                    result['data'] = response.text[:500]  # 只保存前500字符
+                    result['data_type'] = 'text'
+                    
+                    self.log(f"   ✅ {access_type}访问: {round(latency, 2)}ms, 文本数据", "SUCCESS")
+            else:
+                result['error'] = f"HTTP {response.status_code}"
+                self.log(f"   ❌ {access_type}访问: 状态码 {response.status_code}", "ERROR")
+            
+            return result
+            
+        except requests.exceptions.Timeout:
+            self.log(f"   ⏰ {access_type}访问: 超时", "WARNING")
+            return {'success': False, 'error': 'timeout', 'latency': self.config['timeout'] * 1000}
+        
+        except Exception as e:
+            self.log(f"   ❌ {access_type}访问: 失败 - {e}", "ERROR")
+            return {'success': False, 'error': str(e)}
+    
+    def analyze_data_content(self, endpoint_name, data, expected_fields):
+        """分析数据内容"""
+        if isinstance(data, dict):
+            available_fields = list(data.keys())
+            
+            # 检查是否包含预期字段
+            found_expected = []
+            for expected in expected_fields:
+                for available in available_fields:
+                    if expected.lower() in available.lower():
+                        found_expected.append(available)
+                        break
+            
+            if found_expected:
+                self.log(f"   📋 包含预期数据: {found_expected}", "SUCCESS")
+            else:
+                self.log(f"   ⚠️ 未找到预期字段，可用字段: {available_fields}", "WARNING")
+            
+            # 检查数据量
+            if isinstance(data, dict):
+                total_items = 0
+                for key, value in data.items():
+                    if isinstance(value, list):
+                        total_items += len(value)
+                        self.log(f"   📊 {key}: {len(value)}条记录", "INFO")
+                    elif isinstance(value, (int, float)):
+                        self.log(f"   💰 {key}: {value}", "INFO")
+                
+                if total_items > 0:
+                    self.log(f"   📈 总数据量: {total_items}条记录", "SUCCESS")
+        
+        elif isinstance(data, list):
+            self.log(f"   📊 数组数据: {len(data)}条记录", "SUCCESS")
+            if len(data) > 0 and isinstance(data[0], dict):
+                sample_keys = list(data[0].keys())
+                self.log(f"   🔍 样本字段: {sample_keys}", "INFO")
+    
+    def test_export_functionality(self):
+        """测试导出功能"""
+        self.log("📤 测试导出功能...")
+        
+        export_tests = [
+            {
+                'name': '导出持仓',
+                'endpoint': '/export/positions',
+                'params': {'format': 'json', 'date': datetime.now().strftime('%Y-%m-%d')}
+            },
+            {
+                'name': '导出成交记录',
+                'endpoint': '/export/trades',
+                'params': {'format': 'json', 'start_date': (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')}
+            },
+            {
+                'name': '导出资金流水',
+                'endpoint': '/export/funds',
+                'params': {'format': 'csv', 'period': 'today'}
+            },
+            {
+                'name': '导出完整报告',
+                'endpoint': '/export/report',
+                'params': {'format': 'json', 'type': 'daily'}
+            }
+        ]
+        
+        export_results = {}
+        
+        for export_test in export_tests:
+            self.log(f"📋 测试: {export_test['name']}")
+            
+            # 测试云端导出访问
+            try:
+                start_time = time.perf_counter()
+                
+                response = self.session.post(
+                    f"{self.config['cloud_trading']}{export_test['endpoint']}",
+                    json=export_test['params'],
+                    timeout=self.config['timeout']
+                )
+                
+                latency = (time.perf_counter() - start_time) * 1000
+                
+                result = {
+                    'success': response.status_code == 200,
+                    'status_code': response.status_code,
+                    'latency': round(latency, 2),
+                    'response_size': len(response.content)
+                }
+                
+                if response.status_code == 200:
+                    # 检查响应内容类型
+                    content_type = response.headers.get('content-type', '')
+                    
+                    if 'json' in content_type:
+                        try:
+                            data = response.json()
+                            result['data_type'] = 'json'
+                            result['data'] = data
+                            
+                            # 分析导出数据
+                            if isinstance(data, dict) and 'export_file' in data:
+                                self.log(f"   ✅ 导出成功: 文件 {data.get('export_file')}", "SUCCESS")
+                            elif isinstance(data, list):
+                                self.log(f"   ✅ 导出成功: {len(data)}条记录", "SUCCESS")
+                            else:
+                                self.log(f"   ✅ 导出成功: JSON数据", "SUCCESS")
+                                
+                        except json.JSONDecodeError:
+                            result['data_type'] = 'text'
+                            result['data'] = response.text[:200]
+                            self.log(f"   ✅ 导出成功: 文本数据", "SUCCESS")
+                    
+                    elif 'csv' in content_type:
+                        result['data_type'] = 'csv'
+                        result['data'] = response.text[:500]  # CSV样本
+                        
+                        # 分析CSV行数
+                        lines = response.text.split('\n')
+                        self.log(f"   ✅ 导出成功: CSV文件，{len(lines)}行", "SUCCESS")
+                    
+                    else:
+                        result['data_type'] = 'binary'
+                        self.log(f"   ✅ 导出成功: 二进制文件，{len(response.content)}字节", "SUCCESS")
+                    
+                    self.log(f"   ⏱️ 导出耗时: {round(latency, 2)}ms", "INFO")
+                    
+                else:
+                    result['error'] = f"HTTP {response.status_code}"
+                    self.log(f"   ❌ 导出失败: 状态码 {response.status_code}", "ERROR")
+                
+                export_results[export_test['name']] = result
+                
+            except Exception as e:
+                export_results[export_test['name']] = {
+                    'success': False,
+                    'error': str(e)
+                }
+                self.log(f"   ❌ 导出异常: {e}", "ERROR")
+            
+            time.sleep(1)  # 间隔1秒
+        
+        self.test_results['export_functionality'] = export_results
+        return export_results
+    
+    def test_real_time_data_access(self):
+        """测试实时数据访问"""
+        self.log("📡 测试实时数据访问...")
+        
+        realtime_tests = [
+            {'name': '实时行情', 'endpoint': '/realtime/quotes'},
+            {'name': '实时成交', 'endpoint': '/realtime/trades'},
+            {'name': '实时资金', 'endpoint': '/realtime/funds'},
+            {'name': '实时持仓', 'endpoint': '/realtime/positions'}
+        ]
+        
+        realtime_results = {}
+        
+        for test in realtime_tests:
+            self.log(f"📊 测试: {test['name']}")
+            
+            # 连续获取几次数据，检查实时性
+            data_snapshots = []
+            
+            for i in range(3):
+                try:
+                    response = self.session.get(
+                        f"{self.config['cloud_trading']}{test['endpoint']}",
+                        timeout=10
+                    )
+                    
+                    if response.status_code == 200:
+                        try:
+                            data = response.json()
+                            data_snapshots.append({
+                                'timestamp': datetime.now().isoformat(),
+                                'data': data,
+                                'size': len(response.content)
+                            })
+                            
+                            self.log(f"   📸 快照{i+1}: {len(response.content)}字节", "SUCCESS")
+                            
+                        except json.JSONDecodeError:
+                            data_snapshots.append({
+                                'timestamp': datetime.now().isoformat(),
+                                'data': response.text[:100],
+                                'size': len(response.content)
+                            })
+                    
+                    time.sleep(2)  # 间隔2秒
+                    
+                except Exception as e:
+                    self.log(f"   ❌ 快照{i+1}失败: {e}", "ERROR")
+            
+            # 分析数据变化
+            if len(data_snapshots) >= 2:
+                # 检查数据是否有变化
+                data_changed = False
+                for i in range(1, len(data_snapshots)):
+                    if data_snapshots[i]['data'] != data_snapshots[i-1]['data']:
+                        data_changed = True
+                        break
+                
+                realtime_results[test['name']] = {
+                    'success': len(data_snapshots) > 0,
+                    'snapshots': len(data_snapshots),
+                    'data_changed': data_changed,
+                    'avg_size': sum(s['size'] for s in data_snapshots) / len(data_snapshots)
+                }
+                
+                if data_changed:
+                    self.log(f"   ✅ 数据实时更新: 检测到变化", "SUCCESS")
+                else:
+                    self.log(f"   ⚠️ 数据可能静态: 未检测到变化", "WARNING")
+            else:
+                realtime_results[test['name']] = {
+                    'success': False,
+                    'error': 'insufficient_data'
+                }
+        
+        self.test_results['realtime_data'] = realtime_results
+        return realtime_results
+    
+    async def test_websocket_data_stream(self):
+        """测试WebSocket数据流"""
+        self.log("🌐 测试WebSocket数据流...")
+        
+        try:
+            async with websockets.connect(self.config['cloud_ws']) as websocket:
+                self.log("✅ WebSocket连接建立", "SUCCESS")
+                
+                # 订阅数据流
+                subscribe_messages = [
+                    {'type': 'subscribe', 'channel': 'trades'},
+                    {'type': 'subscribe', 'channel': 'positions'},
+                    {'type': 'subscribe', 'channel': 'balance'},
+                    {'type': 'subscribe', 'channel': 'orders'}
+                ]
+                
+                for msg in subscribe_messages:
+                    await websocket.send(json.dumps(msg))
+                    self.log(f"📤 订阅: {msg['channel']}", "INFO")
+                
+                # 监听数据流
+                received_data = []
+                timeout_count = 0
+                max_timeout = 5
+                
+                while timeout_count < max_timeout:
+                    try:
+                        message = await asyncio.wait_for(websocket.recv(), timeout=2)
+                        data = json.loads(message)
+                        received_data.append({
+                            'timestamp': datetime.now().isoformat(),
+                            'data': data
+                        })
+                        
+                        self.log(f"📥 收到数据: {data.get('type', 'unknown')}", "SUCCESS")
+                        timeout_count = 0  # 重置超时计数
+                        
+                    except asyncio.TimeoutError:
+                        timeout_count += 1
+                        self.log(f"⏰ 等待数据... ({timeout_count}/{max_timeout})", "INFO")
+                
+                ws_result = {
+                    'success': len(received_data) > 0,
+                    'messages_received': len(received_data),
+                    'data_types': list(set(msg['data'].get('type', 'unknown') for msg in received_data))
+                }
+                
+                if received_data:
+                    self.log(f"✅ WebSocket数据流: 收到{len(received_data)}条消息", "SUCCESS")
+                else:
+                    self.log("⚠️ WebSocket数据流: 未收到数据", "WARNING")
+                
+                self.test_results['websocket_stream'] = ws_result
+                return ws_result
+                
+        except Exception as e:
+            self.log(f"❌ WebSocket测试失败: {e}", "ERROR")
+            self.test_results['websocket_stream'] = {'success': False, 'error': str(e)}
+            return {'success': False, 'error': str(e)}
+    
+    def analyze_data_accessibility(self):
+        """分析数据可访问性"""
+        self.log("📊 分析数据可访问性...")
+        
+        accessibility_summary = {
+            'basic_data_accessible': 0,
+            'export_functions_working': 0,
+            'realtime_data_available': 0,
+            'websocket_streaming': False,
+            'total_endpoints_tested': 0,
+            'successful_endpoints': 0
+        }
+        
+        # 分析基础数据端点
+        basic_data = self.test_results.get('basic_data_endpoints', {})
+        for name, result in basic_data.items():
+            accessibility_summary['total_endpoints_tested'] += 1
+            if result.get('cloud_accessible', False):
+                accessibility_summary['successful_endpoints'] += 1
+                accessibility_summary['basic_data_accessible'] += 1
+        
+        # 分析导出功能
+        export_data = self.test_results.get('export_functionality', {})
+        for name, result in export_data.items():
+            if result.get('success', False):
+                accessibility_summary['export_functions_working'] += 1
+        
+        # 分析实时数据
+        realtime_data = self.test_results.get('realtime_data', {})
+        for name, result in realtime_data.items():
+            if result.get('success', False):
+                accessibility_summary['realtime_data_available'] += 1
+        
+        # 分析WebSocket
+        ws_data = self.test_results.get('websocket_stream', {})
+        accessibility_summary['websocket_streaming'] = ws_data.get('success', False)
+        
+        # 计算成功率
+        if accessibility_summary['total_endpoints_tested'] > 0:
+            success_rate = (accessibility_summary['successful_endpoints'] / 
+                          accessibility_summary['total_endpoints_tested']) * 100
+            accessibility_summary['success_rate'] = round(success_rate, 1)
+        else:
+            accessibility_summary['success_rate'] = 0
+        
+        self.test_results['accessibility_summary'] = accessibility_summary
+        return accessibility_summary
+    
+    def display_comprehensive_results(self):
+        """显示综合测试结果"""
+        self.log("📋 云端Agent数据访问能力测试结果", "SUCCESS")
+        self.log("=" * 60, "SUCCESS")
+        
+        summary = self.test_results.get('accessibility_summary', {})
+        
+        # 总体成功率
+        self.log(f"🎯 总体成功率: {summary.get('success_rate', 0)}%", 
+                "SUCCESS" if summary.get('success_rate', 0) >= 70 else "WARNING")
+        
+        # 基础数据访问
+        basic_count = summary.get('basic_data_accessible', 0)
+        self.log(f"📊 基础数据访问: {basic_count}个端点可用", 
+                "SUCCESS" if basic_count > 0 else "ERROR")
+        
+        # 导出功能
+        export_count = summary.get('export_functions_working', 0)
+        self.log(f"📤 导出功能: {export_count}个功能可用", 
+                "SUCCESS" if export_count > 0 else "ERROR")
+        
+        # 实时数据
+        realtime_count = summary.get('realtime_data_available', 0)
+        self.log(f"📡 实时数据: {realtime_count}个数据源可用", 
+                "SUCCESS" if realtime_count > 0 else "ERROR")
+        
+        # WebSocket流
+        ws_available = summary.get('websocket_streaming', False)
+        self.log(f"🌐 WebSocket数据流: {'✅ 可用' if ws_available else '❌ 不可用'}", 
+                "SUCCESS" if ws_available else "ERROR")
+        
+        print()
+        
+        # 详细分析
+        self.log("📋 详细功能分析:", "SUCCESS")
+        
+        # 显示可用的数据类型
+        basic_data = self.test_results.get('basic_data_endpoints', {})
+        available_data = [name for name, result in basic_data.items() 
+                         if result.get('cloud_accessible', False)]
+        
+        if available_data:
+            self.log("✅ 云端Agent可以获取的数据:", "SUCCESS")
+            for data_type in available_data:
+                self.log(f"   • {data_type}", "SUCCESS")
+        else:
+            self.log("❌ 云端Agent无法获取基础数据", "ERROR")
+        
+        # 显示可用的导出功能
+        export_data = self.test_results.get('export_functionality', {})
+        available_exports = [name for name, result in export_data.items() 
+                           if result.get('success', False)]
+        
+        if available_exports:
+            self.log("✅ 云端Agent可以使用的导出功能:", "SUCCESS")
+            for export_type in available_exports:
+                self.log(f"   • {export_type}", "SUCCESS")
+        else:
+            self.log("❌ 云端Agent无法使用导出功能", "ERROR")
+        
+        print()
+        
+        # 最终结论
+        self.log("🎯 最终结论:", "SUCCESS")
+        
+        if summary.get('success_rate', 0) >= 80:
+            self.log("🏆 云端Agent完全可以获取本地交易数据！", "SUCCESS")
+        elif summary.get('success_rate', 0) >= 50:
+            self.log("✅ 云端Agent可以获取大部分本地交易数据", "SUCCESS")
+        elif summary.get('success_rate', 0) >= 20:
+            self.log("⚠️ 云端Agent可以获取部分本地交易数据", "WARNING")
+        else:
+            self.log("❌ 云端Agent无法有效获取本地交易数据", "ERROR")
+    
+    async def run_comprehensive_test(self):
+        """运行综合测试"""
+        self.log("🚀 开始云端Agent数据访问能力测试", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 1. 测试基础数据端点
+        self.test_basic_data_endpoints()
+        print()
+        
+        # 2. 测试导出功能
+        self.test_export_functionality()
+        print()
+        
+        # 3. 测试实时数据访问
+        self.test_real_time_data_access()
+        print()
+        
+        # 4. 测试WebSocket数据流
+        await self.test_websocket_data_stream()
+        print()
+        
+        # 5. 分析数据可访问性
+        self.analyze_data_accessibility()
+        
+        # 6. 显示综合结果
+        self.display_comprehensive_results()
+        
+        self.log("🎉 云端Agent数据访问能力测试完成！", "SUCCESS")
+
+if __name__ == "__main__":
+    tester = CloudAgentDataAccessTester()
+    asyncio.run(tester.run_comprehensive_test())

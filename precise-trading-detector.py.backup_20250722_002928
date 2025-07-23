@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+精确交易软件检测工具
+专门检测常见的股票交易软件并提供自动化方案
+"""
+
+import psutil
+import win32gui
+import win32process
+import pyautogui
+import time
+import json
+from datetime import datetime
+
+class PreciseTradingDetector:
+    def __init__(self):
+        self.trading_software = []
+        self.trading_windows = []
+        
+    def detect_specific_trading_software(self):
+        """检测特定的交易软件"""
+        print("🔍 检测常见交易软件...")
+        
+        # 精确的交易软件特征
+        trading_signatures = {
+            '同花顺': {
+                'process_names': ['hexin.exe', 'xiadan.exe', 'THS.exe', 'tonghuashun.exe'],
+                'window_classes': ['TdxW_MainFrame', 'ThsMainFrame'],
+                'window_titles': ['同花顺', '网上股票交易系统', '委托下单']
+            },
+            '东方财富': {
+                'process_names': ['EmTrade.exe', 'eastmoney.exe', 'em.exe'],
+                'window_classes': ['EmTradeMainFrame'],
+                'window_titles': ['东方财富', '网上交易', '委托交易']
+            },
+            '大智慧': {
+                'process_names': ['dzh.exe', 'gw.exe', 'great.exe'],
+                'window_classes': ['DzhMainFrame'],
+                'window_titles': ['大智慧', '股票交易', '委托下单']
+            },
+            '华泰证券': {
+                'process_names': ['xiadan.exe', 'htsc.exe', 'huatai.exe'],
+                'window_classes': ['HtscMainFrame'],
+                'window_titles': ['华泰证券', '网上交易', '委托系统']
+            },
+            '中信证券': {
+                'process_names': ['zxzq.exe', 'citic.exe', 'xiadan.exe'],
+                'window_classes': ['CiticMainFrame'],
+                'window_titles': ['中信证券', '网上交易']
+            }
+        }
+        
+        # 检测进程
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                proc_name = proc.info['name'].lower()
+                proc_exe = proc.info['exe'] or ''
+                
+                for software_name, signatures in trading_signatures.items():
+                    for process_name in signatures['process_names']:
+                        if process_name.lower() in proc_name:
+                            self.trading_software.append({
+                                'software': software_name,
+                                'pid': proc.info['pid'],
+                                'name': proc.info['name'],
+                                'exe': proc_exe,
+                                'type': 'process'
+                            })
+                            print(f"  ✅ 发现 {software_name}: {proc.info['name']} (PID: {proc.info['pid']})")
+                            break
+                            
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # 检测窗口
+        def enum_windows_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                try:
+                    window_text = win32gui.GetWindowText(hwnd)
+                    class_name = win32gui.GetClassName(hwnd)
+                    
+                    for software_name, signatures in trading_signatures.items():
+                        # 检查窗口类名
+                        for window_class in signatures['window_classes']:
+                            if window_class in class_name:
+                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                self.trading_windows.append({
+                                    'software': software_name,
+                                    'hwnd': hwnd,
+                                    'title': window_text,
+                                    'class': class_name,
+                                    'pid': pid,
+                                    'type': 'window_class'
+                                })
+                                print(f"  ✅ 发现 {software_name} 窗口: {window_text}")
+                                return True
+                        
+                        # 检查窗口标题
+                        for window_title in signatures['window_titles']:
+                            if window_title in window_text:
+                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                self.trading_windows.append({
+                                    'software': software_name,
+                                    'hwnd': hwnd,
+                                    'title': window_text,
+                                    'class': class_name,
+                                    'pid': pid,
+                                    'type': 'window_title'
+                                })
+                                print(f"  ✅ 发现 {software_name} 窗口: {window_text}")
+                                return True
+                                
+                except:
+                    pass
+            return True
+        
+        win32gui.EnumWindows(enum_windows_callback, self.trading_windows)
+        
+        return self.trading_software, self.trading_windows
+    
+    def analyze_trading_interface(self, hwnd):
+        """分析交易界面的控件布局"""
+        print(f"\n🎛 分析交易界面: {win32gui.GetWindowText(hwnd)}")
+        
+        # 获取窗口截图用于分析
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+            screenshot = pyautogui.screenshot(region=rect)
+            screenshot.save(f'E:\\交易8 - 副本\\trading_window_{hwnd}.png')
+            print(f"  📸 窗口截图已保存: trading_window_{hwnd}.png")
+        except Exception as e:
+            print(f"  ❌ 截图失败: {e}")
+        
+        # 查找交易相关的控件
+        trading_controls = []
+        
+        def find_trading_controls(child_hwnd, controls):
+            try:
+                class_name = win32gui.GetClassName(child_hwnd)
+                window_text = win32gui.GetWindowText(child_hwnd)
+                rect = win32gui.GetWindowRect(child_hwnd)
+                
+                # 交易相关的控件特征
+                trading_keywords = {
+                    'buy_button': ['买入', 'BUY', '买', 'B'],
+                    'sell_button': ['卖出', 'SELL', '卖', 'S'],
+                    'symbol_input': ['代码', '股票代码', 'CODE', 'SYMBOL'],
+                    'quantity_input': ['数量', '股数', 'QUANTITY', 'QTY'],
+                    'price_input': ['价格', '委托价', 'PRICE'],
+                    'confirm_button': ['确认', '委托', 'CONFIRM', 'OK'],
+                    'cancel_button': ['撤单', '取消', 'CANCEL']
+                }
+                
+                for control_type, keywords in trading_keywords.items():
+                    for keyword in keywords:
+                        if keyword in window_text or keyword in class_name:
+                            controls.append({
+                                'type': control_type,
+                                'hwnd': child_hwnd,
+                                'class': class_name,
+                                'text': window_text,
+                                'rect': rect
+                            })
+                            print(f"    🎯 发现{control_type}: {window_text} at {rect}")
+                            break
+                            
+            except:
+                pass
+            return True
+        
+        try:
+            win32gui.EnumChildWindows(hwnd, find_trading_controls, trading_controls)
+        except:
+            pass
+            
+        return trading_controls
+    
+    def generate_automation_code(self, software_name, controls):
+        """生成自动化交易代码"""
+        print(f"\n🔧 生成 {software_name} 自动化代码...")
+        
+        # 根据控件位置生成代码
+        automation_code = f'''
+# {software_name} 自动化交易接口
+import pyautogui
+import time
+import win32gui
+import win32con
+
+class {software_name.replace(' ', '')}TradingBot:
+    def __init__(self):
+        self.window_hwnd = None
+        self.controls = {json.dumps(controls, indent=8, ensure_ascii=False)}
+        
+    def find_trading_window(self):
+        """查找交易窗口"""
+        def enum_windows_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd)
+                if "{software_name}" in window_text or "交易" in window_text:
+                    self.window_hwnd = hwnd
+                    return False
+            return True
+        
+        win32gui.EnumWindows(enum_windows_callback, [])
+        return self.window_hwnd is not None
+    
+    def activate_window(self):
+        """激活交易窗口"""
+        if self.window_hwnd:
+            win32gui.SetForegroundWindow(self.window_hwnd)
+            time.sleep(0.5)
+            return True
+        return False
+    
+    def click_control(self, control_type):
+        """点击指定类型的控件"""
+        for control in self.controls:
+            if control['type'] == control_type:
+                rect = control['rect']
+                x = (rect[0] + rect[2]) // 2
+                y = (rect[1] + rect[3]) // 2
+                pyautogui.click(x, y)
+                time.sleep(0.2)
+                return True
+        return False
+    
+    def input_text(self, control_type, text):
+        """在指定控件中输入文本"""
+        if self.click_control(control_type):
+            pyautogui.hotkey('ctrl', 'a')  # 全选
+            time.sleep(0.1)
+            pyautogui.typewrite(str(text))
+            time.sleep(0.2)
+            return True
+        return False
+    
+    def buy_stock(self, symbol, quantity, price):
+        """买入股票"""
+        try:
+            if not self.find_trading_window():
+                print("未找到交易窗口")
+                return False
+                
+            if not self.activate_window():
+                print("无法激活交易窗口")
+                return False
+            
+            # 点击买入按钮
+            if not self.click_control('buy_button'):
+                print("未找到买入按钮")
+                return False
+            
+            # 输入股票代码
+            if not self.input_text('symbol_input', symbol):
+                print("无法输入股票代码")
+                return False
+            
+            # 输入数量
+            if not self.input_text('quantity_input', quantity):
+                print("无法输入数量")
+                return False
+            
+            # 输入价格
+            if not self.input_text('price_input', price):
+                print("无法输入价格")
+                return False
+            
+            # 确认买入
+            if not self.click_control('confirm_button'):
+                print("无法点击确认按钮")
+                return False
+            
+            print(f"买入操作完成: {{symbol}} {{quantity}}股 @{{price}}")
+            return True
+            
+        except Exception as e:
+            print(f"买入操作失败: {{e}}")
+            return False
+    
+    def sell_stock(self, symbol, quantity, price):
+        """卖出股票"""
+        try:
+            if not self.find_trading_window():
+                print("未找到交易窗口")
+                return False
+                
+            if not self.activate_window():
+                print("无法激活交易窗口")
+                return False
+            
+            # 点击卖出按钮
+            if not self.click_control('sell_button'):
+                print("未找到卖出按钮")
+                return False
+            
+            # 输入股票代码
+            if not self.input_text('symbol_input', symbol):
+                print("无法输入股票代码")
+                return False
+            
+            # 输入数量
+            if not self.input_text('quantity_input', quantity):
+                print("无法输入数量")
+                return False
+            
+            # 输入价格
+            if not self.input_text('price_input', price):
+                print("无法输入价格")
+                return False
+            
+            # 确认卖出
+            if not self.click_control('confirm_button'):
+                print("无法点击确认按钮")
+                return False
+            
+            print(f"卖出操作完成: {{symbol}} {{quantity}}股 @{{price}}")
+            return True
+            
+        except Exception as e:
+            print(f"卖出操作失败: {{e}}")
+            return False
+
+# 使用示例
+if __name__ == "__main__":
+    bot = {software_name.replace(' ', '')}TradingBot()
+    
+    # 买入示例
+    # bot.buy_stock("000001", 100, 13.50)
+    
+    # 卖出示例  
+    # bot.sell_stock("000001", 100, 13.60)
+'''
+        
+        filename = f'E:\\交易8 - 副本\\{software_name.replace(" ", "_")}_trading_bot.py'
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(automation_code)
+        
+        print(f"  ✅ 自动化代码已生成: {filename}")
+        return filename
+    
+    def run_detection(self):
+        """运行检测"""
+        print("🚀 开始精确检测交易软件...\n")
+        
+        # 检测交易软件
+        software_list, windows_list = self.detect_specific_trading_software()
+        
+        if not software_list and not windows_list:
+            print("\n❌ 未检测到常见的交易软件")
+            print("💡 建议:")
+            print("  1. 确保交易软件正在运行")
+            print("  2. 如果使用的是其他交易软件，请提供软件名称")
+            print("  3. 可以尝试通用的界面自动化方案")
+            return None
+        
+        # 分析每个检测到的交易窗口
+        automation_files = []
+        for window in windows_list:
+            controls = self.analyze_trading_interface(window['hwnd'])
+            if controls:
+                filename = self.generate_automation_code(window['software'], controls)
+                automation_files.append(filename)
+        
+        # 生成报告
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'detected_software': software_list,
+            'detected_windows': windows_list,
+            'automation_files': automation_files,
+            'recommendations': [
+                "使用生成的自动化代码进行交易操作",
+                "在实际使用前请先测试代码的准确性",
+                "建议在模拟环境中先验证功能",
+                "注意交易软件的安全设置可能会阻止自动化操作"
+            ]
+        }
+        
+        with open('E:\\交易8 - 副本\\precise_trading_report.json', 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        
+        print(f"\n📊 检测完成!")
+        print(f"  - 检测到 {len(software_list)} 个交易软件进程")
+        print(f"  - 检测到 {len(windows_list)} 个交易窗口")
+        print(f"  - 生成了 {len(automation_files)} 个自动化文件")
+        print(f"  - 详细报告: precise_trading_report.json")
+        
+        return report
+
+if __name__ == "__main__":
+    detector = PreciseTradingDetector()
+    detector.run_detection()

@@ -1,0 +1,47 @@
+/**
+ * CDN智能切换配置 - MCP优化版本
+ */
+
+export const CDN_SWITCH_CONFIG = {
+  // 基于MCP测试的CDN性能排序
+  cdnNodes: [
+    {
+      name: 'BootCDN',
+      url: 'https://cdn.bootcdn.net',
+      testLatency: 746,
+      priority: 1,
+      region: 'China',
+      status: 'active'
+    },
+    {
+      name: 'JSDelivr CDN', 
+      url: 'https://cdn.jsdelivr.net',
+      testLatency: 1045,
+      priority: 2,
+      region: 'Global',
+      status: 'active'
+    },
+    {
+      name: 'unpkg CDN',
+      url: 'https://unpkg.com',
+      testLatency: 1626,
+      priority: 3,
+      region: 'Global', 
+      status: 'active'
+    }
+  ],
+  
+  // 切换策略
+  switchStrategy: {
+    failoverThreshold: 2000,    // 延迟超过2秒切换
+    healthCheckInterval: 60000, // 1分钟健康检查
+    maxRetries: 3,              // 最大重试次数
+    enableAutoSwitch: true      // 启用自动切换
+  },
+  
+  // MCP优化标记
+  mcpOptimized: true,
+  lastOptimized: '2025-07-20T16:46:21.396Z'
+};
+
+export default CDN_SWITCH_CONFIG;

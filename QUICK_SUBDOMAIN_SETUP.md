@@ -9,11 +9,11 @@
 
 ## 🎯 立即可以实施的步骤
 
-### 第1步：在Cloudflare中配置DNS记录
+### 第1步:在Cloudflare中配置DNS记录
 
 1. **登录Cloudflare Dashboard**
-   - 访问：https://dash.cloudflare.com
-   - 选择域名：aigupiao.me
+   - 访问:https://dash.cloudflare.com
+   - 选择域名:aigupiao.me
 
 2. **添加子域名DNS记录**
    ```
@@ -24,9 +24,9 @@
    A       admin   104.21.x.x             已代理
    ```
    
-   > 💡 IP地址使用Cloudflare的代理IP，具体IP会自动分配
+   > 💡 IP地址使用Cloudflare的代理IP,具体IP会自动分配
 
-### 第2步：创建Cloudflare Pages项目
+### 第2步:创建Cloudflare Pages项目
 
 #### 为app.aigupiao.me创建项目
 
@@ -34,8 +34,8 @@
    - Dashboard > Pages > Create a project
 
 2. **连接GitHub仓库**
-   - 选择：Bei-fen 仓库
-   - 分支：main
+   - 选择:Bei-fen 仓库
+   - 分支:main
 
 3. **配置构建设置**
    ```
@@ -46,19 +46,19 @@
    ```
 
 4. **添加自定义域名**
-   - 部署完成后，进入项目设置
+   - 部署完成后,进入项目设置
    - Custom domains > Set up a custom domain
-   - 输入：app.aigupiao.me
+   - 输入:app.aigupiao.me
 
 #### 为其他子域名重复相同步骤
 
-- **mobile.aigupiao.me** → 构建输出目录：`subdomains/mobile`
-- **admin.aigupiao.me** → 构建输出目录：`subdomains/admin`
-- **docs.aigupiao.me** → 构建输出目录：`subdomains/docs`
+- **mobile.aigupiao.me** → 构建输出目录:`subdomains/mobile`
+- **admin.aigupiao.me** → 构建输出目录:`subdomains/admin`
+- **docs.aigupiao.me** → 构建输出目录:`subdomains/docs`
 
-### 第3步：验证部署
+### 第3步:验证部署
 
-等待5-10分钟后，访问以下URL验证：
+等待5-10分钟后,访问以下URL验证:
 
 - ✅ https://app.aigupiao.me
 - ✅ https://mobile.aigupiao.me  
@@ -69,28 +69,28 @@
 
 ## 🔧 API子域名设置 (api.aigupiao.me)
 
-### 选项1：使用Railway部署后端
+### 选项1:使用Railway部署后端
 
 1. **登录Railway**
-   - 访问：https://railway.app
+   - 访问:https://railway.app
    - 连接GitHub账户
 
 2. **部署项目**
    - New Project > Deploy from GitHub repo
-   - 选择：Bei-fen 仓库
+   - 选择:Bei-fen 仓库
 
 3. **配置自定义域名**
    - 项目设置 > Domains
-   - 添加：api.aigupiao.me
+   - 添加:api.aigupiao.me
 
-### 选项2：使用Cloudflare Workers
+### 选项2:使用Cloudflare Workers
 
 1. **创建Worker**
    - Cloudflare Dashboard > Workers & Pages
    - Create application > Create Worker
 
 2. **配置路由**
-   - 添加路由：api.aigupiao.me/*
+   - 添加路由:api.aigupiao.me/*
 
 ## 📱 移动端优化建议
 
@@ -106,7 +106,7 @@ api.aigupiao.me      → 统一API服务
 
 ### 响应式策略
 
-- **app.aigupiao.me** - 响应式设计，支持所有设备
+- **app.aigupiao.me** - 响应式设计,支持所有设备
 - **mobile.aigupiao.me** - 专门为移动端优化的轻量版本
 - 用户可以根据需要选择访问哪个版本
 
@@ -126,7 +126,7 @@ api.aigupiao.me      → 统一API服务
 
 3. **mobile.aigupiao.me** - 移动端优化
    - 基于app版本创建移动端优化版本
-   - 简化界面，优化触摸操作
+   - 简化界面,优化触摸操作
 
 ### 🔧 第三阶段 (后续完成)
 
@@ -158,7 +158,7 @@ mobile.aigupiao.me   → 移动端优化版本
 
 ## 💡 立即行动建议
 
-### 今天就可以做的：
+### 今天就可以做的:
 
 1. **配置DNS记录** (5分钟)
    - 在Cloudflare中添加A记录
@@ -171,7 +171,7 @@ mobile.aigupiao.me   → 移动端优化版本
    - 等待部署完成
    - 访问 https://app.aigupiao.me
 
-### 这样做的好处：
+### 这样做的好处:
 
 - ✅ **立即可见的进展**
 - ✅ **不影响现有的aigupiao.me**
@@ -194,6 +194,6 @@ mobile.aigupiao.me   → 移动端优化版本
 
 ---
 
-**🎯 目标：今天完成app.aigupiao.me的部署！**
+**🎯 目标:今天完成app.aigupiao.me的部署!**
 
-这样你就有了一个专业的子域名架构，为未来的扩展做好了准备！
+这样你就有了一个专业的子域名架构,为未来的扩展做好了准备!

@@ -1,0 +1,171 @@
+# 阿里云ECS连接和OneDrive配置指南
+
+## 📧 OneDrive账号信息
+- **邮箱**: 308186235@qq.com
+- **一次性密码**: (您稍后提供)
+
+## 🔧 阿里云ECS配置完成后的步骤
+
+### 1️⃣ 获取服务器信息
+创建ECS实例后,在控制台获取:
+- **公网IP**: (例如: 47.96.xxx.xxx)
+- **用户名**: root
+- **密码**: (您设置的密码)
+
+### 2️⃣ 配置安全组
+在阿里云控制台:
+1. 进入ECS实例详情
+2. 点击"安全组"
+3. 添加安全组规则:
+   - **端口范围**: 8080/8080
+   - **授权对象**: 0.0.0.0/0
+   - **描述**: OneDrive API服务
+
+### 3️⃣ SSH连接服务器
+```bash
+# Windows用户可以用PowerShell或下载PuTTY
+ssh root@YOUR_SERVER_IP
+
+# 输入密码登录
+```
+
+### 4️⃣ 运行自动化部署脚本
+```bash
+# 下载部署脚本
+wget https://raw.githubusercontent.com/your-repo/aliyun_onedrive_setup.sh
+
+# 或者直接创建脚本文件
+nano setup.sh
+# 复制脚本内容,保存退出
+
+# 给脚本执行权限
+chmod +x setup.sh
+
+# 运行脚本
+sudo ./setup.sh
+```
+
+### 5️⃣ 配置OneDrive授权
+```bash
+# 运行rclone配置
+rclone config
+
+# 按照提示操作:
+# 1. 输入 'n' 创建新配置
+# 2. 名称输入: onedrive_trading
+# 3. 选择 onedrive 类型
+# 4. 使用默认客户端ID(直接回车)
+# 5. 选择 OneDrive Personal
+# 6. 选择手动配置(因为是服务器环境)
+# 7. 复制授权URL到浏览器
+# 8. 使用 308186235@qq.com 和一次性密码登录
+# 9. 复制授权码回到终端
+```
+
+### 6️⃣ 启动服务
+```bash
+# 启用并启动OneDrive挂载服务
+sudo systemctl enable onedrive-mount
+sudo systemctl start onedrive-mount
+
+# 启用并启动API服务
+sudo systemctl enable onedrive-api
+sudo systemctl start onedrive-api
+
+# 检查服务状态
+sudo systemctl status onedrive-mount
+sudo systemctl status onedrive-api
+```
+
+### 7️⃣ 测试服务
+```bash
+# 测试本地API
+curl http://localhost:8080
+
+# 测试外网访问
+curl http://YOUR_SERVER_IP:8080
+
+# 检查OneDrive挂载
+ls -la /mnt/onedrive/
+
+# 检查TradingData文件夹
+ls -la /mnt/onedrive/TradingData/
+```
+
+## 🔍 故障排除
+
+### 检查挂载状态
+```bash
+# 查看挂载点
+mount | grep onedrive
+
+# 查看rclone进程
+ps aux | grep rclone
+
+# 查看挂载日志
+sudo journalctl -u onedrive-mount -f
+```
+
+### 检查API服务
+```bash
+# 查看API日志
+sudo journalctl -u onedrive-api -f
+
+# 查看端口监听
+netstat -tlnp | grep 8080
+
+# 测试API端点
+curl http://localhost:8080/api/status
+```
+
+### 重启服务
+```bash
+# 重启挂载服务
+sudo systemctl restart onedrive-mount
+
+# 重启API服务
+sudo systemctl restart onedrive-api
+```
+
+## 🌐 Cloudflare Worker配置
+
+服务器配置完成后,更新Worker配置:
+```javascript
+// 阿里云ECS OneDrive API地址
+var ONEDRIVE_CONFIG = {
+  cloud_api_base: 'http://YOUR_SERVER_IP:8080',
+  account_email: '308186235@qq.com',
+  positions_endpoint: '/api/positions',
+  balance_endpoint: '/api/balance',
+  status_endpoint: '/api/status'
+};
+```
+
+## 📋 完成检查清单
+
+- [ ] 阿里云ECS实例创建成功
+- [ ] 安全组8080端口已开放
+- [ ] SSH连接服务器成功
+- [ ] 自动化脚本运行完成
+- [ ] rclone OneDrive授权完成
+- [ ] OneDrive挂载服务启动
+- [ ] API服务启动并监听8080端口
+- [ ] 本地API测试成功
+- [ ] 外网API访问成功
+- [ ] Cloudflare Worker配置更新
+- [ ] 端到端数据流测试成功
+
+## 🎯 预期结果
+
+配置完成后,数据流程:
+```
+本地交易软件 → OneDrive本地同步 → OneDrive云端 → 阿里云ECS挂载 → API服务 → Cloudflare Worker → 前端应用
+```
+
+## 📞 需要帮助时
+
+如果遇到问题,请提供:
+1. 服务器IP地址
+2. 错误日志内容
+3. 服务状态信息
+4. 具体报错截图

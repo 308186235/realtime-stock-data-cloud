@@ -46,7 +46,7 @@ chmod +x deploy-chagubang-cloudflare.sh
 ./deploy-chagubang-cloudflare.sh
 ```
 
-### **步骤4: 手动部署（可选）**
+### **步骤4: 手动部署(可选)**
 ```bash
 # 创建KV命名空间
 wrangler kv:namespace create "STOCK_CACHE"
@@ -101,7 +101,7 @@ curl -X POST https://api.aigupiao.me/api/chagubang/token/test \
 ```
 
 ### **环境变量配置**
-在Cloudflare Workers中配置以下环境变量：
+在Cloudflare Workers中配置以下环境变量:
 ```
 SUPABASE_URL=https://zzukfxwavknskqcepsjb.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -256,13 +256,13 @@ wrangler kv:key put "test" "value" --namespace-id=YOUR_ID
 ## 📈 **性能优化**
 
 ### **缓存策略**
-- KV存储缓存热点数据（5秒TTL）
+- KV存储缓存热点数据(5秒TTL)
 - Cloudflare CDN缓存静态响应
 - Supabase连接池优化
 
 ### **请求限制**
-- 每个Worker实例CPU限制：50ms
-- KV存储读写限制：1000次/分钟
+- 每个Worker实例CPU限制:50ms
+- KV存储读写限制:1000次/分钟
 - Supabase并发连接限制
 
 ## 🎯 **下一步计划**
@@ -289,13 +289,13 @@ wrangler kv:key put "test" "value" --namespace-id=YOUR_ID
 - [Wrangler CLI文档](https://developers.cloudflare.com/workers/wrangler/)
 
 ### **联系方式**
-- 茶股帮技术支持：获取API Token
-- Cloudflare支持：Workers相关问题
-- Supabase支持：数据库相关问题
+- 茶股帮技术支持:获取API Token
+- Cloudflare支持:Workers相关问题
+- Supabase支持:数据库相关问题
 
 ---
 
-**🎉 恭喜！您的茶股帮数据源已成功部署到Cloudflare环境！**
+**🎉 恭喜!您的茶股帮数据源已成功部署到Cloudflare环境!**
 
 *部署完成时间: 2025-01-02*  
 *版本: v1.0.0*  

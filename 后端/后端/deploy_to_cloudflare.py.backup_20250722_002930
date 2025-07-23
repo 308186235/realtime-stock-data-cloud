@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+"""
+Cloudflare Workers/Pages 部署脚本
+"""
+import os
+import json
+import subprocess
+import shutil
+from datetime import datetime
+
+class CloudflareDeployer:
+    def __init__(self):
+        self.project_name = "ai-stock-trading-system"
+        self.build_dir = "dist"
+        self.config_loaded = False
+        
+    def load_config(self):
+        """加载配置"""
+        config = {}
+        
+        # 从.env.production加载配置
+        if os.path.exists('.env.production'):
+            with open('.env.production', 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        config[key] = value
+        
+        self.config = config
+        self.config_loaded = True
+        return config
+    
+    def check_prerequisites(self):
+        """检查部署前提条件"""
+        print("🔍 检查部署前提条件...")
+        
+        checks = []
+        
+        # 1. 检查Wrangler CLI
+        try:
+            result = subprocess.run(['wrangler', '--version'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                checks.append(("Wrangler CLI", True, f"已安装: {result.stdout.strip()}"))
+            else:
+                checks.append(("Wrangler CLI", False, "未安装或配置错误"))
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            checks.append(("Wrangler CLI", False, "未安装，请运行: npm install -g wrangler"))
+        
+        # 2. 检查Node.js和npm
+        try:
+            result = subprocess.run(['node', '--version'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                checks.append(("Node.js", True, f"已安装: {result.stdout.strip()}"))
+            else:
+                checks.append(("Node.js", False, "未安装"))
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            checks.append(("Node.js", False, "未安装，请安装Node.js"))
+        
+        # 3. 检查前端构建文件
+        frontend_files = [
+            'frontend/simple_frontend.html',
+            'frontend/realtime_data_monitor.html',
+            'frontend/services/aiService.js'
+        ]
+        existing_files = [f for f in frontend_files if os.path.exists(f)]
+
+        if len(existing_files) >= 1:
+            checks.append(("前端文件", True, f"找到 {len(existing_files)} 个前端文件"))
+        else:
+            checks.append(("前端文件", False, "未找到前端文件"))
+        
+        # 4. 检查配置文件
+        if not self.config_loaded:
+            self.load_config()
+        
+        if self.config.get('CLOUDFLARE_API_TOKEN'):
+            if 'YOUR_' in self.config.get('CLOUDFLARE_API_TOKEN'):
+                checks.append(("Cloudflare配置", False, "API Token包含占位符"))
+            else:
+                checks.append(("Cloudflare配置", True, "API Token已配置"))
+        else:
+            checks.append(("Cloudflare配置", False, "未配置API Token"))
+        
+        return checks
+    
+    def create_wrangler_config(self):
+        """创建Wrangler配置文件"""
+        print("📝 创建Wrangler配置...")
+        
+        # Workers配置 (用于API)
+        workers_config = {
+            "name": f"{self.project_name}-api",
+            "main": "worker.js",
+            "compatibility_date": "2024-01-01",
+            "vars": {
+                "SUPABASE_URL": self.config.get('SUPABASE_URL', ''),
+                "SUPABASE_KEY": self.config.get('SUPABASE_KEY', ''),
+                "JWT_SECRET_KEY": self.config.get('JWT_SECRET_KEY', ''),
+                "TRADING_MODE": self.config.get('TRADING_MODE', 'simulation')
+            },
+            "secrets": [
+                "SUPABASE_SERVICE_KEY",
+                "CHAGUBANG_TOKEN"
+            ]
+        }
+        
+        with open('wrangler.toml', 'w', encoding='utf-8') as f:
+            # 转换为TOML格式
+            f.write(f'name = "{workers_config["name"]}"\n')
+            f.write(f'main = "{workers_config["main"]}"\n')
+            f.write(f'compatibility_date = "{workers_config["compatibility_date"]}"\n\n')
+            
+            f.write('[vars]\n')
+            for key, value in workers_config['vars'].items():
+                f.write(f'{key} = "{value}"\n')
+        
+        print("✅ wrangler.toml 已创建")
+        
+        # Pages配置 (用于前端)
+        pages_config = {
+            "project_name": f"{self.project_name}-frontend",
+            "build_command": "npm run build",
+            "build_output_directory": "dist",
+            "root_directory": "frontend"
+        }
+        
+        with open('pages.json', 'w', encoding='utf-8') as f:
+            json.dump(pages_config, f, indent=2, ensure_ascii=False)
+        
+        print("✅ pages.json 已创建")
+        
+        return True
+    
+    def create_worker_script(self):
+        """创建Worker脚本"""
+        print("🔧 创建Worker脚本...")
+        
+        worker_script = '''/**
+ * AI股票交易系统 - Cloudflare Worker API
+ */
+
+// 环境变量
+const SUPABASE_URL = SUPABASE_URL || '';
+const SUPABASE_KEY = SUPABASE_KEY || '';
+const JWT_SECRET_KEY = JWT_SECRET_KEY || '';
+
+// CORS头
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+// 处理CORS预检请求
+function handleCORS(request) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders
+    });
+  }
+  return null;
+}
+
+// API路由处理
+async function handleAPI(request) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  
+  // 健康检查
+  if (path === '/api/health') {
+    return new Response(JSON.stringify({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      service: 'ai-stock-trading-system'
+    }), {
+      headers: { 
+        'Content-Type': 'application/json',
+        ...corsHeaders 
+      }
+    });
+  }
+  
+  // 股票数据API
+  if (path.startsWith('/api/stocks')) {
+    return handleStockAPI(request);
+  }
+  
+  // 用户认证API
+  if (path.startsWith('/api/auth')) {
+    return handleAuthAPI(request);
+  }
+  
+  // 交易API
+  if (path.startsWith('/api/trades')) {
+    return handleTradeAPI(request);
+  }
+  
+  // 404
+  return new Response(JSON.stringify({
+    error: 'Not Found',
+    path: path
+  }), {
+    status: 404,
+    headers: { 
+      'Content-Type': 'application/json',
+      ...corsHeaders 
+    }
+  });
+}
+
+// 股票数据处理
+async function handleStockAPI(request) {
+  const url = new URL(request.url);
+  
+  if (url.pathname === '/api/stocks/list') {
+    // 模拟股票数据
+    const stocks = [
+      { symbol: 'AAPL', name: 'Apple Inc.', price: 150.25, change: 2.5 },
+      { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 2800.50, change: -15.25 },
+      { symbol: 'MSFT', name: 'Microsoft Corp.', price: 300.75, change: 5.10 }
+    ];
+    
+    return new Response(JSON.stringify({
+      success: true,
+      data: stocks
+    }), {
+      headers: { 
+        'Content-Type': 'application/json',
+        ...corsHeaders 
+      }
+    });
+  }
+  
+  return new Response(JSON.stringify({
+    error: 'Stock API endpoint not found'
+  }), {
+    status: 404,
+    headers: { 
+      'Content-Type': 'application/json',
+      ...corsHeaders 
+    }
+  });
+}
+
+// 认证处理
+async function handleAuthAPI(request) {
+  return new Response(JSON.stringify({
+    message: 'Auth API - Coming Soon'
+  }), {
+    headers: { 
+      'Content-Type': 'application/json',
+      ...corsHeaders 
+    }
+  });
+}
+
+// 交易处理
+async function handleTradeAPI(request) {
+  return new Response(JSON.stringify({
+    message: 'Trade API - Coming Soon'
+  }), {
+    headers: { 
+      'Content-Type': 'application/json',
+      ...corsHeaders 
+    }
+  });
+}
+
+// 主处理函数
+export default {
+  async fetch(request, env, ctx) {
+    try {
+      // 处理CORS
+      const corsResponse = handleCORS(request);
+      if (corsResponse) return corsResponse;
+      
+      // 处理API请求
+      return await handleAPI(request);
+      
+    } catch (error) {
+      return new Response(JSON.stringify({
+        error: 'Internal Server Error',
+        message: error.message
+      }), {
+        status: 500,
+        headers: { 
+          'Content-Type': 'application/json',
+          ...corsHeaders 
+        }
+      });
+    }
+  }
+};
+'''
+        
+        with open('worker.js', 'w', encoding='utf-8') as f:
+            f.write(worker_script)
+        
+        print("✅ worker.js 已创建")
+        return True
+    
+    def build_frontend(self):
+        """构建前端"""
+        print("🏗️ 构建前端...")
+
+        # 创建构建目录
+        if os.path.exists(self.build_dir):
+            shutil.rmtree(self.build_dir)
+        os.makedirs(self.build_dir)
+
+        # 复制前端文件到构建目录
+        frontend_files = [
+            ('frontend/simple_frontend.html', 'index.html'),
+            ('frontend/realtime_data_monitor.html', 'monitor.html'),
+            ('frontend/services/aiService.js', 'js/aiService.js'),
+            ('frontend/services/marketDataService.js', 'js/marketDataService.js')
+        ]
+
+        for src_path, dest_name in frontend_files:
+            if os.path.exists(src_path):
+                dest_path = os.path.join(self.build_dir, dest_name)
+                dest_dir = os.path.dirname(dest_path)
+
+                # 创建目标目录
+                if dest_dir and not os.path.exists(dest_dir):
+                    os.makedirs(dest_dir)
+
+                shutil.copy2(src_path, dest_path)
+                print(f"   ✅ 复制 {src_path} -> {dest_name}")
+
+        # 更新HTML中的API端点
+        html_files = ['index.html', 'monitor.html']
+        for html_file in html_files:
+            html_path = os.path.join(self.build_dir, html_file)
+            if os.path.exists(html_path):
+                with open(html_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # 替换API端点为Worker URL
+                content = content.replace(
+                    'http://localhost:8000/api',
+                    f'https://{self.project_name}-api.your-subdomain.workers.dev/api'
+                )
+                content = content.replace(
+                    'http://127.0.0.1:8000/api',
+                    f'https://{self.project_name}-api.your-subdomain.workers.dev/api'
+                )
+
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+                print(f"   ✅ 更新 {html_file} API端点配置")
+
+        print("✅ 前端构建完成")
+        return True
+    
+    def deploy(self):
+        """执行部署"""
+        print("🚀 开始部署到Cloudflare...")
+        
+        # 检查前提条件
+        checks = self.check_prerequisites()
+        failed_checks = [check for check in checks if not check[1]]
+        
+        if failed_checks:
+            print("❌ 部署前提条件检查失败:")
+            for name, _, msg in failed_checks:
+                print(f"   • {name}: {msg}")
+            return False
+        
+        print("✅ 前提条件检查通过")
+        
+        # 加载配置
+        if not self.config_loaded:
+            self.load_config()
+        
+        # 创建配置文件
+        self.create_wrangler_config()
+        self.create_worker_script()
+        self.build_frontend()
+        
+        # 生成部署指南
+        self.generate_deployment_guide()
+        
+        print("\n🎉 部署准备完成!")
+        print("\n📋 手动部署步骤:")
+        print("1. 安装Wrangler: npm install -g wrangler")
+        print("2. 登录Cloudflare: wrangler auth login")
+        print("3. 部署Worker: wrangler deploy")
+        print("4. 部署Pages: wrangler pages deploy dist --project-name ai-stock-trading-system-frontend")
+        print("5. 查看部署指南: CLOUDFLARE_DEPLOYMENT_GUIDE.md")
+        
+        return True
+    
+    def generate_deployment_guide(self):
+        """生成部署指南"""
+        guide = f"""# Cloudflare 部署指南
+
+## 项目信息
+- **项目名称**: {self.project_name}
+- **Worker名称**: {self.project_name}-api
+- **Pages项目**: {self.project_name}-frontend
+- **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## 部署步骤
+
+### 1. 安装和配置Wrangler
+```bash
+# 安装Wrangler CLI
+npm install -g wrangler
+
+# 登录Cloudflare
+wrangler auth login
+```
+
+### 2. 配置环境变量
+```bash
+# 设置Supabase服务密钥
+wrangler secret put SUPABASE_SERVICE_KEY
+
+# 设置股票API密钥
+wrangler secret put CHAGUBANG_TOKEN
+```
+
+### 3. 部署Worker (API后端)
+```bash
+# 部署Worker
+wrangler deploy
+
+# 查看部署状态
+wrangler tail
+```
+
+### 4. 部署Pages (前端)
+```bash
+# 部署到Pages
+wrangler pages deploy dist --project-name {self.project_name}-frontend
+
+# 或者连接Git仓库自动部署
+wrangler pages project create {self.project_name}-frontend
+```
+
+### 5. 配置自定义域名 (可选)
+1. 在Cloudflare Dashboard中添加域名
+2. 配置DNS记录
+3. 在Worker/Pages设置中绑定域名
+
+## API端点
+- **Worker URL**: https://{self.project_name}-api.your-subdomain.workers.dev
+- **Pages URL**: https://{self.project_name}-frontend.pages.dev
+
+### API路由
+- `GET /api/health` - 健康检查
+- `GET /api/stocks/list` - 获取股票列表
+- `POST /api/auth/login` - 用户登录
+- `GET /api/trades` - 获取交易记录
+
+## 监控和维护
+- 使用Wrangler查看日志: `wrangler tail`
+- 在Cloudflare Dashboard中监控性能
+- 设置告警和通知
+
+## 故障排除
+1. **部署失败**: 检查wrangler.toml配置
+2. **API错误**: 检查环境变量设置
+3. **CORS问题**: 确认corsHeaders配置
+4. **性能问题**: 检查Worker执行时间
+
+## 成本估算
+- **Workers**: 免费额度100,000请求/天
+- **Pages**: 免费额度500次构建/月
+- **超出免费额度**: 按使用量付费
+
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+        
+        with open('CLOUDFLARE_DEPLOYMENT_GUIDE.md', 'w', encoding='utf-8') as f:
+            f.write(guide)
+        
+        print("✅ 部署指南已生成: CLOUDFLARE_DEPLOYMENT_GUIDE.md")
+
+def main():
+    """主函数"""
+    print("☁️ Cloudflare Workers/Pages 部署工具")
+    print("=" * 50)
+    
+    deployer = CloudflareDeployer()
+    
+    try:
+        success = deployer.deploy()
+        return success
+    except Exception as e:
+        print(f"❌ 部署过程中发生错误: {e}")
+        return False
+
+if __name__ == "__main__":
+    try:
+        result = main()
+        exit(0 if result else 1)
+    except KeyboardInterrupt:
+        print("\n\n⏹️ 部署被用户中断")
+        exit(1)

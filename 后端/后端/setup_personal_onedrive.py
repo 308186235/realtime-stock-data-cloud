@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+个人OneDrive挂载设置工具
+专门为个人OneDrive账户设计的简化配置工具
+"""
+
+import subprocess
+import time
+from pathlib import Path
+
+class PersonalOneDriveSetup:
+    def __init__(self):
+        self.base_dir = Path("E:/交易8 - 副本")
+        self.rclone_exe = Path("E:/交易8/rclone/rclone-v1.70.2-windows-amd64/rclone.exe")
+        self.mount_point = Path("C:/mnt/onedrive")
+        self.trading_data_dir = self.mount_point / "TradingData"
+        self.config_name = "onedrive_trading"
+        self.log_file = self.base_dir / "rclone.log"
+        
+    def check_prerequisites(self):
+        """检查前置条件"""
+        print("🔍 检查前置条件...")
+        
+        # 检查rclone程序
+        if not self.rclone_exe.exists():
+            print(f"❌ rclone程序不存在: {self.rclone_exe}")
+            return False
+        print(f"✅ rclone程序存在")
+        
+        # 创建挂载点
+        try:
+            self.mount_point.mkdir(parents=True, exist_ok=True)
+            self.trading_data_dir.mkdir(parents=True, exist_ok=True)
+            print(f"✅ 挂载点已准备: {self.mount_point}")
+        except Exception as e:
+            print(f"❌ 创建挂载点失败: {e}")
+            return False
+        
+        return True
+    
+    def stop_existing_rclone(self):
+        """停止现有rclone进程"""
+        print("🔍 停止现有rclone进程...")
+        try:
+            subprocess.run(['taskkill', '/F', '/IM', 'rclone.exe'], 
+                         capture_output=True)
+            time.sleep(2)
+            print("✅ 已停止现有rclone进程")
+        except:
+            print("✅ 没有运行中的rclone进程")
+    
+    def check_existing_config(self):
+        """检查现有配置"""
+        print("🔍 检查现有配置...")
+        try:
+            result = subprocess.run(
+                [str(self.rclone_exe), 'config', 'show', self.config_name],
+                capture_output=True, text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"✅ 找到现有配置: {self.config_name}")
+                return True
+            else:
+                print(f"❌ 配置不存在: {self.config_name}")
+                return False
+        except Exception as e:
+            print(f"❌ 检查配置失败: {e}")
+            return False
+    
+    def create_config_guide(self):
+        """创建配置指南"""
+        print("=" * 60)
+        print("📋 个人OneDrive配置指南")
+        print("=" * 60)
+        print()
+        print("请按照以下步骤配置rclone:")
+        print()
+        print("1️⃣ 在弹出的配置界面中:")
+        print("   - 选择 'n' (New remote)")
+        print("   - 输入名称: onedrive_trading")
+        print()
+        print("2️⃣ 选择存储类型:")
+        print("   - 找到并选择 'Microsoft OneDrive'")
+        print("   - 通常是选项 '26' 或类似数字")
+        print()
+        print("3️⃣ 配置OneDrive:")
+        print("   - Client ID: 直接回车(使用默认)")
+        print("   - Client Secret: 直接回车(使用默认)")
+        print("   - Region: 选择 '1' (Microsoft Cloud Global)")
+        print("   - Edit advanced config: 选择 'n' (No)")
+        print()
+        print("4️⃣ 授权:")
+        print("   - Use web browser: 选择 'y' (Yes)")
+        print("   - 在浏览器中登录您的个人OneDrive账户")
+        print("   - 点击'接受'授权rclone访问")
+        print()
+        print("5️⃣ 选择驱动器:")
+        print("   - 选择您的个人OneDrive (通常是选项 '0')")
+        print()
+        print("6️⃣ 完成配置:")
+        print("   - 确认配置正确")
+        print("   - 选择 'y' (Yes, this is OK)")
+        print("   - 选择 'q' (Quit config)")
+        print()
+        print("=" * 60)
+        print("按任意键开始配置...")
+        input()
+    
+    def run_config(self):
+        """运行配置"""
+        print("🚀 启动rclone配置...")
+        try:
+            result = subprocess.run([str(self.rclone_exe), 'config'], 
+                                  cwd=str(self.base_dir))
+            return result.returncode == 0
+        except Exception as e:
+            print(f"❌ 配置失败: {e}")
+            return False
+    
+    def test_connection(self):
+        """测试连接"""
+        print("🔍 测试OneDrive连接...")
+        try:
+            result = subprocess.run(
+                [str(self.rclone_exe), 'lsd', f'{self.config_name}:', '--max-depth', '1'],
+                capture_output=True, text=True, timeout=30
+            )
+            
+            if result.returncode == 0:
+                print("✅ OneDrive连接成功!")
+                print("📁 OneDrive根目录内容:")
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        print(f"   {line}")
+                return True
+            else:
+                print(f"❌ OneDrive连接失败: {result.stderr}")
+                return False
+        except subprocess.TimeoutExpired:
+            print("❌ 连接超时")
+            return False
+        except Exception as e:
+            print(f"❌ 测试连接失败: {e}")
+            return False
+    
+    def start_mount(self):
+        """启动挂载"""
+        print("🚀 启动OneDrive挂载...")
+        
+        try:
+            cmd = [
+                str(self.rclone_exe), 'mount',
+                f'{self.config_name}:', str(self.mount_point),
+                '--vfs-cache-mode', 'writes',
+                '--vfs-cache-max-age', '10m',
+                '--log-level', 'INFO',
+                '--log-file', str(self.log_file),
+                '--daemon'
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print("✅ OneDrive挂载启动成功")
+                time.sleep(5)  # 等待挂载完成
+                return True
+            else:
+                print(f"❌ 挂载启动失败: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 启动挂载异常: {e}")
+            return False
+    
+    def test_mount(self):
+        """测试挂载"""
+        print("🔍 测试挂载状态...")
+        
+        try:
+            # 检查挂载点
+            if not self.mount_point.exists():
+                print(f"❌ 挂载点不存在: {self.mount_point}")
+                return False
+            
+            # 列出目录内容
+            files = list(self.mount_point.iterdir())
+            print(f"✅ 挂载成功,OneDrive包含 {len(files)} 个项目")
+            
+            # 确保TradingData目录存在
+            if not self.trading_data_dir.exists():
+                self.trading_data_dir.mkdir(exist_ok=True)
+                print(f"✅ 已创建交易数据目录: {self.trading_data_dir}")
+            
+            # 测试写入
+            test_file = self.trading_data_dir / "mount_test.txt"
+            with open(test_file, 'w', encoding='utf-8') as f:
+                f.write(f"OneDrive mount test - {time.time()}")
+            
+            if test_file.exists():
+                test_file.unlink()
+                print("✅ 挂载读写测试成功")
+                return True
+            else:
+                print("❌ 挂载写入测试失败")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 挂载测试失败: {e}")
+            return False
+    
+    def create_startup_script(self):
+        """创建启动脚本"""
+        print("📝 创建启动脚本...")
+        
+        script_content = f'''@echo off
+chcp 65001 >nul
+echo 🚀 启动个人OneDrive交易系统...
+
+echo 检查rclone进程...
+tasklist /FI "IMAGENAME eq rclone.exe" 2>NUL | find /I /N "rclone.exe">NUL
+if "%ERRORLEVEL%"=="0" (
+    echo ✅ rclone进程已在运行
+) else (
+    echo 🔄 启动OneDrive挂载...
+    "{self.rclone_exe}" mount {self.config_name}: "{self.mount_point}" ^
+      --vfs-cache-mode writes ^
+      --vfs-cache-max-age 10m ^
+      --log-level INFO ^
+      --log-file "{self.log_file}" ^
+      --daemon
+    
+    echo ✅ OneDrive挂载已启动
+    timeout /t 5 /nobreak >nul
+)
+
+echo 🔍 测试挂载状态...
+if exist "{self.mount_point}" (
+    dir "{self.mount_point}" >nul 2>&1
+    if %ERRORLEVEL% EQU 0 (
+        echo ✅ 个人OneDrive挂载正常
+        echo 📁 交易数据目录: {self.trading_data_dir}
+        echo 📋 请将交易软件导出路径设置为: {self.trading_data_dir}
+    ) else (
+        echo ❌ OneDrive挂载异常,请检查网络连接
+    )
+) else (
+    echo ❌ 挂载点不存在
+)
+
+echo.
+echo 🎉 个人OneDrive交易系统已启动!
+pause
+'''
+        
+        try:
+            script_path = self.base_dir / "start_personal_onedrive.bat"
+            with open(script_path, 'w', encoding='utf-8') as f:
+                f.write(script_content)
+            print(f"✅ 启动脚本已创建: {script_path}")
+            return True
+        except Exception as e:
+            print(f"❌ 创建启动脚本失败: {e}")
+            return False
+    
+    def setup(self):
+        """完整设置流程"""
+        print("=" * 60)
+        print("🔧 个人OneDrive交易系统设置")
+        print("=" * 60)
+        
+        # 1. 检查前置条件
+        if not self.check_prerequisites():
+            return False
+        
+        # 2. 停止现有进程
+        self.stop_existing_rclone()
+        
+        # 3. 检查现有配置
+        if not self.check_existing_config():
+            # 4. 显示配置指南
+            self.create_config_guide()
+            
+            # 5. 运行配置
+            if not self.run_config():
+                print("❌ 配置失败")
+                return False
+        
+        # 6. 测试连接
+        if not self.test_connection():
+            print("❌ 连接测试失败,请检查配置")
+            return False
+        
+        # 7. 启动挂载
+        if not self.start_mount():
+            return False
+        
+        # 8. 测试挂载
+        if not self.test_mount():
+            return False
+        
+        # 9. 创建启动脚本
+        self.create_startup_script()
+        
+        print()
+        print("🎉 个人OneDrive交易系统设置完成!")
+        print("=" * 60)
+        print(f"📁 OneDrive挂载点: {self.mount_point}")
+        print(f"📊 交易数据目录: {self.trading_data_dir}")
+        print(f"📋 日志文件: {self.log_file}")
+        print()
+        print("💡 使用说明:")
+        print(f"1. 交易软件导出路径设置为: {self.trading_data_dir}")
+        print("2. 使用 start_personal_onedrive.bat 启动系统")
+        print("3. 数据会自动同步到您的个人OneDrive")
+        print("=" * 60)
+        
+        return True
+
+def main():
+    setup = PersonalOneDriveSetup()
+    success = setup.setup()
+    
+    if not success:
+        print()
+        print("❌ 个人OneDrive设置失败")
+        print("📋 请检查:")
+        print("1. 网络连接是否正常")
+        print("2. OneDrive账户是否可以正常访问")
+        print("3. 是否有管理员权限")
+        input("按任意键退出...")
+
+if __name__ == "__main__":
+    main()

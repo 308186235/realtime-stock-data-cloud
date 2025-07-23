@@ -1,0 +1,487 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+测试云端智能Agent架构
+验证移动端连接云端Agent,实时数据,智能决策,交易指令传输的完整流程
+"""
+
+import asyncio
+import aiohttp
+import json
+import time
+from datetime import datetime
+
+class CloudAgentArchitectureTester:
+    def __init__(self):
+        self.cloud_base_url = "https://api.aigupiao.me"  # 您的云端域名
+        self.test_results = {}
+        
+    async def test_complete_cloud_architecture(self):
+        """测试完整的云端架构"""
+        print("☁️ 云端智能Agent架构测试")
+        print("=" * 60)
+        print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"云端地址: {self.cloud_base_url}")
+        print()
+        
+        results = {}
+        
+        # 1. 测试云端健康状态
+        print("🏥 测试1: 云端健康状态")
+        print("-" * 40)
+        results["cloud_health"] = await self.test_cloud_health()
+        
+        # 2. 测试云端数据接收系统
+        print("\n📊 测试2: 云端数据接收系统")
+        print("-" * 40)
+        results["cloud_data_receiver"] = await self.test_cloud_data_receiver()
+        
+        # 3. 测试云端智能Agent
+        print("\n🤖 测试3: 云端智能Agent")
+        print("-" * 40)
+        results["cloud_intelligent_agent"] = await self.test_cloud_intelligent_agent()
+        
+        # 4. 测试云端到本地交易指令传输
+        print("\n🌉 测试4: 云端到本地交易指令传输")
+        print("-" * 40)
+        results["cloud_to_local_trading"] = await self.test_cloud_to_local_trading()
+        
+        # 5. 测试移动端连接云端
+        print("\n📱 测试5: 移动端连接云端")
+        print("-" * 40)
+        results["mobile_to_cloud"] = await self.test_mobile_to_cloud_connection()
+        
+        # 6. 测试完整流程
+        print("\n🔄 测试6: 完整流程测试")
+        print("-" * 40)
+        results["complete_flow"] = await self.test_complete_flow()
+        
+        # 7. 生成架构测试报告
+        print("\n📋 云端架构测试报告")
+        print("-" * 40)
+        self.generate_architecture_report(results)
+        
+        return results
+    
+    async def test_cloud_health(self):
+        """测试云端健康状态"""
+        try:
+            print("🔍 检查云端服务健康状态...")
+            
+            async with aiohttp.ClientSession() as session:
+                start_time = time.time()
+                async with session.get(f"{self.cloud_base_url}/api/health", timeout=10) as response:
+                    response_time = (time.time() - start_time) * 1000
+                    
+                    if response.status == 200:
+                        data = await response.json()
+                        print(f"   ✅ 云端服务正常")
+                        print(f"      服务: {data.get('service', 'N/A')}")
+                        print(f"      状态: {data.get('status', 'N/A')}")
+                        print(f"      版本: {data.get('version', 'N/A')}")
+                        print(f"      响应时间: {response_time:.0f}ms")
+                        
+                        return {
+                            "success": True,
+                            "service": data.get('service'),
+                            "status": data.get('status'),
+                            "version": data.get('version'),
+                            "response_time": response_time
+                        }
+                    else:
+                        print(f"   ❌ 云端服务异常: HTTP {response.status}")
+                        return {"success": False, "status_code": response.status}
+                        
+        except Exception as e:
+            print(f"   ❌ 云端健康检查失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_cloud_data_receiver(self):
+        """测试云端数据接收系统"""
+        try:
+            print("📡 测试云端数据接收系统...")
+            
+            async with aiohttp.ClientSession() as session:
+                # 启动云端数据接收
+                print("   🚀 启动云端数据接收...")
+                async with session.post(f"{self.cloud_base_url}/api/start-cloud-data-receiver") as response:
+                    if response.status == 200:
+                        start_result = await response.json()
+                        print(f"      ✅ 启动成功: {start_result.get('message', 'N/A')}")
+                    else:
+                        print(f"      ⚠️ 启动异常: HTTP {response.status}")
+                
+                # 等待数据接收
+                await asyncio.sleep(3)
+                
+                # 检查数据统计
+                print("   📊 检查数据统计...")
+                async with session.get(f"{self.cloud_base_url}/api/cloud-data-stats") as response:
+                    if response.status == 200:
+                        stats = await response.json()
+                        print(f"      连接状态: {stats.get('connectionStatus', 'N/A')}")
+                        print(f"      股票数量: {stats.get('stockCount', 0)}")
+                        print(f"      是否交易时间: {stats.get('isMarketHours', False)}")
+                        
+                        # 获取股票数据
+                        print("   📈 获取股票数据...")
+                        async with session.get(f"{self.cloud_base_url}/api/cloud-stock-data") as data_response:
+                            if data_response.status == 200:
+                                stock_data = await data_response.json()
+                                print(f"      ✅ 获取到 {len(stock_data)} 只股票数据")
+                                
+                                if stock_data:
+                                    sample = stock_data[0]
+                                    print(f"      示例: {sample.get('symbol')} {sample.get('price')} {sample.get('change_percent')}%")
+                                
+                                return {
+                                    "success": True,
+                                    "connection_status": stats.get('connectionStatus'),
+                                    "stock_count": len(stock_data),
+                                    "has_real_data": len(stock_data) > 0,
+                                    "is_market_hours": stats.get('isMarketHours')
+                                }
+                            else:
+                                print(f"      ❌ 获取股票数据失败: HTTP {data_response.status}")
+                                return {"success": False, "error": "获取股票数据失败"}
+                    else:
+                        print(f"      ❌ 获取统计失败: HTTP {response.status}")
+                        return {"success": False, "error": "获取统计失败"}
+                        
+        except Exception as e:
+            print(f"   ❌ 云端数据接收测试失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_cloud_intelligent_agent(self):
+        """测试云端智能Agent"""
+        try:
+            print("🧠 测试云端智能Agent...")
+            
+            async with aiohttp.ClientSession() as session:
+                # 获取Agent状态
+                print("   📊 获取Agent状态...")
+                async with session.get(f"{self.cloud_base_url}/api/cloud-agent-status") as response:
+                    if response.status == 200:
+                        status = await response.json()
+                        print(f"      Agent名称: {status.get('name', 'N/A')}")
+                        print(f"      版本: {status.get('version', 'N/A')}")
+                        print(f"      总决策数: {status.get('stats', {}).get('totalDecisions', 0)}")
+                        print(f"      平均置信度: {status.get('stats', {}).get('avgConfidence', 0):.3f}")
+                    else:
+                        print(f"      ⚠️ 获取状态异常: HTTP {response.status}")
+                
+                # 测试智能分析
+                print("   🔍 测试智能分析...")
+                test_data = {
+                    "stockData": {
+                        "symbol": "000001",
+                        "price": 13.50,
+                        "change_percent": 2.5,
+                        "volume": 1500000,
+                        "timestamp": datetime.now().isoformat()
+                    },
+                    "marketContext": {
+                        "totalStocks": 10,
+                        "risingCount": 6,
+                        "fallingCount": 4,
+                        "averageChange": 1.2
+                    }
+                }
+                
+                async with session.post(
+                    f"{self.cloud_base_url}/api/cloud-intelligent-analysis",
+                    json=test_data
+                ) as response:
+                    if response.status == 200:
+                        analysis_result = await response.json()
+                        
+                        if analysis_result.get('success'):
+                            decision = analysis_result.get('decision', {})
+                            print(f"      ✅ 智能分析成功")
+                            print(f"         决策动作: {decision.get('action', 'N/A')}")
+                            print(f"         置信度: {decision.get('confidence', 0):.3f}")
+                            print(f"         是否交易: {decision.get('shouldTrade', False)}")
+                            print(f"         决策理由: {decision.get('reasoning', 'N/A')}")
+                            
+                            return {
+                                "success": True,
+                                "has_agent": True,
+                                "decision_action": decision.get('action'),
+                                "confidence": decision.get('confidence'),
+                                "should_trade": decision.get('shouldTrade'),
+                                "has_reasoning": bool(decision.get('reasoning'))
+                            }
+                        else:
+                            print(f"      ❌ 智能分析失败: {analysis_result.get('error', 'N/A')}")
+                            return {"success": False, "error": analysis_result.get('error')}
+                    else:
+                        print(f"      ❌ 智能分析请求失败: HTTP {response.status}")
+                        return {"success": False, "error": f"HTTP {response.status}"}
+                        
+        except Exception as e:
+            print(f"   ❌ 云端智能Agent测试失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_cloud_to_local_trading(self):
+        """测试云端到本地交易指令传输"""
+        try:
+            print("🌉 测试云端到本地交易指令传输...")
+            
+            async with aiohttp.ClientSession() as session:
+                # 获取传输统计
+                print("   📊 获取传输统计...")
+                async with session.get(f"{self.cloud_base_url}/api/cloud-transmission-stats") as response:
+                    if response.status == 200:
+                        stats = await response.json()
+                        print(f"      总传输数: {stats.get('total', 0)}")
+                        print(f"      成功数: {stats.get('successful', 0)}")
+                        print(f"      失败数: {stats.get('failed', 0)}")
+                        print(f"      成功率: {stats.get('successRate', 0)}%")
+                        
+                        recent = stats.get('recentTransmissions', [])
+                        if recent:
+                            print(f"      最近传输: {len(recent)} 条记录")
+                            for transmission in recent[-3:]:
+                                print(f"         {transmission.get('action')} {transmission.get('symbol')} - {transmission.get('result', {}).get('success', False)}")
+                        
+                        return {
+                            "success": True,
+                            "has_transmission_system": True,
+                            "total_transmissions": stats.get('total', 0),
+                            "success_rate": float(stats.get('successRate', 0)),
+                            "has_recent_activity": len(recent) > 0
+                        }
+                    else:
+                        print(f"      ❌ 获取传输统计失败: HTTP {response.status}")
+                        return {"success": False, "error": f"HTTP {response.status}"}
+                        
+        except Exception as e:
+            print(f"   ❌ 云端到本地传输测试失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_mobile_to_cloud_connection(self):
+        """测试移动端连接云端"""
+        try:
+            print("📱 测试移动端连接云端...")
+            
+            # 模拟移动端请求
+            mobile_headers = {
+                'User-Agent': 'Mobile-Trading-App/1.0',
+                'X-Client-Type': 'mobile'
+            }
+            
+            async with aiohttp.ClientSession(headers=mobile_headers) as session:
+                # 测试移动端健康检查
+                print("   🔍 移动端健康检查...")
+                start_time = time.time()
+                async with session.get(f"{self.cloud_base_url}/api/health") as response:
+                    response_time = (time.time() - start_time) * 1000
+                    
+                    if response.status == 200:
+                        print(f"      ✅ 移动端连接成功 ({response_time:.0f}ms)")
+                    else:
+                        print(f"      ❌ 移动端连接失败: HTTP {response.status}")
+                        return {"success": False, "status_code": response.status}
+                
+                # 测试移动端获取股票数据
+                print("   📊 移动端获取股票数据...")
+                async with session.get(f"{self.cloud_base_url}/api/cloud-stock-data") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        print(f"      ✅ 获取到 {len(data)} 只股票数据")
+                        
+                        return {
+                            "success": True,
+                            "mobile_connection": True,
+                            "response_time": response_time,
+                            "data_access": len(data) > 0,
+                            "stock_count": len(data)
+                        }
+                    else:
+                        print(f"      ❌ 移动端数据获取失败: HTTP {response.status}")
+                        return {"success": False, "error": "数据获取失败"}
+                        
+        except Exception as e:
+            print(f"   ❌ 移动端连接测试失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_complete_flow(self):
+        """测试完整流程"""
+        try:
+            print("🔄 测试完整流程...")
+            
+            print("   1️⃣ 云端接收实时数据 -> 2️⃣ 智能分析 -> 3️⃣ 生成交易指令 -> 4️⃣ 传输到本地")
+            
+            # 模拟完整流程
+            flow_steps = {
+                "data_reception": False,
+                "intelligent_analysis": False,
+                "trading_decision": False,
+                "local_transmission": False
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                # 步骤1: 检查数据接收
+                async with session.get(f"{self.cloud_base_url}/api/cloud-data-stats") as response:
+                    if response.status == 200:
+                        stats = await response.json()
+                        if stats.get('stockCount', 0) > 0:
+                            flow_steps["data_reception"] = True
+                            print("      ✅ 步骤1: 数据接收正常")
+                        else:
+                            print("      ❌ 步骤1: 无数据接收")
+                
+                # 步骤2: 智能分析
+                test_data = {
+                    "stockData": {
+                        "symbol": "000001",
+                        "price": 13.50,
+                        "change_percent": 3.2,
+                        "volume": 2000000
+                    },
+                    "marketContext": {
+                        "totalStocks": 10,
+                        "risingCount": 7,
+                        "fallingCount": 3,
+                        "averageChange": 2.1
+                    }
+                }
+                
+                async with session.post(
+                    f"{self.cloud_base_url}/api/cloud-intelligent-analysis",
+                    json=test_data
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get('success'):
+                            flow_steps["intelligent_analysis"] = True
+                            print("      ✅ 步骤2: 智能分析正常")
+                            
+                            decision = result.get('decision', {})
+                            if decision.get('shouldTrade'):
+                                flow_steps["trading_decision"] = True
+                                print("      ✅ 步骤3: 生成交易决策")
+                                
+                                # 步骤4: 检查传输系统
+                                async with session.get(f"{self.cloud_base_url}/api/cloud-transmission-stats") as trans_response:
+                                    if trans_response.status == 200:
+                                        flow_steps["local_transmission"] = True
+                                        print("      ✅ 步骤4: 传输系统可用")
+                                    else:
+                                        print("      ❌ 步骤4: 传输系统异常")
+                            else:
+                                print("      ⚠️ 步骤3: 决策建议不交易")
+                        else:
+                            print("      ❌ 步骤2: 智能分析失败")
+                    else:
+                        print("      ❌ 步骤2: 智能分析请求失败")
+            
+            completed_steps = sum(flow_steps.values())
+            total_steps = len(flow_steps)
+            
+            print(f"   📊 流程完成度: {completed_steps}/{total_steps} ({completed_steps/total_steps*100:.1f}%)")
+            
+            return {
+                "success": completed_steps >= 3,  # 至少完成3个步骤
+                "completed_steps": completed_steps,
+                "total_steps": total_steps,
+                "completion_rate": completed_steps/total_steps*100,
+                "flow_steps": flow_steps
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 完整流程测试失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def generate_architecture_report(self, results):
+        """生成架构测试报告"""
+        print("📊 云端智能Agent架构测试总结")
+        print("=" * 60)
+        
+        # 统计成功率
+        total_tests = len(results)
+        successful_tests = sum(1 for result in results.values() if result.get("success", False))
+        success_rate = (successful_tests / total_tests * 100) if total_tests > 0 else 0
+        
+        print(f"\n📈 架构测试成功率: {success_rate:.1f}% ({successful_tests}/{total_tests})")
+        
+        # 详细结果
+        print(f"\n📋 详细测试结果:")
+        test_names = {
+            "cloud_health": "云端健康状态",
+            "cloud_data_receiver": "云端数据接收",
+            "cloud_intelligent_agent": "云端智能Agent",
+            "cloud_to_local_trading": "云端到本地传输",
+            "mobile_to_cloud": "移动端连接云端",
+            "complete_flow": "完整流程测试"
+        }
+        
+        for test_key, result in results.items():
+            test_name = test_names.get(test_key, test_key)
+            status = "✅" if result.get("success") else "❌"
+            print(f"   {status} {test_name}")
+            
+            if not result.get("success") and "error" in result:
+                print(f"      错误: {result['error']}")
+        
+        # 架构完整性评估
+        print(f"\n🏗️ 架构完整性评估:")
+        
+        cloud_health = results.get("cloud_health", {})
+        data_receiver = results.get("cloud_data_receiver", {})
+        intelligent_agent = results.get("cloud_intelligent_agent", {})
+        trading_bridge = results.get("cloud_to_local_trading", {})
+        mobile_connection = results.get("mobile_to_cloud", {})
+        complete_flow = results.get("complete_flow", {})
+        
+        print(f"   ☁️ 云端服务: {'✅' if cloud_health.get('success') else '❌'}")
+        print(f"   📡 实时数据: {'✅' if data_receiver.get('has_real_data') else '❌'}")
+        print(f"   🤖 智能Agent: {'✅' if intelligent_agent.get('has_agent') else '❌'}")
+        print(f"   🌉 交易桥接: {'✅' if trading_bridge.get('has_transmission_system') else '❌'}")
+        print(f"   📱 移动端连接: {'✅' if mobile_connection.get('mobile_connection') else '❌'}")
+        print(f"   🔄 完整流程: {'✅' if complete_flow.get('success') else '❌'}")
+        
+        # 架构评级
+        print(f"\n🎯 架构评级:")
+        if success_rate >= 90:
+            grade = "A+ 优秀"
+            status = "🎉 云端智能Agent架构完整,可以投入使用"
+        elif success_rate >= 75:
+            grade = "A 良好"
+            status = "✅ 架构基本完整,需要优化部分功能"
+        elif success_rate >= 60:
+            grade = "B 一般"
+            status = "⚠️ 架构部分可用,需要修复关键问题"
+        else:
+            grade = "C 需要改进"
+            status = "❌ 架构存在重大问题,需要大量改进"
+        
+        print(f"   等级: {grade}")
+        print(f"   状态: {status}")
+        
+        # 关键指标
+        print(f"\n📊 关键指标:")
+        if data_receiver.get('success'):
+            print(f"   📈 股票数据: {data_receiver.get('stock_count', 0)} 只")
+        if intelligent_agent.get('success'):
+            print(f"   🧠 决策置信度: {intelligent_agent.get('confidence', 0):.3f}")
+        if mobile_connection.get('success'):
+            print(f"   📱 移动端响应: {mobile_connection.get('response_time', 0):.0f}ms")
+        if complete_flow.get('success'):
+            print(f"   🔄 流程完成度: {complete_flow.get('completion_rate', 0):.1f}%")
+        
+        # 架构优势
+        print(f"\n🎊 架构优势:")
+        print(f"   ☁️ 全云端部署 - 除交易执行外全部在云端")
+        print(f"   📊 真实数据源 - 茶股帮A股实时数据")
+        print(f"   🤖 智能决策 - 云端AI智能分析和决策")
+        print(f"   📱 移动端友好 - 直接连接云端服务")
+        print(f"   🔒 安全传输 - 云端到本地安全指令传输")
+
+async def main():
+    """主函数"""
+    tester = CloudAgentArchitectureTester()
+    await tester.test_complete_cloud_architecture()
+
+if __name__ == "__main__":
+    asyncio.run(main())

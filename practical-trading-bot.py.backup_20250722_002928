@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+实用交易机器人
+适用于华宝证券智投版等同花顺内核交易软件
+"""
+
+import pyautogui
+import time
+import win32gui
+import win32con
+import win32api
+import cv2
+import numpy as np
+from PIL import Image
+import pytesseract
+
+class PracticalTradingBot:
+    def __init__(self):
+        self.window_hwnd = None
+        self.window_title = "华宝证券智投版"
+        
+        # 设置pyautogui参数
+        pyautogui.FAILSAFE = True
+        pyautogui.PAUSE = 0.5
+        
+    def find_trading_window(self):
+        """查找交易窗口"""
+        def enum_windows_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd)
+                if self.window_title in window_text or "交易" in window_text:
+                    self.window_hwnd = hwnd
+                    print(f"找到交易窗口: {window_text}")
+                    return False
+            return True
+        
+        win32gui.EnumWindows(enum_windows_callback, [])
+        return self.window_hwnd is not None
+    
+    def activate_window(self):
+        """激活交易窗口"""
+        if self.window_hwnd:
+            try:
+                win32gui.SetForegroundWindow(self.window_hwnd)
+                win32gui.ShowWindow(self.window_hwnd, win32con.SW_RESTORE)
+                time.sleep(1)
+                return True
+            except Exception as e:
+                print(f"激活窗口失败: {e}")
+                return False
+        return False
+    
+    def take_screenshot(self):
+        """截取交易窗口截图"""
+        if not self.window_hwnd:
+            return None
+            
+        try:
+            rect = win32gui.GetWindowRect(self.window_hwnd)
+            screenshot = pyautogui.screenshot(region=rect)
+            return screenshot, rect
+        except Exception as e:
+            print(f"截图失败: {e}")
+            return None, None
+    
+    def find_button_by_text(self, text, screenshot=None):
+        """通过文本查找按钮位置"""
+        if screenshot is None:
+            screenshot, rect = self.take_screenshot()
+            if screenshot is None:
+                return None
+        
+        # 转换为OpenCV格式
+        img = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+        
+        # 查找文本位置（这里需要OCR库支持）
+        # 简化版本：通过颜色和形状特征查找按钮
+        return self.find_button_by_color(img, text)
+    
+    def find_button_by_color(self, img, button_type):
+        """通过颜色特征查找按钮"""
+        # 这里可以根据按钮的颜色特征来定位
+        # 买入按钮通常是红色，卖出按钮通常是绿色
+        
+        if button_type == "买入":
+            # 查找红色按钮
+            lower_red = np.array([0, 0, 100])
+            upper_red = np.array([50, 50, 255])
+        elif button_type == "卖出":
+            # 查找绿色按钮
+            lower_red = np.array([0, 100, 0])
+            upper_red = np.array([50, 255, 50])
+        else:
+            return None
+            
+        mask = cv2.inRange(img, lower_red, upper_red)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            # 找到最大的轮廓
+            largest_contour = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            return (x + w//2, y + h//2)
+        
+        return None
+    
+    def click_at_position(self, x, y):
+        """在指定位置点击"""
+        try:
+            pyautogui.click(x, y)
+            time.sleep(0.5)
+            return True
+        except Exception as e:
+            print(f"点击失败: {e}")
+            return False
+    
+    def input_text_safe(self, text):
+        """安全输入文本"""
+        try:
+            # 清空输入框
+            pyautogui.hotkey('ctrl', 'a')
+            time.sleep(0.2)
+            pyautogui.press('delete')
+            time.sleep(0.2)
+            
+            # 输入新文本
+            pyautogui.typewrite(str(text))
+            time.sleep(0.3)
+            return True
+        except Exception as e:
+            print(f"输入文本失败: {e}")
+            return False
+    
+    def buy_stock_manual(self, symbol, quantity, price):
+        """手动买入股票（需要用户配合点击）"""
+        print(f"\n🔄 开始买入操作: {symbol} {quantity}股 @{price}")
+        
+        if not self.find_trading_window():
+            print("❌ 未找到交易窗口")
+            return False
+            
+        if not self.activate_window():
+            print("❌ 无法激活交易窗口")
+            return False
+        
+        print("📋 请按照以下步骤操作:")
+        print("1. 请手动点击【买入】按钮")
+        input("   点击完成后按回车继续...")
+        
+        print("2. 请确保光标在【证券代码】输入框中")
+        input("   准备好后按回车继续...")
+        
+        if self.input_text_safe(symbol):
+            print(f"✅ 已输入股票代码: {symbol}")
+        else:
+            print("❌ 输入股票代码失败")
+            return False
+        
+        print("3. 请手动点击【买入数量】输入框")
+        input("   点击完成后按回车继续...")
+        
+        if self.input_text_safe(quantity):
+            print(f"✅ 已输入买入数量: {quantity}")
+        else:
+            print("❌ 输入买入数量失败")
+            return False
+        
+        print("4. 请手动点击【买入价格】输入框")
+        input("   点击完成后按回车继续...")
+        
+        if self.input_text_safe(price):
+            print(f"✅ 已输入买入价格: {price}")
+        else:
+            print("❌ 输入买入价格失败")
+            return False
+        
+        print("5. 请检查信息无误后，手动点击【确认买入】按钮")
+        confirm = input("   确认买入请输入 'yes': ")
+        
+        if confirm.lower() == 'yes':
+            print("✅ 买入操作完成")
+            return True
+        else:
+            print("❌ 买入操作已取消")
+            return False
+    
+    def sell_stock_manual(self, symbol, quantity, price):
+        """手动卖出股票（需要用户配合点击）"""
+        print(f"\n🔄 开始卖出操作: {symbol} {quantity}股 @{price}")
+        
+        if not self.find_trading_window():
+            print("❌ 未找到交易窗口")
+            return False
+            
+        if not self.activate_window():
+            print("❌ 无法激活交易窗口")
+            return False
+        
+        print("📋 请按照以下步骤操作:")
+        print("1. 请手动点击【卖出】按钮")
+        input("   点击完成后按回车继续...")
+        
+        print("2. 请确保光标在【证券代码】输入框中")
+        input("   准备好后按回车继续...")
+        
+        if self.input_text_safe(symbol):
+            print(f"✅ 已输入股票代码: {symbol}")
+        else:
+            print("❌ 输入股票代码失败")
+            return False
+        
+        print("3. 请手动点击【卖出数量】输入框")
+        input("   点击完成后按回车继续...")
+        
+        if self.input_text_safe(quantity):
+            print(f"✅ 已输入卖出数量: {quantity}")
+        else:
+            print("❌ 输入卖出数量失败")
+            return False
+        
+        print("4. 请手动点击【卖出价格】输入框")
+        input("   点击完成后按回车继续...")
+        
+        if self.input_text_safe(price):
+            print(f"✅ 已输入卖出价格: {price}")
+        else:
+            print("❌ 输入卖出价格失败")
+            return False
+        
+        print("5. 请检查信息无误后，手动点击【确认卖出】按钮")
+        confirm = input("   确认卖出请输入 'yes': ")
+        
+        if confirm.lower() == 'yes':
+            print("✅ 卖出操作完成")
+            return True
+        else:
+            print("❌ 卖出操作已取消")
+            return False
+    
+    def get_account_info(self):
+        """获取账户信息"""
+        print("\n📊 获取账户信息...")
+        
+        if not self.find_trading_window():
+            print("❌ 未找到交易窗口")
+            return None
+            
+        if not self.activate_window():
+            print("❌ 无法激活交易窗口")
+            return None
+        
+        print("请手动切换到【资金股份】或【持仓】页面")
+        input("切换完成后按回车继续...")
+        
+        screenshot, rect = self.take_screenshot()
+        if screenshot:
+            timestamp = int(time.time())
+            filename = f"account_info_{timestamp}.png"
+            screenshot.save(filename)
+            print(f"✅ 账户信息截图已保存: {filename}")
+            return filename
+        
+        return None
+    
+    def quick_trade_interface(self):
+        """快速交易界面"""
+        print("\n🚀 华宝证券智投版 - 快速交易界面")
+        print("=" * 50)
+        
+        while True:
+            print("\n请选择操作:")
+            print("1. 买入股票")
+            print("2. 卖出股票") 
+            print("3. 查看账户信息")
+            print("4. 退出")
+            
+            choice = input("\n请输入选择 (1-4): ").strip()
+            
+            if choice == '1':
+                symbol = input("请输入股票代码: ").strip()
+                quantity = input("请输入买入数量: ").strip()
+                price = input("请输入买入价格: ").strip()
+                
+                if symbol and quantity and price:
+                    self.buy_stock_manual(symbol, quantity, price)
+                else:
+                    print("❌ 输入信息不完整")
+            
+            elif choice == '2':
+                symbol = input("请输入股票代码: ").strip()
+                quantity = input("请输入卖出数量: ").strip()
+                price = input("请输入卖出价格: ").strip()
+                
+                if symbol and quantity and price:
+                    self.sell_stock_manual(symbol, quantity, price)
+                else:
+                    print("❌ 输入信息不完整")
+            
+            elif choice == '3':
+                self.get_account_info()
+            
+            elif choice == '4':
+                print("👋 退出交易界面")
+                break
+            
+            else:
+                print("❌ 无效选择，请重新输入")
+
+# 使用示例
+if __name__ == "__main__":
+    bot = PracticalTradingBot()
+    
+    # 启动快速交易界面
+    bot.quick_trade_interface()
+    
+    # 或者直接调用交易函数
+    # bot.buy_stock_manual("000001", 100, 13.50)
+    # bot.sell_stock_manual("000001", 100, 13.60)

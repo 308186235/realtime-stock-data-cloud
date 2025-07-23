@@ -1,0 +1,880 @@
+#!/usr/bin/env python3
+"""
+创建干净的前端和后端仓库结构
+将项目文件整理到合适的位置,避免子目录嵌套
+"""
+
+import os
+import shutil
+import json
+from datetime import datetime
+from pathlib import Path
+
+class CleanRepositoryCreator:
+    """干净仓库创建器"""
+    
+    def __init__(self):
+        self.root_dir = os.getcwd()
+        self.frontend_repo = "stock-trading-frontend"
+        self.backend_repo = "stock-trading-backend"
+        self.backup_dir = f"backup_before_clean_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # 核心前端文件(避免子目录)
+        self.core_frontend_files = {
+            # uni-app 核心配置文件
+            "pages.json": "pages.json",
+            "manifest.json": "manifest.json", 
+            "App.vue": "App.vue",
+            "main.js": "main.js",
+            "uni.scss": "uni.scss",
+            "package.json": "package.json",
+            
+            # 环境配置
+            "env.js": "env.js",
+            
+            # 页面文件
+            "pages/index/index.vue": "pages/index/index.vue",
+            "pages/trading/trading.vue": "pages/trading/trading.vue",
+            "pages/portfolio/portfolio.vue": "pages/portfolio/portfolio.vue",
+            "pages/settings/settings.vue": "pages/settings/settings.vue",
+            
+            # 组件
+            "components/StockCard.vue": "components/StockCard.vue",
+            "components/TradingForm.vue": "components/TradingForm.vue",
+            "components/PortfolioChart.vue": "components/PortfolioChart.vue",
+            
+            # 工具类
+            "utils/request.js": "utils/request.js",
+            "utils/auth.js": "utils/auth.js",
+            "utils/storage.js": "utils/storage.js",
+            
+            # 静态资源
+            "static/logo.png": "static/logo.png",
+            "static/tabbar/": "static/tabbar/",
+            
+            # 服务
+            "services/api.js": "services/api.js",
+            "services/websocket.js": "services/websocket.js"
+        }
+        
+        # 核心后端文件(避免子目录)
+        self.core_backend_files = {
+            # FastAPI 主文件
+            "main.py": "main.py",
+            "requirements.txt": "requirements.txt",
+            "Dockerfile": "Dockerfile",
+            ".env.example": ".env.example",
+            
+            # API 路由
+            "routers/auth.py": "routers/auth.py",
+            "routers/trading.py": "routers/trading.py", 
+            "routers/portfolio.py": "routers/portfolio.py",
+            "routers/market.py": "routers/market.py",
+            
+            # 数据模型
+            "models/user.py": "models/user.py",
+            "models/stock.py": "models/stock.py",
+            "models/trade.py": "models/trade.py",
+            "models/portfolio.py": "models/portfolio.py",
+            
+            # 服务层
+            "services/auth_service.py": "services/auth_service.py",
+            "services/trading_service.py": "services/trading_service.py",
+            "services/market_service.py": "services/market_service.py",
+            
+            # 配置
+            "config.py": "config.py",
+            "database.py": "database.py",
+            
+            # 工具类
+            "utils/security.py": "utils/security.py",
+            "utils/helpers.py": "utils/helpers.py"
+        }
+    
+    def create_clean_repositories(self):
+        """创建干净的仓库结构"""
+        print("🚀 开始创建干净的前端和后端仓库...")
+        print("=" * 60)
+        
+        # 1. 创建备份
+        self._create_backup()
+        
+        # 2. 创建前端仓库
+        self._create_frontend_repo()
+        
+        # 3. 创建后端仓库  
+        self._create_backend_repo()
+        
+        # 4. 生成README文件
+        self._create_readme_files()
+        
+        # 5. 生成部署脚本
+        self._create_deployment_scripts()
+        
+        print(f"\n✅ 干净仓库创建完成!")
+        print(f"📁 前端仓库: {self.frontend_repo}/")
+        print(f"📁 后端仓库: {self.backend_repo}/")
+        print(f"💾 备份位置: {self.backup_dir}/")
+    
+    def _create_backup(self):
+        """创建备份"""
+        print("\n💾 创建项目备份...")
+        
+        if not os.path.exists(self.backup_dir):
+            os.makedirs(self.backup_dir)
+        
+        # 备份重要目录
+        important_dirs = ["移动端", "后端", "frontend", "backend"]
+        for dir_name in important_dirs:
+            if os.path.exists(dir_name):
+                backup_path = os.path.join(self.backup_dir, dir_name)
+                shutil.copytree(dir_name, backup_path, ignore=shutil.ignore_patterns('node_modules', '__pycache__'))
+                print(f"  ✅ 备份: {dir_name} -> {backup_path}")
+    
+    def _create_frontend_repo(self):
+        """创建前端仓库"""
+        print("\n📱 创建前端仓库...")
+        
+        # 创建前端目录
+        if os.path.exists(self.frontend_repo):
+            shutil.rmtree(self.frontend_repo)
+        os.makedirs(self.frontend_repo)
+        
+        # 从现有项目中提取前端文件
+        self._extract_frontend_files()
+        
+        # 创建标准的uni-app项目结构
+        self._create_frontend_structure()
+        
+        print(f"  ✅ 前端仓库创建完成: {self.frontend_repo}/")
+    
+    def _create_backend_repo(self):
+        """创建后端仓库"""
+        print("\n🔧 创建后端仓库...")
+        
+        # 创建后端目录
+        if os.path.exists(self.backend_repo):
+            shutil.rmtree(self.backend_repo)
+        os.makedirs(self.backend_repo)
+        
+        # 从现有项目中提取后端文件
+        self._extract_backend_files()
+        
+        # 创建标准的FastAPI项目结构
+        self._create_backend_structure()
+        
+        print(f"  ✅ 后端仓库创建完成: {self.backend_repo}/")
+    
+    def _extract_frontend_files(self):
+        """提取前端文件"""
+        print("    📂 提取前端文件...")
+        
+        # 查找最佳的前端项目
+        frontend_sources = [
+            "移动端/呵呵",
+            "移动端/炒股养家", 
+            "frontend/gupiao1",
+            "炒股养家"
+        ]
+        
+        best_source = None
+        for source in frontend_sources:
+            if os.path.exists(source):
+                # 检查项目完整性
+                has_pages_json = os.path.exists(os.path.join(source, "pages.json"))
+                has_app_vue = os.path.exists(os.path.join(source, "App.vue"))
+                has_package_json = os.path.exists(os.path.join(source, "package.json"))
+                
+                if has_pages_json and has_app_vue:
+                    best_source = source
+                    print(f"      ✅ 找到最佳前端源: {source}")
+                    break
+        
+        if best_source:
+            # 复制核心文件
+            self._copy_frontend_core_files(best_source)
+        else:
+            print("      ⚠️  未找到完整的前端项目,将创建模板")
+            self._create_frontend_template()
+    
+    def _extract_backend_files(self):
+        """提取后端文件"""
+        print("    📂 提取后端文件...")
+        
+        # 查找最佳的后端项目
+        backend_sources = [
+            "后端/后端",
+            "backend",
+            "后端"
+        ]
+        
+        best_source = None
+        for source in backend_sources:
+            if os.path.exists(source):
+                # 检查是否有Python文件
+                python_files = []
+                for root, dirs, files in os.walk(source):
+                    for file in files:
+                        if file.endswith('.py'):
+                            python_files.append(os.path.join(root, file))
+                
+                if python_files:
+                    best_source = source
+                    print(f"      ✅ 找到最佳后端源: {source} ({len(python_files)} Python文件)")
+                    break
+        
+        if best_source:
+            # 复制核心文件
+            self._copy_backend_core_files(best_source)
+        else:
+            print("      ⚠️  未找到完整的后端项目,将创建模板")
+            self._create_backend_template()
+
+    def _copy_frontend_core_files(self, source_dir):
+        """复制前端核心文件"""
+        print(f"      📋 从 {source_dir} 复制前端文件...")
+
+        # 核心配置文件
+        core_files = ["pages.json", "manifest.json", "App.vue", "main.js", "package.json"]
+        for file in core_files:
+            src_path = os.path.join(source_dir, file)
+            dst_path = os.path.join(self.frontend_repo, file)
+            if os.path.exists(src_path):
+                shutil.copy2(src_path, dst_path)
+                print(f"        ✅ {file}")
+
+        # 页面目录
+        pages_src = os.path.join(source_dir, "pages")
+        pages_dst = os.path.join(self.frontend_repo, "pages")
+        if os.path.exists(pages_src):
+            shutil.copytree(pages_src, pages_dst, ignore=shutil.ignore_patterns('*.log', '*.tmp'))
+            print(f"        ✅ pages/ 目录")
+
+        # 组件目录
+        components_src = os.path.join(source_dir, "components")
+        components_dst = os.path.join(self.frontend_repo, "components")
+        if os.path.exists(components_src):
+            shutil.copytree(components_src, components_dst)
+            print(f"        ✅ components/ 目录")
+
+        # 工具类目录
+        utils_src = os.path.join(source_dir, "utils")
+        utils_dst = os.path.join(self.frontend_repo, "utils")
+        if os.path.exists(utils_src):
+            shutil.copytree(utils_src, utils_dst)
+            print(f"        ✅ utils/ 目录")
+
+        # 静态资源目录
+        static_src = os.path.join(source_dir, "static")
+        static_dst = os.path.join(self.frontend_repo, "static")
+        if os.path.exists(static_src):
+            shutil.copytree(static_src, static_dst)
+            print(f"        ✅ static/ 目录")
+
+    def _copy_backend_core_files(self, source_dir):
+        """复制后端核心文件"""
+        print(f"      📋 从 {source_dir} 复制后端文件...")
+
+        # 查找并复制Python文件
+        for root, dirs, files in os.walk(source_dir):
+            # 跳过不需要的目录
+            dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', 'venv', 'node_modules']]
+
+            for file in files:
+                if file.endswith(('.py', '.txt', '.yml', '.yaml', '.json', '.md')):
+                    src_path = os.path.join(root, file)
+
+                    # 计算相对路径
+                    rel_path = os.path.relpath(src_path, source_dir)
+                    dst_path = os.path.join(self.backend_repo, rel_path)
+
+                    # 创建目标目录
+                    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+
+                    # 复制文件
+                    shutil.copy2(src_path, dst_path)
+                    print(f"        ✅ {rel_path}")
+
+    def _create_frontend_template(self):
+        """创建前端模板"""
+        print("      📝 创建前端模板...")
+
+        # 创建 package.json
+        package_json = {
+            "name": "stock-trading-frontend",
+            "version": "1.0.0",
+            "description": "股票交易系统移动端",
+            "main": "main.js",
+            "scripts": {
+                "serve": "npm run dev:h5",
+                "build": "npm run build:h5",
+                "dev:h5": "uni build --watch",
+                "build:h5": "uni build"
+            },
+            "dependencies": {
+                "@dcloudio/uni-app": "^2.0.0",
+                "vue": "^2.6.11",
+                "vuex": "^3.2.0"
+            },
+            "devDependencies": {
+                "@dcloudio/uni-cli": "^2.0.0"
+            }
+        }
+
+        with open(os.path.join(self.frontend_repo, "package.json"), 'w', encoding='utf-8') as f:
+            json.dump(package_json, f, indent=2, ensure_ascii=False)
+
+        # 创建 pages.json
+        pages_json = {
+            "pages": [
+                {
+                    "path": "pages/index/index",
+                    "style": {
+                        "navigationBarTitleText": "股票交易"
+                    }
+                }
+            ],
+            "globalStyle": {
+                "navigationBarTextStyle": "black",
+                "navigationBarTitleText": "股票交易系统",
+                "navigationBarBackgroundColor": "#F8F8F8",
+                "backgroundColor": "#F8F8F8"
+            },
+            "tabBar": {
+                "color": "#7A7E83",
+                "selectedColor": "#3cc51f",
+                "borderStyle": "black",
+                "backgroundColor": "#ffffff",
+                "list": [
+                    {
+                        "pagePath": "pages/index/index",
+                        "iconPath": "static/tabbar/home.png",
+                        "selectedIconPath": "static/tabbar/home_active.png",
+                        "text": "首页"
+                    }
+                ]
+            }
+        }
+
+        with open(os.path.join(self.frontend_repo, "pages.json"), 'w', encoding='utf-8') as f:
+            json.dump(pages_json, f, indent=2, ensure_ascii=False)
+
+    def _create_backend_template(self):
+        """创建后端模板"""
+        print("      📝 创建后端模板...")
+
+        # 创建 main.py
+        main_py_content = '''#!/usr/bin/env python3
+"""
+股票交易系统后端API
+"""
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+app = FastAPI(
+    title="股票交易系统API",
+    description="股票交易系统后端API服务",
+    version="1.0.0"
+)
+
+# 配置CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    return {"message": "股票交易系统API服务"}
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy", "service": "stock-trading-api"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+'''
+
+        with open(os.path.join(self.backend_repo, "main.py"), 'w', encoding='utf-8') as f:
+            f.write(main_py_content)
+
+        # 创建 requirements.txt
+        requirements_content = '''fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+'''
+
+        with open(os.path.join(self.backend_repo, "requirements.txt"), 'w', encoding='utf-8') as f:
+            f.write(requirements_content)
+
+    def _create_frontend_structure(self):
+        """创建前端标准结构"""
+        print("      🏗️  创建前端标准结构...")
+
+        # 创建必要的目录
+        dirs_to_create = [
+            "pages/index",
+            "pages/trading",
+            "pages/portfolio",
+            "pages/settings",
+            "components",
+            "utils",
+            "services",
+            "static/tabbar",
+            "static/images"
+        ]
+
+        for dir_path in dirs_to_create:
+            full_path = os.path.join(self.frontend_repo, dir_path)
+            os.makedirs(full_path, exist_ok=True)
+
+        # 创建环境配置文件
+        env_js_content = '''// 环境配置
+const config = {
+  // API基础URL
+  API_BASE_URL: 'https://api.aigupiao.me',
+
+  // WebSocket URL
+  WS_BASE_URL: 'wss://api.aigupiao.me/ws',
+
+  // 是否使用模拟数据
+  USE_MOCK_DATA: false,
+
+  // 调试模式
+  DEBUG_MODE: false
+}
+
+export default config
+'''
+
+        with open(os.path.join(self.frontend_repo, "env.js"), 'w', encoding='utf-8') as f:
+            f.write(env_js_content)
+
+        # 创建请求工具
+        request_js_content = '''// 网络请求工具
+import config from '../env.js'
+
+class Request {
+  constructor() {
+    this.baseURL = config.API_BASE_URL
+    this.timeout = 10000
+  }
+
+  request(options) {
+    return new Promise((resolve, reject) => {
+      uni.request({
+        url: this.baseURL + options.url,
+        method: options.method || 'GET',
+        data: options.data || {},
+        header: {
+          'Content-Type': 'application/json',
+          ...options.header
+        },
+        timeout: this.timeout,
+        success: (res) => {
+          if (res.statusCode === 200) {
+            resolve(res.data)
+          } else {
+            reject(new Error(`请求失败: ${res.statusCode}`))
+          }
+        },
+        fail: (err) => {
+          reject(err)
+        }
+      })
+    })
+  }
+
+  get(url, data = {}) {
+    return this.request({ url, method: 'GET', data })
+  }
+
+  post(url, data = {}) {
+    return this.request({ url, method: 'POST', data })
+  }
+}
+
+export default new Request()
+'''
+
+        utils_dir = os.path.join(self.frontend_repo, "utils")
+        with open(os.path.join(utils_dir, "request.js"), 'w', encoding='utf-8') as f:
+            f.write(request_js_content)
+
+    def _create_backend_structure(self):
+        """创建后端标准结构"""
+        print("      🏗️  创建后端标准结构...")
+
+        # 创建必要的目录
+        dirs_to_create = [
+            "routers",
+            "models",
+            "services",
+            "utils",
+            "config",
+            "tests"
+        ]
+
+        for dir_path in dirs_to_create:
+            full_path = os.path.join(self.backend_repo, dir_path)
+            os.makedirs(full_path, exist_ok=True)
+
+            # 创建 __init__.py 文件
+            init_file = os.path.join(full_path, "__init__.py")
+            with open(init_file, 'w', encoding='utf-8') as f:
+                f.write("")
+
+        # 创建配置文件
+        config_py_content = '''"""
+应用配置
+"""
+import os
+from pydantic import BaseSettings
+
+class Settings(BaseSettings):
+    """应用设置"""
+
+    # 应用信息
+    APP_NAME: str = "股票交易系统API"
+    VERSION: str = "1.0.0"
+
+    # 服务器配置
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+
+    # 数据库配置
+    DATABASE_URL: str = "sqlite:///./trading.db"
+
+    # API配置
+    API_PREFIX: str = "/api"
+
+    # CORS配置
+    CORS_ORIGINS: list = [
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "https://aigupiao.me"
+    ]
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
+'''
+
+        with open(os.path.join(self.backend_repo, "config.py"), 'w', encoding='utf-8') as f:
+            f.write(config_py_content)
+
+    def _create_readme_files(self):
+        """创建README文件"""
+        print("\n📖 创建README文件...")
+
+        # 前端README
+        frontend_readme = '''# 股票交易系统 - 前端
+
+## 项目介绍
+
+基于uni-app开发的股票交易系统移动端应用,支持实时行情查看,交易操作,投资组合管理等功能。
+
+## 技术栈
+
+- uni-app
+- Vue.js 2.x
+- Vuex
+- uni-ui
+
+## 开发环境
+
+- Node.js 14+
+- HBuilderX 或 uni-cli
+
+## 安装运行
+
+1. 安装依赖
+```bash
+npm install
+```
+
+2. 运行开发环境
+```bash
+npm run dev:h5
+```
+
+3. 构建生产版本
+```bash
+npm run build:h5
+```
+
+## 项目结构
+
+```
+├── pages/          # 页面文件
+├── components/     # 组件
+├── utils/          # 工具类
+├── services/       # 服务层
+├── static/         # 静态资源
+├── env.js          # 环境配置
+├── pages.json      # 页面配置
+├── manifest.json   # 应用配置
+└── App.vue         # 应用入口
+```
+
+## API配置
+
+在 `env.js` 中配置API地址:
+
+```javascript
+const config = {
+  API_BASE_URL: 'https://api.aigupiao.me',
+  WS_BASE_URL: 'wss://api.aigupiao.me/ws'
+}
+```
+
+## 部署
+
+支持多平台部署:
+- H5版本:可部署到任何Web服务器
+- 小程序:微信小程序,支付宝小程序等
+- App:Android,iOS原生应用
+'''
+
+        with open(os.path.join(self.frontend_repo, "README.md"), 'w', encoding='utf-8') as f:
+            f.write(frontend_readme)
+
+        # 后端README
+        backend_readme = '''# 股票交易系统 - 后端
+
+## 项目介绍
+
+基于FastAPI开发的股票交易系统后端API服务,提供用户认证,交易操作,行情数据等功能。
+
+## 技术栈
+
+- FastAPI
+- Python 3.9+
+- SQLAlchemy
+- Pydantic
+- Uvicorn
+
+## 安装运行
+
+1. 创建虚拟环境
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+venv\\Scripts\\activate  # Windows
+```
+
+2. 安装依赖
+```bash
+pip install -r requirements.txt
+```
+
+3. 运行服务
+```bash
+python main.py
+```
+
+服务将在 http://localhost:8000 启动
+
+## API文档
+
+启动服务后访问:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+## 项目结构
+
+```
+├── routers/        # API路由
+├── models/         # 数据模型
+├── services/       # 业务服务
+├── utils/          # 工具类
+├── config/         # 配置文件
+├── tests/          # 测试文件
+├── main.py         # 应用入口
+├── config.py       # 配置
+└── requirements.txt # 依赖包
+```
+
+## 环境配置
+
+创建 `.env` 文件:
+
+```
+DATABASE_URL=sqlite:///./trading.db
+SECRET_KEY=your-secret-key
+```
+
+## 部署
+
+支持多种部署方式:
+- Docker容器部署
+- 云服务器部署
+- Serverless部署
+'''
+
+        with open(os.path.join(self.backend_repo, "README.md"), 'w', encoding='utf-8') as f:
+            f.write(backend_readme)
+
+    def _create_deployment_scripts(self):
+        """创建部署脚本"""
+        print("\n🚀 创建部署脚本...")
+
+        # 前端部署脚本
+        frontend_deploy_script = '''#!/bin/bash
+# 前端部署脚本
+
+echo "🚀 开始部署前端..."
+
+# 安装依赖
+echo "📦 安装依赖..."
+npm install
+
+# 构建项目
+echo "🔨 构建项目..."
+npm run build:h5
+
+# 部署到服务器(根据实际情况修改)
+echo "📤 部署到服务器..."
+# rsync -avz --delete dist/ user@server:/var/www/html/
+
+echo "✅ 前端部署完成!"
+'''
+
+        with open(os.path.join(self.frontend_repo, "deploy.sh"), 'w', encoding='utf-8') as f:
+            f.write(frontend_deploy_script)
+
+        # 后端部署脚本
+        backend_deploy_script = '''#!/bin/bash
+# 后端部署脚本
+
+echo "🚀 开始部署后端..."
+
+# 创建虚拟环境
+echo "🐍 创建虚拟环境..."
+python -m venv venv
+source venv/bin/activate
+
+# 安装依赖
+echo "📦 安装依赖..."
+pip install -r requirements.txt
+
+# 启动服务
+echo "🔥 启动服务..."
+python main.py
+
+echo "✅ 后端部署完成!"
+'''
+
+        with open(os.path.join(self.backend_repo, "deploy.sh"), 'w', encoding='utf-8') as f:
+            f.write(backend_deploy_script)
+
+        # Docker配置文件
+        dockerfile_content = '''FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["python", "main.py"]
+'''
+
+        with open(os.path.join(self.backend_repo, "Dockerfile"), 'w', encoding='utf-8') as f:
+            f.write(dockerfile_content)
+
+        # docker-compose.yml
+        docker_compose_content = '''version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./trading.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # 可选:添加数据库服务
+  # database:
+  #   image: postgres:13
+  #   environment:
+  #     POSTGRES_DB: trading
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+# volumes:
+#   postgres_data:
+'''
+
+        with open(os.path.join(self.backend_repo, "docker-compose.yml"), 'w', encoding='utf-8') as f:
+            f.write(docker_compose_content)
+
+        # 环境变量模板
+        env_example_content = '''# 数据库配置
+DATABASE_URL=sqlite:///./trading.db
+
+# 安全配置
+SECRET_KEY=your-secret-key-here
+
+# API配置
+API_PREFIX=/api
+
+# 服务器配置
+HOST=0.0.0.0
+PORT=8000
+
+# 调试模式
+DEBUG=False
+'''
+
+        with open(os.path.join(self.backend_repo, ".env.example"), 'w', encoding='utf-8') as f:
+            f.write(env_example_content)
+
+        # 前端环境变量模板
+        frontend_env_example = '''// 环境配置模板
+const config = {
+  // 生产环境API地址
+  API_BASE_URL: 'https://api.aigupiao.me',
+
+  // 开发环境API地址
+  // API_BASE_URL: 'http://localhost:8000',
+
+  // WebSocket地址
+  WS_BASE_URL: 'wss://api.aigupiao.me/ws',
+
+  // 是否使用模拟数据
+  USE_MOCK_DATA: false,
+
+  // 调试模式
+  DEBUG_MODE: false
+}
+
+export default config
+'''
+
+        with open(os.path.join(self.frontend_repo, "env.example.js"), 'w', encoding='utf-8') as f:
+            f.write(frontend_env_example)
+
+        print("  ✅ 部署脚本创建完成")
+
+if __name__ == "__main__":
+    creator = CleanRepositoryCreator()
+    creator.create_clean_repositories()
