@@ -1,0 +1,133 @@
+mod models;
+mod storage;
+mod exchanges;
+
+use anyhow::Result;
+use exchanges::{Exchange, bybit::BybitExchange, binance::BinanceExchange, okx::OkxExchange, kraken::KrakenExchange, coinbase::CoinbaseExchange};
+use models::CryptoPrice;
+use storage::ClickHouseStorage;
+use std::collections::VecDeque;
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tracing::{info, error, warn};
+use tracing_subscriber;
+
+const BATCH_SIZE: usize = 100;
+const BATCH_TIMEOUT_SECS: u64 = 30;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
+    info!("�� 启动Rust多交易所虚拟币实时价格监控系统 v0.1.0");
+    info!("📊 支持交易所: Binance, Bybit, OKX, Kraken, Coinbase");
+
+    let storage = ClickHouseStorage::new("http://localhost:8123");
+    storage.init().await?;
+    info!("✅ ClickHouse存储初始化完成");
+
+    let (tx, mut rx) = mpsc::channel::<CryptoPrice>(1000);
+
+    // 启动Binance交易所
+    let binance = BinanceExchange::new();
+    let binance_tx = tx.clone();
+    tokio::spawn(async move {
+        info!("🔗 启动Binance交易所连接...");
+        if let Err(e) = binance.connect(binance_tx).await {
+            error!("❌ Binance连接失败: {}", e);
+        }
+    });
+
+    // 启动Bybit交易所
+    let bybit = BybitExchange::new();
+    let bybit_tx = tx.clone();
+    tokio::spawn(async move {
+        info!("🔗 启动Bybit交易所连接...");
+        if let Err(e) = bybit.connect(bybit_tx).await {
+            error!("❌ Bybit连接失败: {}", e);
+        }
+    });
+
+    // 启动OKX交易所
+    let okx = OkxExchange::new();
+    let okx_tx = tx.clone();
+    tokio::spawn(async move {
+        info!("🔗 启动OKX交易所连接...");
+        if let Err(e) = okx.connect(okx_tx).await {
+            error!("❌ OKX连接失败: {}", e);
+        }
+    });
+
+    // 启动Kraken交易所
+    let kraken = KrakenExchange::new();
+    let kraken_tx = tx.clone();
+    tokio::spawn(async move {
+        info!("🔗 启动Kraken交易所连接...");
+        if let Err(e) = kraken.connect(kraken_tx).await {
+            error!("❌ Kraken连接失败: {}", e);
+        }
+    });
+
+    // 启动Coinbase交易所
+    let coinbase = CoinbaseExchange::new();
+    let coinbase_tx = tx.clone();
+    tokio::spawn(async move {
+        info!("🔗 启动Coinbase交易所连接...");
+        if let Err(e) = coinbase.connect(coinbase_tx).await {
+            error!("❌ Coinbase连接失败: {}", e);
+        }
+    });
+
+    let mut batch: VecDeque<CryptoPrice> = VecDeque::new();
+    let mut last_insert = tokio::time::Instant::now();
+
+    info!("🔄 开始数据处理循环，支持所有5个交易所...");
+
+    loop {
+        tokio::select! {
+            Some(price) = rx.recv() => {
+                batch.push_back(price);
+
+                if batch.len() >= BATCH_SIZE {
+                    if let Err(e) = insert_batch(&storage, &mut batch).await {
+                        error!("Failed to insert batch: {}", e);
+                    }
+                    last_insert = tokio::time::Instant::now();
+                }
+            }
+
+            _ = tokio::time::sleep(Duration::from_secs(BATCH_TIMEOUT_SECS)) => {
+                if !batch.is_empty() && last_insert.elapsed() >= Duration::from_secs(BATCH_TIMEOUT_SECS) {
+                    if let Err(e) = insert_batch(&storage, &mut batch).await {
+                        error!("Failed to insert timeout batch: {}", e);
+                    }
+                    last_insert = tokio::time::Instant::now();
+                }
+            }
+        }
+    }
+}
+
+async fn insert_batch(storage: &ClickHouseStorage, batch: &mut VecDeque<CryptoPrice>) -> Result<()> {
+    if batch.is_empty() {
+        return Ok(());
+    }
+
+    let prices: Vec<CryptoPrice> = batch.drain(..).collect();
+    let count = prices.len();
+
+    storage.insert_prices_batch(&prices).await?;
+
+    match storage.get_price_count().await {
+        Ok(total_count) => {
+            info!("💾 插入 {} 条价格数据，数据库总计: {} 条", count, total_count);
+        }
+        Err(e) => {
+            warn!("Failed to get total count: {}", e);
+        }
+    }
+
+    Ok(())
+}

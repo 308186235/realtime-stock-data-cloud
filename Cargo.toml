@@ -1,0 +1,38 @@
+[package]
+name = "crypto-monitor-rust"
+version = "3.0.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+url = "2.0"
+futures-util = "0.3"
+clickhouse = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4"] }
+async-trait = "0.1"
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+deadpool-redis = "0.14"
+native-tls = "0.2"
+
+# 🚀 高性能优化依赖
+rmp-serde = "1.1"          # MessagePack序列化 (比JSON快3-5倍)
+crossbeam = "0.8"          # 无锁数据结构
+rayon = "1.7"              # 并行处理
+simd-json = "0.13"         # SIMD加速JSON解析
+mimalloc = "0.1"           # 高性能内存分配器
+parking_lot = "0.12"       # 快速锁
+dashmap = "5.5"            # 并发HashMap
+flume = "0.11"             # 高性能MPSC通道
+
+[profile.release]
+lto = true                 # 链接时优化
+codegen-units = 1          # 单个代码生成单元
+panic = "abort"            # 减少二进制大小
+opt-level = 3              # 最高优化级别
