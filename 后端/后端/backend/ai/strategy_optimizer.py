@@ -1,0 +1,714 @@
+import os
+import logging
+import numpy as np
+import pandas as pd
+import json
+from datetime import datetime
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Dense, Dropout
+from sklearn.preprocessing import MinMaxScaler
+import optuna
+from optuna.samplers import TPESampler
+
+# Import custom modules
+try:
+    from strategies import StrategyFactory
+    from utils.sentiment import SentimentAnalyzer
+    from utils.visualization import (
+        generate_performance_chart, 
+        generate_parameter_sensitivity_chart,
+        generate_optimization_comparison_chart
+    )
+except ImportError:
+    # Handle import errors gracefully
+    logging.warning("Some modules could not be imported. This is expected if running in a test environment.")
+
+logger = logging.getLogger(__name__)
+
+class StrategyOptimizer:
+    """
+    Strategy optimizer using machine learning and optimization techniques.
+    Optimizes trading strategy parameters for a given stock to maximize performance.
+    
+    新增功能:
+    - 风险对冲引擎
+    - 波动率自适应模块
+    - 跨市场对冲逻辑
+    """
+
+    def __init__(self, model_path='models/strategy_optimizer'):
+        """
+        Initialize the strategy optimizer.
+        
+        Args:
+            model_path (str): Path to save/load optimization models
+        """
+        self.model_path = model_path
+        self.models = {}
+        self.scalers = {}
+        
+        # Create directory if it doesn't exist
+        os.makedirs(self.model_path, exist_ok=True)
+        
+        # Initialize market sentiment analyzer
+        try:
+            self.sentiment_analyzer = SentimentAnalyzer()
+            self.sentiment_weight = 0.2
+        except Exception as e:
+            logger.warning(f"Failed to initialize sentiment analyzer: {str(e)}")
+            self.sentiment_analyzer = None
+            self.sentiment_weight = 0.0
+        
+        # Initialize strategy weights
+        self.strategy_weights = {
+            'momentum': 0.35,
+            'mean_reversion': 0.25,
+            'volatility': 0.2,
+            'fundamental': 0.1,
+            'volume': 0.1
+        }
+        
+        # Initialize fundamental factors
+        self.fundamental_factors = {
+            'pe_ratio_weight': 0.3,
+            'roe_weight': 0.4,
+            'debt_ratio_weight': 0.3
+        }
+        
+        # Initialize technical factors
+        self.technical_factors = {
+            'volume_spike_threshold': 2.5,
+            'rsi_window': 14,
+            'macd_fast_slow': (12, 26)
+        }
+        
+        # Initialize other parameters
+        self.correlation_threshold = 0.7
+        self.adaptive_learning_rate = 0.01
+        self.hedge_ratio = 0.2  # Base hedge ratio
+        self.volatility_threshold = 0.18  # Volatility threshold
+        self.correlation_window = 30  # Correlation calculation window
+        
+        logger.info("Strategy optimizer initialized")
+
+    async def optimize_strategy(self, strategy_id, stock_code, historical_data=None, include_charts=False):
+        """
+        Optimize strategy parameters for a specific stock.
+        
+        Args:
+            strategy_id (str): Strategy identifier
+            stock_code (str): Stock code to optimize for
+            historical_data (pd.DataFrame, optional): Historical market data
+            include_charts (bool): Whether to include performance charts in the result
+            
+        Returns:
+            dict: Optimized parameters and expected performance
+        """
+        try:
+            # Get strategy info and parameter ranges
+            strategy_info = StrategyFactory.get_strategy_info(strategy_id)
+            parameter_ranges = strategy_info['parameter_ranges']
+            
+            # Get historical data if not provided
+            if historical_data is None:
+                historical_data = await self._get_historical_data(stock_code)
+                
+            if historical_data.empty:
+                return {"error": f"No historical data available for {stock_code}"}
+            
+            # Add market sentiment if available
+            if self.sentiment_analyzer is not None:
+                try:
+                    sentiment_score = self.sentiment_analyzer.get_market_sentiment()
+                    historical_data['sentiment'] = sentiment_score
+                except Exception as e:
+                    logger.warning(f"Error getting sentiment data: {str(e)}")
+            
+            # Store original strategy performance for comparison
+            original_strategy = StrategyFactory.get_strategy(strategy_id)
+            original_signals = original_strategy.generate_signals(historical_data)
+            original_performance = original_strategy.backtest(historical_data)
+            
+            # Choose optimization method based on data size and complexity
+            if len(historical_data) > 1000:
+                # Use hyperparameter optimization
+                result = await self._optimize_with_optuna(
+                    strategy_id, 
+                    stock_code, 
+                    historical_data, 
+                    parameter_ranges
+                )
+            else:
+                # Use grid search for smaller datasets
+                result = await self._optimize_with_grid_search(
+                    strategy_id, 
+                    stock_code, 
+                    historical_data, 
+                    parameter_ranges
+                )
+            
+            # Add visualization if requested
+            if include_charts and (not isinstance(result, dict) or 'error' not in result):
+                
+                # Create strategy with optimized parameters
+                optimized_params = {}
+                for key, value in result['optimized_parameters'].items():
+                    # Convert percentage strings back to float if needed
+                    if isinstance(value, str) and '%' in value:
+                        optimized_params[key] = float(value.strip('%')) / 100
+                    else:
+                        optimized_params[key] = value
+                
+                optimized_strategy = StrategyFactory.get_strategy(strategy_id, optimized_params)
+                optimized_signals = optimized_strategy.generate_signals(historical_data)
+                
+                # Generate performance chart
+                performance_chart = generate_performance_chart(
+                    historical_data,
+                    optimized_signals,
+                    title=f"Optimized {strategy_info['name']} Performance"
+                )
+                
+                # Generate parameter sensitivity charts for each parameter
+                sensitivity_charts = {}
+                for param_name, param_range in parameter_ranges.items():
+                    # Create a range of values to test
+                    min_val = param_range['min']
+                    max_val = param_range['max']
+                    step = param_range.get('step', 1)
+                    
+                    if isinstance(min_val, int) and isinstance(max_val, int):
+                        # For integer parameters, use fewer points
+                        test_range = list(range(min_val, max_val + 1, max(1, (max_val - min_val) // 8)))
+                    else:
+                        # For float parameters
+                        test_range = [min_val + i * step for i in range(int((max_val - min_val) / step) + 1)]
+                        # Limit to 10 points
+                        if len(test_range) > 10:
+                            test_range = test_range[::len(test_range)//10]
+                    
+                    # Set other parameters to optimized values
+                    other_params = {k: v for k, v in optimized_params.items() if k != param_name}
+                    
+                    # Generate chart
+                    sensitivity_chart = generate_parameter_sensitivity_chart(
+                        strategy_id,
+                        historical_data,
+                        param_name,
+                        test_range,
+                        other_params
+                    )
+                    
+                    sensitivity_charts[param_name] = sensitivity_chart
+                
+                # Generate comparison chart
+                comparison_chart = generate_optimization_comparison_chart(
+                    original_performance,
+                    result['expected_performance']
+                )
+                
+                # Add charts to result
+                result['charts'] = {
+                    'performance': performance_chart,
+                    'comparison': comparison_chart,
+                    'sensitivity': sensitivity_charts
+                }
+                
+            return result
+                
+        except Exception as e:
+            logger.error(f"Error optimizing strategy: {e}")
+            return {"error": str(e)}
+    
+    def _fuse_strategies(self, historical_data):
+        """
+        Fusion method for multiple strategies.
+        
+        Args:
+            historical_data: Historical market data
+            
+        Returns:
+            Combined strategy signals
+        """
+        strategies = ['momentum', 'mean_reversion', 'volatility']
+        signals = {}
+        
+        # Get sentiment score if available
+        sentiment_score = 0.5  # Default neutral sentiment
+        if 'sentiment' in historical_data.columns:
+            sentiment_score = historical_data['sentiment'].mean()
+        
+        # Generate signals for each strategy
+        for strategy in strategies:
+            strategy_obj = StrategyFactory.get_strategy(strategy)
+            signals[strategy] = strategy_obj.generate_signals(historical_data)
+        
+        # Calculate correlation matrix
+        correlation_matrix = pd.DataFrame(signals).corr()
+        
+        # Adjust weights based on correlation
+        for strategy in strategies:
+            max_corr = correlation_matrix[strategy].drop(strategy).max()
+            if max_corr > self.correlation_threshold:
+                self.strategy_weights[strategy] *= 0.9
+        
+        # Normalize weights
+        total_weight = sum(self.strategy_weights.values())
+        normalized_weights = {k: v/total_weight for k, v in self.strategy_weights.items()}
+        
+        # Generate combined signals
+        combined_signals = sum(normalized_weights[strategy] * signals[strategy] for strategy in strategies)
+        
+        # Apply sentiment adjustment
+        combined_signals = combined_signals * (1 - self.sentiment_weight) + sentiment_score * self.sentiment_weight
+        
+        return combined_signals
+
+    def _analyze_fundamentals(self, data):
+        """
+        Analyze fundamental factors in the data.
+        
+        Args:
+            data: DataFrame with fundamental data
+            
+        Returns:
+            Fundamental score
+        """
+        if not all(column in data.columns for column in ['pe_ratio', 'roe', 'debt_ratio']):
+            logger.warning("Missing fundamental data columns")
+            return np.zeros(len(data))
+            
+        pe_score = np.where(data['pe_ratio'] < 15, 1.0, 
+                         np.where(data['pe_ratio'] < 30, 0.6, 0.3))
+        roe_score = np.clip(data['roe'] / 20, 0, 1)
+        debt_score = 1 - np.clip(data['debt_ratio'] / 0.7, 0, 1)
+        
+        return (
+            pe_score * self.fundamental_factors['pe_ratio_weight'] +
+            roe_score * self.fundamental_factors['roe_weight'] +
+            debt_score * self.fundamental_factors['debt_ratio_weight']
+        )
+
+    def _analyze_technical(self, data):
+        """
+        Analyze technical factors in the data.
+        
+        Args:
+            data: DataFrame with price and volume data
+            
+        Returns:
+            Technical score
+        """
+        if not all(column in data.columns for column in ['volume', 'close']):
+            logger.warning("Missing technical data columns")
+            return np.zeros(len(data))
+            
+        # Volume analysis
+        volume_ma = data['volume'].rolling(20).mean()
+        volume_spike = (data['volume'] / volume_ma) > self.technical_factors['volume_spike_threshold']
+        
+        # RSI calculation
+        delta = data['close'].diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        avg_gain = gain.rolling(self.technical_factors['rsi_window']).mean()
+        avg_loss = loss.rolling(self.technical_factors['rsi_window']).mean()
+        rs = avg_gain / avg_loss.replace(0, 0.001)  # Avoid division by zero
+        rsi = 100 - (100 / (1 + rs))
+        
+        # MACD calculation
+        fast_ma = data['close'].ewm(span=self.technical_factors['macd_fast_slow'][0]).mean()
+        slow_ma = data['close'].ewm(span=self.technical_factors['macd_fast_slow'][1]).mean()
+        macd = fast_ma - slow_ma
+        
+        return (volume_spike.astype(float) * 0.4 + 
+                np.clip(rsi/100, 0, 1) * 0.3 + 
+                np.tanh(macd*2) * 0.3)
+
+    def _dynamic_weight_adjustment(self, signals):
+        """
+        Dynamically adjust strategy weights based on market conditions.
+        
+        Args:
+            signals: Strategy signals
+            
+        Returns:
+            Updated parameter dict
+        """
+        market_volatility = signals.rolling(20).std().mean()
+        
+        if market_volatility > self.volatility_threshold:
+            # Increase defensive strategy weight in high volatility
+            self.strategy_weights['volatility'] += self.adaptive_learning_rate
+            self.strategy_weights['momentum'] -= self.adaptive_learning_rate
+        else:
+            # Increase trend strategy weight in low volatility
+            self.strategy_weights['momentum'] += self.adaptive_learning_rate
+            self.strategy_weights['volatility'] -= self.adaptive_learning_rate
+        
+        # Enforce weight bounds
+        for strategy in self.strategy_weights:
+            self.strategy_weights[strategy] = max(0.1, min(0.6, self.strategy_weights[strategy]))
+        
+        return {
+            'strategy_weights': self.strategy_weights,
+            'correlation_threshold': self.correlation_threshold,
+            'adaptive_learning_rate': self.adaptive_learning_rate
+        }
+
+    def calculate_hedge_ratio(self, historical_data):
+        """
+        Calculate hedge ratio based on market conditions.
+        
+        Args:
+            historical_data: Historical market data
+            
+        Returns:
+            Optimal hedge ratio
+        """
+        # Calculate 20-day volatility
+        volatility = historical_data['close'].pct_change().rolling(20).std().iloc[-1]
+        
+        # Adjust hedge ratio based on volatility
+        adjusted_ratio = self.hedge_ratio * (1 + (volatility / self.volatility_threshold - 1))
+        
+        # Bound the ratio
+        adjusted_ratio = max(0.1, min(0.5, adjusted_ratio))
+        
+        return adjusted_ratio
+
+    def apply_hedge_adjustment(self, historical_data, hedge_ratio):
+        """
+        Apply hedge adjustment to data.
+        
+        Args:
+            historical_data: Historical market data
+            hedge_ratio: Ratio for hedging
+            
+        Returns:
+            Adjusted data
+        """
+        # This is a placeholder implementation
+        # In a real system, would apply the hedge ratios to the data
+        
+        data_copy = historical_data.copy()
+        
+        # Just for demonstration, add a column showing the hedge ratio
+        data_copy['hedge_ratio'] = hedge_ratio
+        
+        return data_copy
+    
+    async def _optimize_with_optuna(self, strategy_id, stock_code, historical_data, parameter_ranges, n_trials=50):
+        """
+        Optimize strategy parameters using Optuna hyperparameter optimization.
+        
+        Args:
+            strategy_id (str): Strategy identifier
+            stock_code (str): Stock code
+            historical_data (pd.DataFrame): Historical market data
+            parameter_ranges (dict): Parameter ranges
+            n_trials (int): Number of optimization trials
+            
+        Returns:
+            dict: Optimized parameters and expected performance
+        """
+        logger.info(f"Optimizing {strategy_id} for {stock_code} using Optuna")
+        
+        # Define the objective function for Optuna
+        def objective(trial):
+            # Sample parameters
+            parameters = {}
+            for param_name, param_range in parameter_ranges.items():
+                if isinstance(param_range['min'], int) and isinstance(param_range['max'], int):
+                    # Integer parameter
+                    parameters[param_name] = trial.suggest_int(
+                        param_name, 
+                        param_range['min'], 
+                        param_range['max'], 
+                        step=param_range.get('step', 1)
+                    )
+                else:
+                    # Float parameter
+                    parameters[param_name] = trial.suggest_float(
+                        param_name, 
+                        param_range['min'], 
+                        param_range['max'], 
+                        step=param_range.get('step', None)
+                    )
+            
+            # Create strategy with sampled parameters
+            strategy = StrategyFactory.get_strategy(strategy_id, parameters)
+            
+            # Backtest the strategy
+            backtest_results = strategy.backtest(historical_data)
+            
+            # Calculate objective score (weighted combination of metrics)
+            # Higher values are better
+            score = (
+                backtest_results['win_rate'] * 0.3 + 
+                min(backtest_results['profit_factor'], 3.0) / 3.0 * 0.4 +
+                min(backtest_results['sharpe_ratio'], 3.0) / 3.0 * 0.3
+            )
+            
+            return score
+        
+        # Create a study object and optimize
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=TPESampler(seed=42)
+        )
+        
+        study.optimize(objective, n_trials=n_trials)
+        
+        # Get best parameters
+        best_params = study.best_params
+        
+        # Convert any numpy types to Python types for JSON serialization
+        for k, v in best_params.items():
+            if isinstance(v, (np.int64, np.int32, np.float64, np.float32)):
+                best_params[k] = v.item()
+        
+        # Create strategy with best parameters and evaluate
+        strategy = StrategyFactory.get_strategy(strategy_id, best_params)
+        backtest_results = strategy.backtest(historical_data)
+        
+        # Format percentage parameters with '%' suffix if needed
+        formatted_params = {}
+        for param_name, value in best_params.items():
+            if param_name in ['stop_loss', 'take_profit', 'profit_take']:
+                formatted_params[param_name] = f"{value:.1%}"
+            else:
+                formatted_params[param_name] = value
+        
+        return {
+            "strategy_id": strategy_id,
+            "stock_code": stock_code,
+            "optimized_parameters": formatted_params,
+            "expected_performance": {
+                "win_rate": float(backtest_results['win_rate']),
+                "profit_factor": float(backtest_results['profit_factor']),
+                "sharpe_ratio": float(backtest_results['sharpe_ratio']),
+                "total_return": float(backtest_results['total_return']),
+                "max_drawdown": float(backtest_results['max_drawdown'])
+            },
+            "optimization_method": "bayesian",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    async def _optimize_with_grid_search(self, strategy_id, stock_code, historical_data, parameter_ranges):
+        """
+        Optimize strategy parameters using grid search.
+        
+        Args:
+            strategy_id (str): Strategy identifier
+            stock_code (str): Stock code
+            historical_data (pd.DataFrame): Historical market data
+            parameter_ranges (dict): Parameter ranges
+            
+        Returns:
+            dict: Optimized parameters and expected performance
+        """
+        logger.info(f"Optimizing {strategy_id} for {stock_code} using grid search")
+        
+        # Create parameter grid
+        param_grid = {}
+        for param_name, param_range in parameter_ranges.items():
+            min_val = param_range['min']
+            max_val = param_range['max']
+            step = param_range.get('step', 1)
+            
+            if isinstance(min_val, int) and isinstance(max_val, int):
+                # Integer parameter
+                param_grid[param_name] = list(range(min_val, max_val + 1, step))
+            else:
+                # Float parameter
+                param_grid[param_name] = [
+                    round(min_val + i * step, 2) 
+                    for i in range(int((max_val - min_val) / step) + 1)
+                ]
+        
+        # Simplify grid for faster search (take fewer values)
+        for param_name, values in param_grid.items():
+            if len(values) > 5:
+                param_grid[param_name] = values[::len(values)//5]
+        
+        # Generate all parameter combinations
+        param_combinations = self._generate_parameter_combinations(param_grid)
+        
+        # Evaluate each combination
+        best_score = -float('inf')
+        best_params = None
+        best_results = None
+        
+        for params in param_combinations:
+            # Create strategy with parameters
+            strategy = StrategyFactory.get_strategy(strategy_id, params)
+            
+            # Backtest the strategy
+            backtest_results = strategy.backtest(historical_data)
+            
+            # Calculate score
+            score = (
+                backtest_results['win_rate'] * 0.3 + 
+                min(backtest_results['profit_factor'], 3.0) / 3.0 * 0.4 +
+                min(backtest_results['sharpe_ratio'], 3.0) / 3.0 * 0.3
+            )
+            
+            if score > best_score:
+                best_score = score
+                best_params = params
+                best_results = backtest_results
+        
+        # Format percentage parameters with '%' suffix if needed
+        formatted_params = {}
+        for param_name, value in best_params.items():
+            if param_name in ['stop_loss', 'take_profit', 'profit_take']:
+                formatted_params[param_name] = f"{value:.1%}"
+            else:
+                formatted_params[param_name] = value
+        
+        return {
+            "strategy_id": strategy_id,
+            "stock_code": stock_code,
+            "optimized_parameters": formatted_params,
+            "expected_performance": {
+                "win_rate": float(best_results['win_rate']),
+                "profit_factor": float(best_results['profit_factor']),
+                "sharpe_ratio": float(best_results['sharpe_ratio']),
+                "total_return": float(best_results['total_return']),
+                "max_drawdown": float(best_results['max_drawdown'])
+            },
+            "optimization_method": "grid_search",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _generate_parameter_combinations(self, param_grid, current_idx=0, current_params=None):
+        """
+        Generate all combinations of parameters from parameter grid.
+        
+        Args:
+            param_grid (dict): Parameter grid
+            current_idx (int): Current parameter index
+            current_params (dict): Current parameter combination
+            
+        Returns:
+            list: List of parameter combinations
+        """
+        if current_params is None:
+            current_params = {}
+            
+        param_names = list(param_grid.keys())
+        
+        if current_idx == len(param_names):
+            return [current_params.copy()]
+        
+        param_name = param_names[current_idx]
+        param_values = param_grid[param_name]
+        
+        combinations = []
+        for value in param_values:
+            current_params[param_name] = value
+            combinations.extend(
+                self._generate_parameter_combinations(param_grid, current_idx + 1, current_params)
+            )
+        
+        return combinations
+            
+    async def _get_historical_data(self, stock_code, days=252):
+        """
+        Get historical market data for a stock.
+        
+        Args:
+            stock_code (str): Stock code
+            days (int): Number of days of historical data
+            
+        Returns:
+            pd.DataFrame: Historical market data
+        """
+        # In a real implementation, this would fetch data from a database or API
+        # For this example, we'll return a mock dataset
+        
+        # TODO: Replace with actual data retrieval in production
+        
+        # Generate mock data
+        np.random.seed(42)  # For reproducibility
+        dates = pd.date_range(end=pd.Timestamp.now().date(), periods=days)
+        
+        # Generate a random walk for stock prices
+        close = 100 * (1 + np.random.normal(0, 0.01, days).cumsum())
+        high = close * (1 + np.random.uniform(0, 0.02, days))
+        low = close * (1 - np.random.uniform(0, 0.02, days))
+        open_price = close * (1 + np.random.normal(0, 0.01, days))
+        volume = np.random.uniform(1000000, 10000000, days)
+        
+        # Create DataFrame
+        df = pd.DataFrame({
+            'date': dates,
+            'open': open_price,
+            'high': high,
+            'low': low,
+            'close': close,
+            'volume': volume
+        })
+        
+        df.set_index('date', inplace=True)
+        
+        return df
+
+
+# Only define this if we have the StrategyBase class imported
+try:
+    from strategies.base import StrategyBase
+    
+    class ClosePeriodStrategy(StrategyBase):
+        """
+        End-of-day stock selection strategy (signal generation 30 minutes before close)
+        Features:
+        - Price and volume increase detection
+        - Volatility contraction pattern recognition
+        - Institutional money flow analysis
+        """
+        
+        param_ranges = {
+            'time_window': (30, 60),    # End of day observation window (minutes)
+            'volume_threshold': (1.5, 3.0),  # Volume multiple threshold
+            'volatility_ratio': (0.5, 1.2)   # Volatility contraction ratio
+        }
+
+        def generate_signals(self, data):
+            # Filter data for last 30 minutes of trading
+            close_period = data.between_time('14:30', '15:00')
+            
+            # Price-volume analysis (end of day volume spike breakout)
+            volume_condition = close_period['volume'] > \
+                data['volume'].rolling(5).mean().shift(1) * 2.5
+            
+            # Volatility contraction detection (Bollinger band narrowing)
+            if 'upper_band' in close_period.columns and 'lower_band' in close_period.columns:
+                volatility_condition = (close_period['upper_band'] - close_period['lower_band']) < \
+                    data['ATR_14'].rolling(5).mean() * 0.8
+            else:
+                # Fall back if Bollinger bands aren't available
+                volatility_condition = pd.Series(True, index=close_period.index)
+            
+            # Generate composite signal (price-volume + volatility)
+            signals = np.where(volume_condition & volatility_condition, 1, 0)
+            
+            # Add money flow filter (institutional net inflow)
+            if 'main_net_inflow' in close_period.columns:
+                signals = np.where(signals & (close_period['main_net_inflow'] > 0), 1, 0)
+            
+            return signals
+
+    # Register strategy if StrategyFactory is available
+    if 'StrategyFactory' in globals():
+        StrategyFactory.register_strategy(
+            'close_period',
+            ClosePeriodStrategy(),
+            param_ranges=ClosePeriodStrategy.param_ranges
+        )
+        
+except (ImportError, NameError):
+    # This will happen if we don't have the strategy system imported
+    logger.warning("Strategy system not available, ClosePeriodStrategy not registered")

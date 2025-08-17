@@ -1,0 +1,309 @@
+import os
+import sys
+import json
+import time
+import logging
+import datetime
+import argparse
+import numpy as np
+from pathlib import Path
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('ai_training.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger('ai_trainer')
+
+# Check for GPU availability
+try:
+    import torch
+    HAS_TORCH = True
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        GPU_NAME = torch.cuda.get_device_name(0)
+        GPU_COUNT = torch.cuda.device_count()
+        logger.info(f"Found GPU: {GPU_NAME} (Count: {GPU_COUNT})")
+    else:
+        logger.warning("No GPU found, training will use CPU only")
+except ImportError:
+    HAS_TORCH = False
+    GPU_AVAILABLE = False
+    logger.warning("PyTorch not installed, GPU acceleration unavailable")
+
+# Define model classes
+class BaseStockModel:
+    """Base class for all stock prediction models"""
+    def __init__(self, model_type, params):
+        self.model_type = model_type
+        self.params = params
+        self.use_gpu = params.get('use_gpu', False) and GPU_AVAILABLE
+        self.device = torch.device('cuda:0' if self.use_gpu else 'cpu') if HAS_TORCH else None
+        self.model = None
+        self.optimizer = None
+        self.training_status = {
+            'status': 'idle',
+            'progress': 0,
+            'current_epoch': 0,
+            'total_epochs': params.get('epochs', 50),
+            'metrics': {
+                'loss': [],
+                'val_loss': [],
+                'accuracy': [],
+                'val_accuracy': []
+            }
+        }
+        
+        # Create model directory
+        self.model_dir = Path(f"./models/{model_type}")
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Initialized {model_type} model with params: {params}")
+        logger.info(f"Using GPU: {self.use_gpu}")
+    
+    def build_model(self):
+        """Build the model architecture"""
+        raise NotImplementedError("Subclasses must implement build_model()")
+    
+    def load_data(self):
+        """Load and preprocess training data"""
+        raise NotImplementedError("Subclasses must implement load_data()")
+    
+    def train(self):
+        """Train the model"""
+        raise NotImplementedError("Subclasses must implement train()")
+    
+    def evaluate(self):
+        """Evaluate the model"""
+        raise NotImplementedError("Subclasses must implement evaluate()")
+    
+    def save(self):
+        """Save the model"""
+        raise NotImplementedError("Subclasses must implement save()")
+    
+    def load(self):
+        """Load the model from saved state"""
+        raise NotImplementedError("Subclasses must implement load()")
+    
+    def predict(self, data):
+        """Make predictions with the model"""
+        raise NotImplementedError("Subclasses must implement predict()")
+    
+    def update_status(self, **kwargs):
+        """Update the training status"""
+        for key, value in kwargs.items():
+            if key in self.training_status:
+                self.training_status[key] = value
+            elif key in self.training_status['metrics']:
+                self.training_status['metrics'][key].append(value)
+        
+        # Save status to file
+        status_file = self.model_dir / 'status.json'
+        with open(status_file, 'w') as f:
+            json.dump(self.training_status, f, indent=2)
+
+    def get_status(self):
+        """Get the current training status"""
+        return self.training_status
+
+
+class PricePredictionModel(BaseStockModel):
+    """Stock price prediction model using LSTM"""
+    def __init__(self, params):
+        super().__init__('price_prediction', params)
+        if HAS_TORCH:
+            self.build_model()
+    
+    def build_model(self):
+        """Build LSTM model for price prediction"""
+        if not HAS_TORCH:
+            logger.error("Cannot build PyTorch model - PyTorch not installed")
+            return
+        
+        class LSTM(torch.nn.Module):
+            def __init__(self, input_size, hidden_size, num_layers, output_size):
+                super(LSTM, self).__init__()
+                self.hidden_size = hidden_size
+                self.num_layers = num_layers
+                self.lstm = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+                self.fc = torch.nn.Linear(hidden_size, output_size)
+                
+            def forward(self, x):
+                h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+                c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+                out, _ = self.lstm(x, (h0, c0))
+                out = self.fc(out[:, -1, :])
+                return out
+        
+        input_size = 5  # OHLCV features
+        hidden_size = 50
+        num_layers = 2
+        output_size = 1  # Predict next day's price
+        
+        self.model = LSTM(input_size, hidden_size, num_layers, output_size)
+        if self.use_gpu:
+            self.model = self.model.to(self.device)
+        
+        # Define loss function and optimizer
+        self.criterion = torch.nn.MSELoss()
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(), 
+            lr=self.params.get('learning_rate', 0.001)
+        )
+        
+        logger.info(f"Built LSTM model with {num_layers} layers, {hidden_size} hidden units")
+    
+    def train(self):
+        """Train the price prediction model"""
+        if not HAS_TORCH:
+            logger.error("Cannot train - PyTorch not installed")
+            return
+        
+        logger.info(f"Starting training with GPU: {self.use_gpu}")
+        self.update_status(status='training')
+        
+        # Generate dummy training data for demo
+        seq_length = 20  # 20 days of history
+        n_samples = 1000
+        X = torch.randn(n_samples, seq_length, 5)  # OHLCV features
+        y = torch.randn(n_samples, 1)  # Target prices
+        
+        if self.use_gpu:
+            X = X.to(self.device)
+            y = y.to(self.device)
+        
+        # Training parameters
+        batch_size = self.params.get('batch_size', 32)
+        epochs = self.params.get('epochs', 50)
+        
+        # Create data loader
+        dataset = torch.utils.data.TensorDataset(X, y)
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size)
+        
+        # Training loop
+        for epoch in range(epochs):
+            start_time = time.time()
+            self.model.train()
+            train_loss = 0.0
+            
+            for batch_X, batch_y in train_loader:
+                self.optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = self.criterion(outputs, batch_y)
+                loss.backward()
+                self.optimizer.step()
+                train_loss += loss.item()
+            
+            # Validation
+            self.model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch_X, batch_y in val_loader:
+                    outputs = self.model(batch_X)
+                    loss = self.criterion(outputs, batch_y)
+                    val_loss += loss.item()
+            
+            # Calculate metrics
+            train_loss /= len(train_loader)
+            val_loss /= len(val_loader)
+            
+            # Simple accuracy approximation for demo
+            train_accuracy = 100 - (train_loss * 100)  # Placeholder
+            val_accuracy = 100 - (val_loss * 100)  # Placeholder
+            
+            # Update status
+            progress = int(((epoch + 1) / epochs) * 100)
+            self.update_status(
+                progress=progress,
+                current_epoch=epoch + 1,
+                loss=train_loss,
+                val_loss=val_loss,
+                accuracy=train_accuracy,
+                val_accuracy=val_accuracy
+            )
+            
+            # Log progress
+            epoch_time = time.time() - start_time
+            logger.info(f"Epoch {epoch+1}/{epochs} - "
+                       f"Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, "
+                       f"Time: {epoch_time:.2f}s, Progress: {progress}%")
+            
+            # Sleep to simulate longer training for demo
+            if not self.use_gpu:
+                time.sleep(2)  # Longer for CPU
+            else:
+                time.sleep(0.5)  # Faster for GPU
+        
+        # Save the model
+        self.save()
+        self.update_status(status='complete', progress=100)
+        logger.info("Training completed")
+    
+    def save(self):
+        """Save the trained model"""
+        if not HAS_TORCH or self.model is None:
+            return
+        
+        model_path = self.model_dir / 'model.pth'
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'params': self.params,
+        }, model_path)
+        logger.info(f"Model saved to {model_path}")
+
+
+def train_model(model_type, params):
+    """Train a model of the specified type with the given parameters"""
+    logger.info(f"Starting training job for model: {model_type}")
+    
+    # Select model class based on type
+    if model_type == 'price_prediction':
+        model = PricePredictionModel(params)
+    else:
+        logger.error(f"Unknown model type: {model_type}")
+        return False
+    
+    # Train the model
+    try:
+        model.train()
+        return True
+    except Exception as e:
+        logger.exception(f"Error training model: {e}")
+        return False
+
+
+def main():
+    """Main function to parse arguments and start training"""
+    parser = argparse.ArgumentParser(description='AI Model Trainer')
+    parser.add_argument('--model', type=str, required=True, help='Model type to train')
+    parser.add_argument('--params', type=str, required=True, help='JSON string of training parameters')
+    parser.add_argument('--gpu', action='store_true', help='Use GPU for training if available')
+    
+    args = parser.parse_args()
+    
+    # Parse parameters
+    try:
+        params = json.loads(args.params)
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON parameters")
+        return
+    
+    # Override GPU setting from command line
+    if args.gpu:
+        params['use_gpu'] = True
+    
+    # Train the model
+    train_model(args.model, params)
+
+
+if __name__ == "__main__":
+    main() 

@@ -1,0 +1,167 @@
+# 🚀 阿里云Ubuntu服务器连接指南
+
+## 📋 服务器信息
+- **公网IP**: 47.98.208.190
+- **私网IP**: 172.20.108.74
+- **系统**: Ubuntu 22.04 64位
+- **区域**: 华东1(杭州)
+
+## 🔑 SSH连接方法
+
+### 方法1: 使用密码连接
+```bash
+ssh root@47.98.208.190
+```
+
+### 方法2: 使用阿里云控制台
+1. 点击"登录"按钮
+2. 选择"通过VNC连接实例"
+3. 输入用户名: root
+4. 输入密码
+
+## 📦 部署脚本下载
+
+### 快速部署命令:
+```bash
+# 1. 连接服务器
+ssh root@47.98.208.190
+
+# 2. 下载部署脚本
+wget -O setup.sh https://raw.githubusercontent.com/308186235/realtime-stock-data-cloud/main/ubuntu_onedrive_setup.sh
+
+# 3. 如果wget失败,手动创建脚本
+nano setup.sh
+# 复制脚本内容并保存 (Ctrl+X, Y, Enter)
+
+# 4. 运行部署脚本
+chmod +x setup.sh
+./setup.sh
+```
+
+## 🔧 OneDrive配置步骤
+
+### 1. 配置rclone
+```bash
+rclone config
+```
+
+### 2. 配置选项:
+```
+n) New remote
+name> onedrive_trading
+Storage> onedrive
+client_id> (直接回车)
+client_secret> (直接回车)
+region> global
+Edit advanced config? n
+Use auto config? n
+```
+
+### 3. 授权流程:
+1. 复制授权URL到浏览器
+2. 使用账户: 308186235@qq.com
+3. 输入一次性密码
+4. 复制授权码回终端
+
+### 4. 完成配置:
+```
+Choose a number from below, or type in an existing value
+1 / OneDrive Personal or Business
+config_type> 1
+Drive OK? y
+```
+
+## ⚡ 启动服务
+
+### 1. 启动OneDrive挂载
+```bash
+sudo systemctl enable onedrive-mount
+sudo systemctl start onedrive-mount
+sudo systemctl status onedrive-mount
+```
+
+### 2. 启动API服务
+```bash
+sudo systemctl enable onedrive-api
+sudo systemctl start onedrive-api
+sudo systemctl status onedrive-api
+```
+
+## 🔍 测试API服务
+
+### 1. 本地测试
+```bash
+curl http://localhost:8080
+curl http://localhost:8080/api/status
+```
+
+### 2. 外网测试
+```bash
+curl http://47.98.208.190:8080
+curl http://47.98.208.190:8080/api/status
+```
+
+## 🛡️ 安全组配置
+
+### 需要开放端口:
+- **22**: SSH连接
+- **8080**: API服务
+- **80**: HTTP (可选)
+- **443**: HTTPS (可选)
+
+### 阿里云控制台配置:
+1. 进入ECS实例详情
+2. 点击"安全组"
+3. 点击"配置规则"
+4. 添加入方向规则:
+   - 端口范围: 8080/8080
+   - 授权对象: 0.0.0.0/0
+   - 协议类型: TCP
+
+## 📊 监控和日志
+
+### 查看服务状态
+```bash
+# 查看API服务日志
+sudo journalctl -u onedrive-api -f
+
+# 查看挂载服务日志
+sudo journalctl -u onedrive-mount -f
+
+# 查看系统资源
+htop
+df -h
+```
+
+### 重启服务
+```bash
+# 重启API服务
+sudo systemctl restart onedrive-api
+
+# 重启挂载服务
+sudo systemctl restart onedrive-mount
+```
+
+## 🎯 预期结果
+
+部署成功后,您将获得:
+- ✅ OneDrive自动挂载到 `/mnt/onedrive`
+- ✅ API服务运行在 `http://47.98.208.190:8080`
+- ✅ 实时监听OneDrive文件变化
+- ✅ 自动缓存交易数据
+- ✅ RESTful API接口
+
+## 🔗 API端点
+
+- `GET /` - 健康检查
+- `GET /api/status` - 服务状态
+- `GET /api/positions` - 持仓数据
+- `GET /api/balance` - 余额数据
+
+## 🆘 故障排除
+
+### 常见问题:
+1. **SSH连接失败**: 检查安全组22端口
+2. **API无法访问**: 检查安全组8080端口
+3. **OneDrive挂载失败**: 重新运行 `rclone config`
+4. **服务启动失败**: 查看日志 `journalctl -u service-name`

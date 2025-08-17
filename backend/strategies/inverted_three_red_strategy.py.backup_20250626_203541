@@ -1,0 +1,441 @@
+import pandas as pd
+import numpy as np
+from .base_strategy import BaseStrategy
+import logging
+
+logger = logging.getLogger(__name__)
+
+class InvertedThreeRedStrategy(BaseStrategy):
+    """
+    倒三红形（Inverted Three Red）策略
+    
+    "倒三红形"是一种形象化的K线组合术语，通常指股价在上涨趋势末端或高位盘整时出现的三根阳线组合，
+    但多方力量逐渐衰竭，形成"滞涨信号"。
+    
+    核心特征：
+    1. 由三根连续阳线组成，但后一根阳线的实体长度明显短于前一根，且上影线逐渐变长，形成"阳线力度递减"的视觉效果
+    2. 第三根阳线的收盘价可能低于第二根阳线的收盘价，或仅小幅上涨（实体接近十字星）
+    3. 成交量逐次萎缩（买盘减少），或第三根阳线放量但收长上影（放量滞涨，抛压增加）
+    4. 通常出现在大幅上涨后的高位区域（如股价创新高后）或远离均线（乖离率过高）时
+    
+    该策略生成以下信号：
+    - 1 (买入信号)：低位或中位缩量倒三红，后市可能出现反弹（筑底信号）
+    - -1 (卖出信号)：高位放量倒三红，多方上攻乏力，为滞涨信号，需减仓或离场
+    - 0 (观望)：无明显信号或形态不完整
+    """
+    
+    def __init__(self, parameters=None):
+        """
+        初始化倒三红形策略
+        
+        Args:
+            parameters (dict): 策略参数
+        """
+        super().__init__(parameters or self.get_default_parameters())
+        self.name = "倒三红形策略"
+        self.description = "基于倒三红形K线组合的高位滞涨或底部反转的交易策略"
+    
+    def get_default_parameters(self):
+        """
+        获取默认策略参数
+        
+        Returns:
+            dict: 默认参数
+        """
+        return {
+            'body_size_decrease_ratio': 0.67,   # 后续阳线实体长度比前一根的最大比例(2/3)
+            'min_upper_shadow_ratio': 1.0,      # 上影线占实体最小比例(上影线>=实体)
+            'max_price_increase': 0.01,         # 第三根阳线相对第二根的最大涨幅(1%)
+            'volume_decrease_threshold': 0.1,   # 量能衰竭阈值(后续成交量比前一根下降10%)
+            'volume_surge_threshold': 0.3,      # 第三根放量阈值(较第二根增加30%以上)
+            'high_position_threshold': 0.8,     # 高位判断阈值(相对近期波动区间80%)
+            'low_position_threshold': 0.2,      # 低位判断阈值(相对近期波动区间20%)
+            'trend_bars': 10,                   # 检查趋势的K线数量
+            'uptrend_threshold': 0.05,          # 上涨趋势确认阈值(5%)
+            'look_back_period': 60,             # 回溯周期(历史高低点判断)
+            'ma_deviation_threshold': 0.08,     # 股价偏离均线阈值(8%)
+            'stop_loss_pct': 0.05,              # 止损百分比(5%)
+            'use_ma_confirmation': True,        # 是否使用均线确认信号
+            'ma_periods': [5, 10, 20, 60],      # 均线周期设置
+            'use_macd_confirmation': True,      # 是否使用MACD确认信号
+            'use_rsi_confirmation': True,       # 是否使用RSI确认信号
+            'rsi_overbought': 70,               # RSI超买阈值
+            'min_pattern_length': 3,            # 要求的最小连续阳线数
+            'confirmation_days': 1,             # 形态确认的观察天数
+            'high_position_reduction': 0.7,     # 高位减仓比例(70%)
+            'mid_position_reduction': 0.3,      # 中位减仓比例(30%)
+            'low_position_position': 0.2        # 低位试仓仓位(20%)
+        }
+    
+    def get_parameter_ranges(self):
+        """
+        获取参数范围，用于优化
+        
+        Returns:
+            dict: 参数范围
+        """
+        return {
+            'body_size_decrease_ratio': {'min': 0.5, 'max': 0.8, 'step': 0.05},
+            'min_upper_shadow_ratio': {'min': 0.8, 'max': 1.5, 'step': 0.1},
+            'max_price_increase': {'min': 0.005, 'max': 0.02, 'step': 0.005},
+            'volume_decrease_threshold': {'min': 0.05, 'max': 0.2, 'step': 0.05},
+            'volume_surge_threshold': {'min': 0.2, 'max': 0.5, 'step': 0.1},
+            'high_position_threshold': {'min': 0.7, 'max': 0.9, 'step': 0.05},
+            'low_position_threshold': {'min': 0.1, 'max': 0.3, 'step': 0.05},
+            'uptrend_threshold': {'min': 0.03, 'max': 0.08, 'step': 0.01},
+            'ma_deviation_threshold': {'min': 0.05, 'max': 0.15, 'step': 0.01},
+            'rsi_overbought': {'min': 65, 'max': 80, 'step': 5}
+        }
+    
+    def generate_signals(self, data):
+        """
+        生成交易信号
+        
+        Args:
+            data (pd.DataFrame): 包含OHLCV的历史市场数据
+            
+        Returns:
+            pd.Series: 交易信号序列 (1:买入, -1:卖出, 0:持有)
+        """
+        # 确保数据完整性
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        if not all(col in data.columns for col in required_columns):
+            logger.error("缺少所需的数据列，至少需要 OHLCV 数据")
+            return pd.Series(0, index=data.index)
+        
+        # 创建数据副本并进行预处理
+        df = data.copy()
+        
+        # 计算K线特征
+        df['body_size'] = abs(df['close'] - df['open'])
+        df['body_size_ratio'] = df['body_size'] / (df['high'] - df['low'])
+        df['is_bullish'] = df['close'] > df['open']
+        df['upper_shadow'] = df['high'] - df[['open', 'close']].max(axis=1)
+        df['upper_shadow_ratio'] = df.apply(
+            lambda x: x['upper_shadow'] / x['body_size'] if x['body_size'] > 0 else 10, 
+            axis=1
+        )
+        
+        # 计算移动平均线
+        self._calculate_moving_averages(df)
+        
+        # 计算技术指标
+        self._calculate_technical_indicators(df)
+        
+        # 初始化信号列
+        df['signal'] = 0
+        df['pattern_detected'] = False
+        
+        # 设置回溯周期
+        look_back = self.parameters['look_back_period']
+        trend_bars = self.parameters['trend_bars']
+        
+        # 需要足够的数据才能开始分析
+        min_required_bars = max(look_back, trend_bars, 
+                               self.parameters['ma_periods'][-1] if self.parameters['use_ma_confirmation'] else 0)
+        min_required_bars = max(min_required_bars, 
+                                self.parameters['min_pattern_length'] + self.parameters['confirmation_days']) + 2
+                                
+        if len(df) < min_required_bars:
+            logger.warning(f"数据不足，无法完整分析倒三红形，需要至少{min_required_bars}根K线")
+            return pd.Series(0, index=data.index)
+        
+        # 检测倒三红形
+        min_pattern_length = self.parameters['min_pattern_length']
+        for i in range(trend_bars + min_pattern_length, len(df)):
+            # 跳过已经检测到的形态区域
+            if i >= min_pattern_length and df['pattern_detected'].iloc[i-1]:
+                continue
+                
+            # 提取用于模式识别的K线
+            window = df.iloc[i-min_pattern_length:i]  # 最近三根K线（或指定的根数）
+            
+            # 检查是否连续三根阳线
+            bullish_candles = window['is_bullish'].all()
+            if not bullish_candles:
+                continue
+            
+            # 检查实体是否逐渐减小
+            bodies = window['body_size'].values
+            decreasing_bodies = True
+            for j in range(1, min_pattern_length):
+                if bodies[j] > bodies[j-1] * self.parameters['body_size_decrease_ratio']:
+                    decreasing_bodies = False
+                    break
+            
+            if not decreasing_bodies:
+                continue
+            
+            # 检查上影线是否逐渐增长
+            upper_shadows = window['upper_shadow_ratio'].values
+            # 至少有两根K线的上影线达到要求
+            upper_shadow_count = sum(shadow >= self.parameters['min_upper_shadow_ratio'] for shadow in upper_shadows)
+            if upper_shadow_count < 2:
+                continue
+            
+            # 检查最后一根阳线是否只有小幅上涨（或低于前一根）
+            closes = window['close'].values
+            if min_pattern_length >= 3:
+                last_gain = (closes[-1] - closes[-2]) / closes[-2]
+                if last_gain > self.parameters['max_price_increase']:
+                    continue
+            
+            # 分析成交量特征
+            volumes = window['volume'].values
+            volume_condition = False
+            
+            # 检查是否逐步萎缩
+            volume_decreasing = True
+            for j in range(1, min_pattern_length):
+                if volumes[j] > volumes[j-1] * (1 - self.parameters['volume_decrease_threshold']):
+                    volume_decreasing = False
+                    break
+            
+            # 检查最后一根是否放量收上影
+            last_volume_surge = (volumes[-1] >= volumes[-2] * (1 + self.parameters['volume_surge_threshold']) and
+                                window['upper_shadow_ratio'].iloc[-1] >= self.parameters['min_upper_shadow_ratio'])
+            
+            volume_condition = volume_decreasing or last_volume_surge
+            
+            if not volume_condition:
+                continue
+            
+            # 分析前期趋势
+            trend_window = df.iloc[i-trend_bars-min_pattern_length:i-min_pattern_length]
+            is_uptrend = self._check_uptrend(trend_window)
+            
+            # 如果不在上涨趋势中，不是典型的倒三红形
+            if not is_uptrend:
+                continue
+            
+            # 判断价格位置（高位、中位、低位）
+            position_type = self._determine_position_type(df, i)
+            
+            # 马格力孤异离
+            ma_deviation = False
+            if self.parameters['use_ma_confirmation']:
+                ma5 = df['ma5'].iloc[i-1]
+                current_price = df['close'].iloc[i-1]
+                ma_deviation = (current_price - ma5) / ma5 > self.parameters['ma_deviation_threshold']
+            
+            # 生成信号
+            signal = self._generate_signal(
+                position_type,
+                volume_decreasing,
+                last_volume_surge,
+                window,
+                ma_deviation,
+                df,
+                i
+            )
+            
+            # 标记检测到形态
+            df.loc[df.index[i-1], 'pattern_detected'] = True
+            df.loc[df.index[i-1], 'signal'] = signal
+            
+            # 应用确认规则（如果需要）
+            if self.parameters['confirmation_days'] > 0 and i < len(df) - self.parameters['confirmation_days']:
+                confirmation_window = df.iloc[i:i+self.parameters['confirmation_days']]
+                confirmed_signal = self._apply_confirmation_rules(confirmation_window, signal, position_type)
+                df.loc[df.index[i+self.parameters['confirmation_days']-1], 'signal'] = confirmed_signal
+        
+        return df['signal']
+    
+    def _calculate_moving_averages(self, df):
+        """
+        计算移动平均线
+        
+        Args:
+            df (pd.DataFrame): 数据帧
+        """
+        if self.parameters['use_ma_confirmation']:
+            for period in self.parameters['ma_periods']:
+                df[f'ma{period}'] = df['close'].rolling(window=period).mean()
+    
+    def _calculate_technical_indicators(self, df):
+        """
+        计算技术指标
+        
+        Args:
+            df (pd.DataFrame): 数据帧
+        """
+        # 计算RSI
+        if self.parameters['use_rsi_confirmation']:
+            delta = df['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            
+            rs = gain / loss
+            df['rsi'] = 100 - (100 / (1 + rs))
+        
+        # 计算MACD
+        if self.parameters['use_macd_confirmation']:
+            exp1 = df['close'].ewm(span=12, adjust=False).mean()
+            exp2 = df['close'].ewm(span=26, adjust=False).mean()
+            df['macd'] = exp1 - exp2
+            df['signal_line'] = df['macd'].ewm(span=9, adjust=False).mean()
+            df['macd_hist'] = df['macd'] - df['signal_line']
+            # 计算MACD柱状图变化
+            df['macd_hist_change'] = df['macd_hist'].diff()
+    
+    def _check_uptrend(self, window):
+        """
+        检查是否为上涨趋势
+        
+        Args:
+            window (pd.DataFrame): 数据窗口
+            
+        Returns:
+            bool: 是否为上涨趋势
+        """
+        if len(window) < 3:
+            return False
+            
+        start_price = window['close'].iloc[0]
+        end_price = window['close'].iloc[-1]
+        
+        # 计算价格变动幅度
+        price_change = (end_price - start_price) / start_price
+        
+        # 判断是否为上涨趋势
+        return price_change >= self.parameters['uptrend_threshold']
+    
+    def _determine_position_type(self, df, current_index):
+        """
+        判断当前K线位置类型
+        
+        Args:
+            df (pd.DataFrame): 数据帧
+            current_index (int): 当前K线索引
+            
+        Returns:
+            str: 位置类型 ('high', 'middle', 'low')
+        """
+        # 获取回溯周期
+        look_back = min(self.parameters['look_back_period'], current_index)
+        
+        # 获取历史数据
+        historical_data = df.iloc[current_index-look_back:current_index]
+        current_price = df['close'].iloc[current_index-1]
+        
+        # 计算历史最高、最低价
+        historical_high = historical_data['high'].max()
+        historical_low = historical_data['low'].min()
+        
+        # 计算当前价格在历史范围中的相对位置
+        range_size = historical_high - historical_low
+        
+        if range_size == 0:  # 避免除零错误
+            return 'middle'
+            
+        relative_position = (current_price - historical_low) / range_size
+        
+        # 判断位置类型
+        if relative_position >= self.parameters['high_position_threshold']:
+            return 'high'
+        elif relative_position <= self.parameters['low_position_threshold']:
+            return 'low'
+        else:
+            return 'middle'
+    
+    def _generate_signal(self, position_type, volume_decreasing, last_volume_surge, 
+                        window, ma_deviation, df, index):
+        """
+        根据形态特征生成交易信号
+        
+        Args:
+            position_type (str): 位置类型 (high, middle, low)
+            volume_decreasing (bool): 量能是否逐次萎缩
+            last_volume_surge (bool): 最后一根是否放量收上影
+            window (pd.DataFrame): 形态K线窗口
+            ma_deviation (bool): 是否明显偏离均线
+            df (pd.DataFrame): 完整数据帧
+            index (int): 当前索引
+            
+        Returns:
+            int: 交易信号 (1:买入, -1:卖出, 0:持有)
+        """
+        # 默认信号为0（观望）
+        signal = 0
+        
+        # MACD指标确认
+        macd_weakening = False
+        if self.parameters['use_macd_confirmation'] and 'macd_hist' in df.columns:
+            # 检查MACD指标是否顶背离
+            if 'macd_hist_change' in df.columns:
+                macd_weakening = df['macd_hist_change'].iloc[index-1] < 0
+        
+        # RSI指标确认
+        rsi_overbought = False
+        if self.parameters['use_rsi_confirmation'] and 'rsi' in df.columns:
+            rsi_overbought = df['rsi'].iloc[index-1] > self.parameters['rsi_overbought']
+        
+        # 高位倒三红（通常是卖出信号）
+        if position_type == 'high':
+            # 高位出现倒三红，特别是伴随放量但收上影，是典型的滞涨信号
+            if last_volume_surge or ma_deviation or rsi_overbought:
+                signal = -1  # 卖出信号（减仓或离场）
+                
+                # 检测在超买区域的概率更高
+                if macd_weakening and rsi_overbought:
+                    signal = -1  # 增强卖出信号置信度
+        
+        # 中位倒三红
+        elif position_type == 'middle':
+            # 中位缩量倒三红，可能是短期调整或上涨中继，需要谨慎对待
+            if volume_decreasing and not ma_deviation and not rsi_overbought:
+                # 若形态较温和，可持仓观察
+                signal = 0  # 观望信号
+            else:
+                # 若伴随技术指标转弱，小幅减仓为宜
+                signal = -1  # 减仓信号
+        
+        # 低位倒三红
+        elif position_type == 'low':
+            # 低位缩量倒三红，可能是筑底信号，若量能温和且未超买
+            if volume_decreasing and not rsi_overbought:
+                signal = 1  # 轻仓试探信号
+        
+        return signal
+    
+    def _apply_confirmation_rules(self, confirmation_window, initial_signal, position_type):
+        """
+        应用确认规则验证信号
+        
+        Args:
+            confirmation_window (pd.DataFrame): 确认窗口数据
+            initial_signal (int): 初始信号
+            position_type (str): 位置类型
+            
+        Returns:
+            int: 最终交易信号
+        """
+        # 如果初始信号为0或没有足够的确认数据，直接返回
+        if initial_signal == 0 or len(confirmation_window) == 0:
+            return initial_signal
+        
+        # 获取确认K线
+        confirm_candle = confirmation_window.iloc[0]
+        
+        # 卖出信号确认（高位或中位倒三红）
+        if initial_signal == -1 and (position_type == 'high' or position_type == 'middle'):
+            # 如果确认K线为阴线，特别是长阴线，增强卖出信号
+            if not confirm_candle['is_bullish'] and confirm_candle['body_size_ratio'] > 0.5:
+                return -1
+            
+            # 如果确认K线为大阳线且明显突破前高，可能是假信号
+            elif confirm_candle['is_bullish'] and confirm_candle['close'] > confirmation_window['high'].max():
+                return 0
+        
+        # 买入信号确认（低位倒三红）
+        elif initial_signal == 1 and position_type == 'low':
+            # 如果确认K线为阳线且成交量放大，增强买入信号
+            if confirm_candle['is_bullish'] and confirm_candle['volume'] > confirmation_window['volume'].mean():
+                return 1
+            
+            # 如果确认K线为长阴线，取消买入信号
+            elif not confirm_candle['is_bullish'] and confirm_candle['body_size_ratio'] > 0.5:
+                return 0
+        
+        # 默认保持原信号
+        return initial_signal 

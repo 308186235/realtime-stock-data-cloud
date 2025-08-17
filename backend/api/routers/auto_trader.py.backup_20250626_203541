@@ -1,0 +1,190 @@
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+import logging
+
+# Import services
+from services.auto_trader_service import AutoTraderService
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Dependency to get auto trader service
+def get_auto_trader_service():
+    return AutoTraderService()
+
+# Models for request/response
+class TradeConfigRequest(BaseModel):
+    tracker_id: str
+    enabled: bool = True
+    mode: str = Field(default="MODERATE", description="交易策略模式: CONSERVATIVE, MODERATE, AGGRESSIVE")
+    max_single_trade_amount: Optional[float] = Field(default=10000, ge=0, description="单次最大交易金额")
+    max_daily_trades: Optional[int] = Field(default=5, ge=0, description="每日最大交易次数")
+    custom_rules: Optional[Dict[str, Any]] = Field(default=None, description="自定义交易规则")
+    trading_hours: Optional[Dict[str, Any]] = Field(default=None, description="交易时间窗口设置")
+    stop_loss_percent: Optional[float] = Field(default=None, ge=0, le=1, description="止损比例")
+    take_profit_percent: Optional[float] = Field(default=None, ge=0, le=1, description="止盈比例")
+    increase_step: Optional[float] = Field(default=None, ge=0, le=1, description="加仓步长")
+    reduce_step: Optional[float] = Field(default=None, ge=0, le=1, description="减仓步长")
+
+class TestTradeRequest(BaseModel):
+    tracker_id: str
+    action: str = Field(description="交易操作: BUY, SELL, SELL_ALL")
+    amount: float = Field(ge=0, description="交易金额")
+
+@router.post("/config")
+async def set_auto_trade_config(
+    request: TradeConfigRequest,
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    为特定追踪器设置自动交易配置
+    
+    Args:
+        request: 交易配置请求
+        
+    Returns:
+        配置设置结果
+    """
+    logger.info(f"设置自动交易配置: {request.tracker_id}, 启用状态: {request.enabled}")
+    
+    # 构建配置字典
+    config = {
+        "enabled": request.enabled,
+        "mode": request.mode,
+        "max_single_trade_amount": request.max_single_trade_amount,
+        "max_daily_trades": request.max_daily_trades
+    }
+    
+    # 添加可选参数
+    if request.custom_rules:
+        config["custom_rules"] = request.custom_rules
+    
+    if request.trading_hours:
+        config["trading_hours"] = request.trading_hours
+    
+    if request.stop_loss_percent is not None:
+        config["stop_loss_percent"] = request.stop_loss_percent
+    
+    if request.take_profit_percent is not None:
+        config["take_profit_percent"] = request.take_profit_percent
+    
+    if request.increase_step is not None:
+        config["increase_step"] = request.increase_step
+    
+    if request.reduce_step is not None:
+        config["reduce_step"] = request.reduce_step
+    
+    result = await trader_service.set_auto_trade_config(request.tracker_id, config)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@router.get("/config/{tracker_id}")
+async def get_auto_trade_config(
+    tracker_id: str,
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    获取追踪器的自动交易配置
+    
+    Args:
+        tracker_id: 追踪器ID
+        
+    Returns:
+        交易配置
+    """
+    result = await trader_service.get_auto_trade_config(tracker_id)
+    
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=f"未找到追踪器 {tracker_id} 的自动交易配置")
+    
+    return result
+
+@router.get("/history/{tracker_id}")
+async def get_trade_history(
+    tracker_id: str,
+    limit: int = 50,
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    获取特定追踪器的交易历史
+    
+    Args:
+        tracker_id: 追踪器ID
+        limit: 返回的最大记录数
+        
+    Returns:
+        交易历史
+    """
+    result = await trader_service.get_trade_history(tracker_id, limit)
+    return result
+
+@router.get("/history")
+async def get_all_trade_history(
+    limit: int = 50,
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    获取所有交易历史
+    
+    Args:
+        limit: 返回的最大记录数
+        
+    Returns:
+        所有交易历史
+    """
+    result = await trader_service.get_trade_history(limit=limit)
+    return result
+
+@router.post("/test-trade")
+async def test_auto_trade(
+    request: TestTradeRequest,
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    测试交易功能
+    
+    Args:
+        request: 测试交易请求
+        
+    Returns:
+        测试交易结果
+    """
+    logger.info(f"测试交易: {request.action} 为 {request.tracker_id}, 金额: {request.amount}")
+    
+    result = await trader_service.test_trade(
+        request.tracker_id,
+        request.action,
+        request.amount
+    )
+    
+    return result
+
+@router.post("/start")
+async def start_auto_trader(
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    启动自动交易服务
+    
+    Returns:
+        启动结果
+    """
+    result = await trader_service.start()
+    return result
+
+@router.post("/stop")
+async def stop_auto_trader(
+    trader_service: AutoTraderService = Depends(get_auto_trader_service)
+):
+    """
+    停止自动交易服务
+    
+    Returns:
+        停止结果
+    """
+    result = await trader_service.stop()
+    return result 

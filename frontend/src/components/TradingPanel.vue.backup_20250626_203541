@@ -1,0 +1,80 @@
+<template>
+  <div class="trading-panel">
+    <h3>尾盘策略参数</h3>
+    <div class="params-group">
+      <div class="param-item">
+        <label>观察窗口（分钟）</label>
+        <input type="number" v-model="params.timeWindow" min="30" max="60">
+      </div>
+      <!-- 其他参数输入项 -->
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, watchEffect } from 'vue'
+import * as echarts from 'echarts'
+
+const props = defineProps({
+  initialParams: {
+    type: Object,
+    default: () => ({
+      timeWindow: 45,
+      volumeThreshold: 2.0,
+      volatilityRatio: 0.8
+    })
+  }
+})
+
+const closeStrategyParams = ref({ ...props.initialParams })
+const strategyIntensity = ref(60)
+
+// 实时计算策略强度
+watchEffect(() => {
+  const intensity = 
+    (closeStrategyParams.value.volumeThreshold / 3 * 40) +
+    ((1.2 - closeStrategyParams.value.volatilityRatio) / 0.7 * 60)
+  strategyIntensity.value = Math.min(Math.max(intensity, 0), 100)
+})
+
+// 初始化波动率图表
+onMounted(() => {
+  const chart = echarts.init(document.getElementById('volatility-chart'))
+  chart.setOption({
+    xAxis: { type: 'category' },
+    yAxis: { type: 'value' },
+    series: [{ type: 'line', smooth: true }]
+  })
+})
+</script>
+
+<style scoped>
+.trading-panel {
+  padding: 20px;
+  background: var(--bg-color-secondary);
+  border-radius: 8px;
+}
+.params-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+.param-item {
+  display: flex;
+  flex-direction: column;
+}
+.visualization {
+  margin-top: 20px;
+  display: flex;
+  gap: 20px;
+}
+.param-chart {
+  width: 300px;
+  height: 200px;
+}
+.meter-bar {
+  height: 8px;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+</style>

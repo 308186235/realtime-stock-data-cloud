@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+云端Agent API接口
+提供标准化的云端调用接口,支持时间记录和文件验证
+"""
+
+import json
+import time
+import os
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+from smart_cloud_agent_caller import SmartCloudAgentCaller
+
+class CloudAgentAPI:
+    def __init__(self):
+        self.caller = SmartCloudAgentCaller()
+        self.api_version = "1.0.0"
+    
+    def get_balance(self, timeout_minutes: int = 3) -> Dict[str, Any]:
+        """
+        获取账户余额
+        
+        Args:
+            timeout_minutes: 超时时间(分钟)
+            
+        Returns:
+            {
+                "success": bool,
+                "data": {
+                    "available_cash": float,
+                    "total_assets": float,
+                    "market_value": float,
+                    "frozen_amount": float,
+                    "update_time": str
+                },
+                "call_info": {
+                    "call_time": str,
+                    "response_time": str,
+                    "duration_seconds": float
+                },
+                "message": str
+            }
+        """
+        start_time = datetime.now()
+        
+        try:
+            print(f"🔍 云端API调用: 获取余额")
+            print(f"📅 调用时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # 直接调用余额获取(余额不需要文件,直接返回数据)
+            from fixed_balance_reader import FixedBalanceReader
+            balance_reader = FixedBalanceReader()
+            balance_data = balance_reader.get_account_balance()
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            if balance_data:
+                return {
+                    "success": True,
+                    "data": balance_data,
+                    "call_info": {
+                        "call_time": start_time.isoformat(),
+                        "response_time": end_time.isoformat(),
+                        "duration_seconds": duration
+                    },
+                    "message": "余额获取成功"
+                }
+            else:
+                return {
+                    "success": False,
+                    "data": None,
+                    "call_info": {
+                        "call_time": start_time.isoformat(),
+                        "response_time": end_time.isoformat(),
+                        "duration_seconds": duration
+                    },
+                    "message": "余额获取失败"
+                }
+                
+        except Exception as e:
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            return {
+                "success": False,
+                "data": None,
+                "call_info": {
+                    "call_time": start_time.isoformat(),
+                    "response_time": end_time.isoformat(),
+                    "duration_seconds": duration
+                },
+                "message": f"余额获取异常: {e}"
+            }
+    
+    def export_holdings(self, timeout_minutes: int = 3) -> Dict[str, Any]:
+        """
+        导出持仓数据
+        
+        Args:
+            timeout_minutes: 超时时间(分钟)
+            
+        Returns:
+            {
+                "success": bool,
+                "data": {
+                    "filename": str,
+                    "local_path": str,
+                    "file_size": int,
+                    "record_count": int  # 如果能解析的话
+                },
+                "call_info": {
+                    "call_time": str,
+                    "expected_filename": str,
+                    "actual_filename": str,
+                    "retry_count": int
+                },
+                "message": str
+            }
+        """
+        start_time = datetime.now()
+        
+        try:
+            print(f"🔍 云端API调用: 导出持仓")
+            
+            result = self.caller.smart_call_with_retry('holdings', timeout_minutes)
+            
+            if result['success']:
+                # 尝试解析文件内容
+                file_info = self._analyze_export_file(result.get('local_path'))
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "filename": result.get('actual_filename'),
+                        "local_path": result.get('local_path'),
+                        "file_size": file_info.get('file_size', 0),
+                        "record_count": file_info.get('record_count', 0)
+                    },
+                    "call_info": {
+                        "call_time": result.get('call_time'),
+                        "expected_filename": result.get('expected_filename'),
+                        "actual_filename": result.get('actual_filename'),
+                        "retry_count": result.get('retry_count', 0)
+                    },
+                    "message": result.get('message')
+                }
+            else:
+                return {
+                    "success": False,
+                    "data": None,
+                    "call_info": {
+                        "call_time": result.get('call_time'),
+                        "expected_filename": result.get('expected_filename'),
+                        "retry_count": result.get('retry_count', 0)
+                    },
+                    "message": result.get('message')
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "data": None,
+                "call_info": {
+                    "call_time": start_time.isoformat(),
+                    "expected_filename": None,
+                    "actual_filename": None,
+                    "retry_count": 0
+                },
+                "message": f"导出持仓异常: {e}"
+            }
+    
+    def export_orders(self, timeout_minutes: int = 3) -> Dict[str, Any]:
+        """导出委托数据"""
+        try:
+            print(f"🔍 云端API调用: 导出委托")
+            
+            result = self.caller.smart_call_with_retry('orders', timeout_minutes)
+            
+            if result['success']:
+                file_info = self._analyze_export_file(result.get('local_path'))
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "filename": result.get('actual_filename'),
+                        "local_path": result.get('local_path'),
+                        "file_size": file_info.get('file_size', 0),
+                        "record_count": file_info.get('record_count', 0)
+                    },
+                    "call_info": {
+                        "call_time": result.get('call_time'),
+                        "expected_filename": result.get('expected_filename'),
+                        "actual_filename": result.get('actual_filename'),
+                        "retry_count": result.get('retry_count', 0)
+                    },
+                    "message": result.get('message')
+                }
+            else:
+                return {
+                    "success": False,
+                    "data": None,
+                    "call_info": {
+                        "call_time": result.get('call_time'),
+                        "expected_filename": result.get('expected_filename'),
+                        "retry_count": result.get('retry_count', 0)
+                    },
+                    "message": result.get('message')
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "data": None,
+                "message": f"导出委托异常: {e}"
+            }
+    
+    def export_transactions(self, timeout_minutes: int = 3) -> Dict[str, Any]:
+        """导出成交数据"""
+        try:
+            print(f"🔍 云端API调用: 导出成交")
+            
+            result = self.caller.smart_call_with_retry('transactions', timeout_minutes)
+            
+            if result['success']:
+                file_info = self._analyze_export_file(result.get('local_path'))
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "filename": result.get('actual_filename'),
+                        "local_path": result.get('local_path'),
+                        "file_size": file_info.get('file_size', 0),
+                        "record_count": file_info.get('record_count', 0)
+                    },
+                    "call_info": {
+                        "call_time": result.get('call_time'),
+                        "expected_filename": result.get('expected_filename'),
+                        "actual_filename": result.get('actual_filename'),
+                        "retry_count": result.get('retry_count', 0)
+                    },
+                    "message": result.get('message')
+                }
+            else:
+                return {
+                    "success": False,
+                    "data": None,
+                    "call_info": {
+                        "call_time": result.get('call_time'),
+                        "expected_filename": result.get('expected_filename'),
+                        "retry_count": result.get('retry_count', 0)
+                    },
+                    "message": result.get('message')
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "data": None,
+                "message": f"导出成交异常: {e}"
+            }
+    
+    def export_all_data(self, timeout_minutes: int = 5) -> Dict[str, Any]:
+        """
+        导出所有数据(持仓,委托,成交)
+        
+        Returns:
+            {
+                "success": bool,
+                "data": {
+                    "holdings": {...},
+                    "orders": {...},
+                    "transactions": {...}
+                },
+                "summary": {
+                    "total_operations": int,
+                    "successful_operations": int,
+                    "failed_operations": int,
+                    "success_rate": float
+                },
+                "message": str
+            }
+        """
+        start_time = datetime.now()
+        
+        try:
+            print(f"🔍 云端API调用: 导出所有数据")
+            
+            results = {}
+            
+            # 导出持仓
+            print("📊 1/3 导出持仓...")
+            results['holdings'] = self.export_holdings(timeout_minutes)
+            
+            # 导出委托
+            print("📊 2/3 导出委托...")
+            results['orders'] = self.export_orders(timeout_minutes)
+            
+            # 导出成交
+            print("📊 3/3 导出成交...")
+            results['transactions'] = self.export_transactions(timeout_minutes)
+            
+            # 统计结果
+            successful = sum(1 for r in results.values() if r['success'])
+            total = len(results)
+            success_rate = successful / total * 100
+            
+            overall_success = success_rate >= 66.7  # 至少2/3成功
+            
+            return {
+                "success": overall_success,
+                "data": results,
+                "summary": {
+                    "total_operations": total,
+                    "successful_operations": successful,
+                    "failed_operations": total - successful,
+                    "success_rate": success_rate
+                },
+                "message": f"批量导出完成,成功率: {success_rate:.1f}%"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "data": None,
+                "summary": {
+                    "total_operations": 3,
+                    "successful_operations": 0,
+                    "failed_operations": 3,
+                    "success_rate": 0.0
+                },
+                "message": f"批量导出异常: {e}"
+            }
+    
+    def _analyze_export_file(self, file_path: str) -> Dict[str, Any]:
+        """分析导出文件"""
+        if not file_path or not os.path.exists(file_path):
+            return {"file_size": 0, "record_count": 0}
+        
+        try:
+            import os
+            file_size = os.path.getsize(file_path)
+            
+            # 尝试读取CSV文件行数
+            record_count = 0
+            if file_path.endswith('.csv'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    record_count = sum(1 for line in f) - 1  # 减去标题行
+                    record_count = max(0, record_count)
+            
+            return {
+                "file_size": file_size,
+                "record_count": record_count
+            }
+            
+        except Exception as e:
+            print(f"⚠️ 分析文件失败: {e}")
+            return {"file_size": 0, "record_count": 0}
+    
+    def get_api_status(self) -> Dict[str, Any]:
+        """获取API状态"""
+        return {
+            "api_version": self.api_version,
+            "status": "active",
+            "current_time": datetime.now().isoformat(),
+            "call_history_count": len(self.caller.get_call_history()),
+            "supported_operations": [
+                "get_balance",
+                "export_holdings", 
+                "export_orders",
+                "export_transactions",
+                "export_all_data"
+            ]
+        }
+
+def demo_cloud_api():
+    """演示云端API"""
+    print("🚀 云端Agent API演示")
+    print("=" * 60)
+    
+    api = CloudAgentAPI()
+    
+    # 获取API状态
+    print("📋 API状态:")
+    status = api.get_api_status()
+    print(json.dumps(status, ensure_ascii=False, indent=2))
+    
+    # 测试余额获取
+    print("\n💰 测试余额获取:")
+    balance_result = api.get_balance()
+    print(json.dumps(balance_result, ensure_ascii=False, indent=2))
+    
+    # 测试持仓导出
+    print("\n📊 测试持仓导出:")
+    holdings_result = api.export_holdings()
+    print(json.dumps(holdings_result, ensure_ascii=False, indent=2))
+
+if __name__ == '__main__':
+    demo_cloud_api()

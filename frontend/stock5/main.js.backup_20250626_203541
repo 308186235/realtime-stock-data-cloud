@@ -1,0 +1,60 @@
+import Vue from 'vue';
+import store from './store';
+import env from './env';
+
+// Set environment variables to be accessible in Vue components
+Vue.prototype.$env = env;
+
+// Register Vuex store
+Vue.prototype.$store = store;
+
+// Log app initialization
+console.log(`App initializing in ${env.current.name} environment`);
+console.log(`API URL: ${env.current.apiBaseUrl}`);
+
+export default {
+  // Install function for Vue
+  install(Vue) {
+    // Register any global components here
+    
+    // Register global mixins or filters
+    Vue.filter('money', (value, decimals = 2, currency = '¥') => {
+      if (typeof value !== 'number') {
+        value = Number(value) || 0;
+      }
+      return `${currency}${value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+    });
+    
+    Vue.filter('date', (value, includeTime = false) => {
+      if (!value) return '';
+      
+      const date = new Date(value);
+      if (isNaN(date)) return '';
+      
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      
+      if (!includeTime) {
+        return `${year}-${month}-${day}`;
+      }
+      
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+    });
+    
+    // Initialize app with store
+    const initApp = () => {
+      // Initialize store
+      store.dispatch('init').catch(error => {
+        console.error('Failed to initialize app:', error);
+      });
+    };
+    
+    // Call init function
+    initApp();
+  }
+}; 
+ 

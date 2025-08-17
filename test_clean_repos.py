@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""
+测试干净仓库的完整性
+"""
+
+import os
+import json
+import subprocess
+from datetime import datetime
+
+class RepoTester:
+    """仓库测试器"""
+    
+    def __init__(self):
+        self.frontend_repo = "stock-trading-frontend"
+        self.backend_repo = "stock-trading-backend"
+        self.test_results = []
+        
+    def run_tests(self):
+        """运行所有测试"""
+        print("🧪 开始测试干净仓库...")
+        print("=" * 60)
+        
+        # 测试前端项目
+        self._test_frontend()
+        
+        # 测试后端项目
+        self._test_backend()
+        
+        # 显示测试结果
+        self._show_results()
+        
+    def _test_frontend(self):
+        """测试前端项目"""
+        print(f"\n📱 测试前端项目: {self.frontend_repo}")
+        
+        # 检查必要文件
+        required_files = [
+            "package.json",
+            "pages.json", 
+            "manifest.json",
+            "main.js",
+            "App.vue",
+            "env.js",
+            "utils/request.js",
+            "pages/index/index.vue",
+            "README.md",
+            ".gitignore"
+        ]
+        
+        for file in required_files:
+            file_path = os.path.join(self.frontend_repo, file)
+            if os.path.exists(file_path):
+                self._add_result("✅", f"前端文件存在: {file}")
+            else:
+                self._add_result("❌", f"前端文件缺失: {file}")
+        
+        # 检查package.json内容
+        package_json_path = os.path.join(self.frontend_repo, "package.json")
+        if os.path.exists(package_json_path):
+            try:
+                with open(package_json_path, 'r', encoding='utf-8') as f:
+                    package_data = json.load(f)
+                    
+                if "name" in package_data and package_data["name"] == "stock-trading-frontend":
+                    self._add_result("✅", "前端package.json名称正确")
+                else:
+                    self._add_result("❌", "前端package.json名称错误")
+                    
+                if "scripts" in package_data:
+                    self._add_result("✅", "前端package.json包含scripts")
+                else:
+                    self._add_result("❌", "前端package.json缺少scripts")
+                    
+            except Exception as e:
+                self._add_result("❌", f"前端package.json解析失败: {str(e)}")
+        
+        # 检查pages.json内容
+        pages_json_path = os.path.join(self.frontend_repo, "pages.json")
+        if os.path.exists(pages_json_path):
+            try:
+                with open(pages_json_path, 'r', encoding='utf-8') as f:
+                    pages_data = json.load(f)
+                    
+                if "pages" in pages_data and len(pages_data["pages"]) > 0:
+                    self._add_result("✅", "前端pages.json配置正确")
+                else:
+                    self._add_result("❌", "前端pages.json配置错误")
+                    
+            except Exception as e:
+                self._add_result("❌", f"前端pages.json解析失败: {str(e)}")
+        
+        # 检查目录结构
+        required_dirs = ["pages", "components", "utils", "services", "static"]
+        for dir_name in required_dirs:
+            dir_path = os.path.join(self.frontend_repo, dir_name)
+            if os.path.exists(dir_path) and os.path.isdir(dir_path):
+                self._add_result("✅", f"前端目录存在: {dir_name}/")
+            else:
+                self._add_result("❌", f"前端目录缺失: {dir_name}/")
+    
+    def _test_backend(self):
+        """测试后端项目"""
+        print(f"\n🔧 测试后端项目: {self.backend_repo}")
+        
+        # 检查必要文件
+        required_files = [
+            "main.py",
+            "requirements.txt",
+            "config.py",
+            "README.md",
+            ".gitignore",
+            "Dockerfile",
+            "docker-compose.yml",
+            ".env.example"
+        ]
+        
+        for file in required_files:
+            file_path = os.path.join(self.backend_repo, file)
+            if os.path.exists(file_path):
+                self._add_result("✅", f"后端文件存在: {file}")
+            else:
+                self._add_result("❌", f"后端文件缺失: {file}")
+        
+        # 检查main.py内容
+        main_py_path = os.path.join(self.backend_repo, "main.py")
+        if os.path.exists(main_py_path):
+            try:
+                with open(main_py_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                if "FastAPI" in content:
+                    self._add_result("✅", "后端main.py使用FastAPI")
+                else:
+                    self._add_result("❌", "后端main.py未使用FastAPI")
+                    
+                if "@app.get" in content:
+                    self._add_result("✅", "后端main.py包含API路由")
+                else:
+                    self._add_result("❌", "后端main.py缺少API路由")
+                    
+            except Exception as e:
+                self._add_result("❌", f"后端main.py读取失败: {str(e)}")
+        
+        # 检查requirements.txt内容
+        requirements_path = os.path.join(self.backend_repo, "requirements.txt")
+        if os.path.exists(requirements_path):
+            try:
+                with open(requirements_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                if "fastapi" in content.lower():
+                    self._add_result("✅", "后端requirements.txt包含FastAPI")
+                else:
+                    self._add_result("❌", "后端requirements.txt缺少FastAPI")
+                    
+                if "uvicorn" in content.lower():
+                    self._add_result("✅", "后端requirements.txt包含Uvicorn")
+                else:
+                    self._add_result("❌", "后端requirements.txt缺少Uvicorn")
+                    
+            except Exception as e:
+                self._add_result("❌", f"后端requirements.txt读取失败: {str(e)}")
+        
+        # 检查目录结构
+        required_dirs = ["routers", "models", "services", "utils", "config", "tests"]
+        for dir_name in required_dirs:
+            dir_path = os.path.join(self.backend_repo, dir_name)
+            if os.path.exists(dir_path) and os.path.isdir(dir_path):
+                self._add_result("✅", f"后端目录存在: {dir_name}/")
+            else:
+                self._add_result("⚠️", f"后端目录可选: {dir_name}/")
+    
+    def _add_result(self, status, message):
+        """添加测试结果"""
+        self.test_results.append((status, message))
+        print(f"  {status} {message}")
+    
+    def _show_results(self):
+        """显示测试结果摘要"""
+        print("\n📊 测试结果摘要:")
+        print("=" * 60)
+        
+        success_count = sum(1 for status, _ in self.test_results if status == "✅")
+        warning_count = sum(1 for status, _ in self.test_results if status == "⚠️")
+        error_count = sum(1 for status, _ in self.test_results if status == "❌")
+        total_count = len(self.test_results)
+        
+        print(f"总测试项: {total_count}")
+        print(f"✅ 成功: {success_count}")
+        print(f"⚠️  警告: {warning_count}")
+        print(f"❌ 失败: {error_count}")
+        
+        success_rate = (success_count / total_count) * 100 if total_count > 0 else 0
+        print(f"成功率: {success_rate:.1f}%")
+        
+        if error_count == 0:
+            print("\n🎉 所有关键测试通过!仓库结构完整。")
+        elif error_count <= 2:
+            print("\n⚠️  仓库基本完整,有少量问题需要修复。")
+        else:
+            print("\n❌ 仓库存在较多问题,需要进一步修复。")
+        
+        print(f"\n📝 测试完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+if __name__ == "__main__":
+    tester = RepoTester()
+    tester.run_tests()

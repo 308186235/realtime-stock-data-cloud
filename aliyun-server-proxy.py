@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""
+阿里云服务器代理脚本
+请在您的阿里云服务器上运行此脚本,然后我就可以连接了
+"""
+
+import socket
+import subprocess
+import threading
+import json
+import os
+import sys
+from datetime import datetime
+
+class ServerProxy:
+    def __init__(self, port=9999):
+        self.port = port
+        self.running = False
+        
+    def start_server(self):
+        """启动代理服务器"""
+        try:
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind(('0.0.0.0', self.port))
+            server_socket.listen(5)
+            
+            print(f"🚀 阿里云服务器代理已启动")
+            print(f"📡 监听端口: {self.port}")
+            print(f"🌐 服务器IP: {self.get_public_ip()}")
+            print(f"⏰ 启动时间: {datetime.now()}")
+            print("=" * 50)
+            print("✅ 代理服务器运行中,等待连接...")
+            
+            self.running = True
+            
+            while self.running:
+                try:
+                    client_socket, addr = server_socket.accept()
+                    print(f"🔗 新连接来自: {addr}")
+                    
+                    # 为每个连接创建处理线程
+                    client_thread = threading.Thread(
+                        target=self.handle_client,
+                        args=(client_socket, addr)
+                    )
+                    client_thread.daemon = True
+                    client_thread.start()
+                    
+                except Exception as e:
+                    print(f"❌ 接受连接失败: {e}")
+                    
+        except Exception as e:
+            print(f"❌ 启动服务器失败: {e}")
+        finally:
+            server_socket.close()
+    
+    def handle_client(self, client_socket, addr):
+        """处理客户端连接"""
+        try:
+            while True:
+                # 接收命令
+                data = client_socket.recv(4096).decode('utf-8')
+                if not data:
+                    break
+                
+                try:
+                    command_data = json.loads(data)
+                    command = command_data.get('command')
+                    args = command_data.get('args', [])
+                    
+                    print(f"📝 执行命令: {command} {' '.join(args)}")
+                    
+                    # 执行命令
+                    result = self.execute_command(command, args)
+                    
+                    # 发送结果
+                    response = json.dumps({
+                        'success': True,
+                        'result': result,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                    client_socket.send(response.encode('utf-8'))
+                    
+                except json.JSONDecodeError:
+                    # 如果不是JSON,当作普通命令处理
+                    result = self.execute_shell_command(data.strip())
+                    client_socket.send(result.encode('utf-8'))
+                    
+                except Exception as e:
+                    error_response = json.dumps({
+                        'success': False,
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    client_socket.send(error_response.encode('utf-8'))
+                    
+        except Exception as e:
+            print(f"❌ 处理客户端失败: {e}")
+        finally:
+            client_socket.close()
+            print(f"🔌 连接 {addr} 已断开")
+    
+    def execute_command(self, command, args):
+        """执行特定命令"""
+        if command == 'system_info':
+            return self.get_system_info()
+        elif command == 'list_dir':
+            path = args[0] if args else '.'
+            return self.list_directory(path)
+        elif command == 'read_file':
+            filepath = args[0] if args else None
+            return self.read_file(filepath)
+        elif command == 'write_file':
+            filepath = args[0] if args else None
+            content = args[1] if len(args) > 1 else ''
+            return self.write_file(filepath, content)
+        elif command == 'shell':
+            cmd = ' '.join(args)
+            return self.execute_shell_command(cmd)
+        else:
+            return f"未知命令: {command}"
+    
+    def execute_shell_command(self, cmd):
+        """执行shell命令"""
+        try:
+            result = subprocess.run(
+                cmd, 
+                shell=True, 
+                capture_output=True, 
+                text=True, 
+                timeout=30
+            )
+            
+            output = result.stdout
+            if result.stderr:
+                output += f"\n错误: {result.stderr}"
+            
+            return output or "命令执行完成"
+            
+        except subprocess.TimeoutExpired:
+            return "命令执行超时"
+        except Exception as e:
+            return f"执行失败: {str(e)}"
+    
+    def get_system_info(self):
+        """获取系统信息"""
+        info = {
+            'hostname': socket.gethostname(),
+            'platform': sys.platform,
+            'python_version': sys.version,
+            'current_dir': os.getcwd(),
+            'user': os.getenv('USER', 'unknown'),
+            'home': os.getenv('HOME', 'unknown')
+        }
+        return json.dumps(info, indent=2)
+    
+    def list_directory(self, path):
+        """列出目录内容"""
+        try:
+            items = []
+            for item in os.listdir(path):
+                item_path = os.path.join(path, item)
+                is_dir = os.path.isdir(item_path)
+                size = os.path.getsize(item_path) if not is_dir else 0
+                items.append({
+                    'name': item,
+                    'type': 'directory' if is_dir else 'file',
+                    'size': size
+                })
+            return json.dumps(items, indent=2)
+        except Exception as e:
+            return f"列出目录失败: {str(e)}"
+    
+    def read_file(self, filepath):
+        """读取文件内容"""
+        if not filepath:
+            return "错误: 未指定文件路径"
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            return f"读取文件失败: {str(e)}"
+    
+    def write_file(self, filepath, content):
+        """写入文件"""
+        if not filepath:
+            return "错误: 未指定文件路径"
+        
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return f"文件已写入: {filepath}"
+        except Exception as e:
+            return f"写入文件失败: {str(e)}"
+    
+    def get_public_ip(self):
+        """获取公网IP"""
+        try:
+            import urllib.request
+            response = urllib.request.urlopen('http://ipinfo.io/ip', timeout=5)
+            return response.read().decode().strip()
+        except:
+            return "获取IP失败"
+
+def main():
+    print("🌟 阿里云服务器代理脚本")
+    print("=" * 50)
+    
+    proxy = ServerProxy()
+    
+    try:
+        proxy.start_server()
+    except KeyboardInterrupt:
+        print("\n🛑 服务器已停止")
+        proxy.running = False
+
+if __name__ == '__main__':
+    main()

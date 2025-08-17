@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""
+修复MCP分析发现的遗留问题
+"""
+
+import os
+import shutil
+import re
+import json
+from datetime import datetime
+from pathlib import Path
+
+class RemainingIssuesFixer:
+    """遗留问题修复器"""
+    
+    def __init__(self):
+        self.backup_dir = f"remaining_issues_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.fixed_files = []
+        
+    def fix_all_remaining_issues(self):
+        """修复所有遗留问题"""
+        print("🔧 修复MCP分析发现的遗留问题")
+        print("=" * 50)
+        
+        # 创建备份目录
+        os.makedirs(self.backup_dir, exist_ok=True)
+        
+        # 1. 修复硬编码密钥和配置
+        self._fix_hardcoded_secrets()
+        
+        # 2. 清理模拟数据残留
+        self._cleanup_mock_data_remnants()
+        
+        # 3. 修复配置不一致问题
+        self._fix_configuration_inconsistencies()
+        
+        # 4. 修复语法错误
+        self._fix_syntax_errors()
+        
+        # 5. 优化依赖管理
+        self._optimize_dependencies()
+        
+        print(f"\n✅ 遗留问题修复完成!")
+        print(f"📁 备份文件保存在: {self.backup_dir}")
+        print(f"🔧 修复了 {len(self.fixed_files)} 个文件")
+        
+    def _fix_hardcoded_secrets(self):
+        """修复硬编码密钥"""
+        print("\n🔐 修复硬编码密钥...")
+        
+        # 需要检查的文件模式
+        secret_patterns = [
+            (r'process.env.STOCK_API_KEY', 'process.env.STOCK_API_KEY'),
+            (r'zzukfxwavknskqcepsjb\.supabase\.co', 'process.env.SUPABASE_URL'),
+            (r'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\..*', 'process.env.SUPABASE_ANON_KEY'),
+            (r'process.env.DATABASE_PASSWORD', 'process.env.DATABASE_PASSWORD'),
+            (r'process.env.JWT_SECRET_KEY', 'process.env.JWT_SECRET_KEY')
+        ]
+        
+        # 搜索包含硬编码密钥的文件
+        for root, dirs, files in os.walk('.'):
+            # 跳过备份目录和node_modules
+            if any(skip in root for skip in ['.git', 'node_modules', 'backup_', '__pycache__']):
+                continue
+                
+            for file in files:
+                if file.endswith(('.js', '.py', '.json', '.env')):
+                    file_path = os.path.join(root, file)
+                    self._fix_secrets_in_file(file_path, secret_patterns)
+    
+    def _cleanup_mock_data_remnants(self):
+        """清理模拟数据残留"""
+        print("\n🧹 清理模拟数据残留...")
+        
+        mock_patterns = [
+            r'USE_MOCK_DATA\s*=\s*true',
+            r'mockResponse\s*\(',
+            r'generateMockData\s*\(',
+            r'mock.*data',
+            r'fake.*data',
+            r'test.*data.*=.*\[',
+            r'demo.*data.*=.*\{'
+        ]
+        
+        # 搜索包含模拟数据的文件
+        for root, dirs, files in os.walk('.'):
+            if any(skip in root for skip in ['.git', 'node_modules', 'backup_', '__pycache__']):
+                continue
+                
+            for file in files:
+                if file.endswith(('.js', '.py', '.json')):
+                    file_path = os.path.join(root, file)
+                    self._cleanup_mock_in_file(file_path, mock_patterns)
+    
+    def _fix_configuration_inconsistencies(self):
+        """修复配置不一致问题"""
+        print("\n⚙️ 修复配置不一致问题...")
+        
+        # 统一API配置
+        api_configs = {
+            'API_BASE_URL': 'https://api.aigupiao.me',
+            'WS_BASE_URL': 'wss://api.aigupiao.me/ws',
+            'DOMAIN': 'aigupiao.me'
+        }
+        
+        # 修复前端配置文件
+        frontend_config_files = [
+            'frontend/gupiao1/env.js',
+            'frontend/stock5/env.js',
+            '炒股养家/env.js',
+            'frontend/gupiao1/utils/request.js',
+            '炒股养家/utils/request.js'
+        ]
+        
+        for config_file in frontend_config_files:
+            if os.path.exists(config_file):
+                self._fix_frontend_config(config_file, api_configs)
+    
+    def _fix_syntax_errors(self):
+        """修复语法错误"""
+        print("\n🔧 修复语法错误...")
+        
+        # 已知的语法错误文件
+        syntax_error_files = [
+            'agent_api_adapter.py',
+            'backend/services/redis_cache_service.py'
+        ]
+        
+        for file_path in syntax_error_files:
+            if os.path.exists(file_path):
+                self._fix_syntax_in_file(file_path)
+    
+    def _optimize_dependencies(self):
+        """优化依赖管理"""
+        print("\n📦 优化依赖管理...")
+        
+        # 修复requirements.txt中的版本问题
+        requirements_files = [
+            'requirements.txt',
+            'backend/requirements.txt'
+        ]
+        
+        for req_file in requirements_files:
+            if os.path.exists(req_file):
+                self._fix_requirements_file(req_file)
+    
+    def _backup_file(self, file_path: str):
+        """备份文件"""
+        if not os.path.exists(file_path):
+            return
+            
+        backup_name = file_path.replace("/", "_").replace("\\", "_") + ".backup"
+        backup_path = os.path.join(self.backup_dir, backup_name)
+        
+        try:
+            shutil.copy2(file_path, backup_path)
+        except Exception as e:
+            print(f"⚠️ 备份失败 {file_path}: {e}")
+    
+    def _fix_secrets_in_file(self, file_path: str, patterns: list):
+        """修复文件中的硬编码密钥"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            original_content = content
+            
+            # 应用所有替换模式
+            for pattern, replacement in patterns:
+                if re.search(pattern, content):
+                    self._backup_file(file_path)
+                    content = re.sub(pattern, replacement, content)
+            
+            # 如果内容有变化,写回文件
+            if content != original_content:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.fixed_files.append(file_path)
+                print(f"✅ 修复硬编码密钥: {file_path}")
+                
+        except Exception as e:
+            print(f"⚠️ 处理文件失败 {file_path}: {e}")
+    
+    def _cleanup_mock_in_file(self, file_path: str, patterns: list):
+        """清理文件中的模拟数据"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            original_content = content
+            
+            # 检查是否包含模拟数据
+            for pattern in patterns:
+                if re.search(pattern, content, re.IGNORECASE):
+                    self._backup_file(file_path)
+                    
+                    # 禁用模拟数据
+                    if 'USE_MOCK_DATA' in content:
+                        content = re.sub(r'USE_MOCK_DATA\s*=\s*true', 'USE_MOCK_DATA = false', content)
+                    
+                    # 注释掉模拟数据函数
+                    content = re.sub(r'(function\s+\w*mock\w*|const\s+\w*mock\w*)', r'// DISABLED: \1', content, flags=re.IGNORECASE)
+                    
+                    break
+            
+            # 如果内容有变化,写回文件
+            if content != original_content:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.fixed_files.append(file_path)
+                print(f"✅ 清理模拟数据: {file_path}")
+                
+        except Exception as e:
+            print(f"⚠️ 处理文件失败 {file_path}: {e}")
+    
+    def _fix_frontend_config(self, config_file: str, api_configs: dict):
+        """修复前端配置文件"""
+        try:
+            self._backup_file(config_file)
+            
+            with open(config_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 统一API地址配置
+            replacements = [
+                (r'localhost:8000', api_configs['API_BASE_URL'].replace('https://', '')),
+                (r'localhost:8001', api_configs['API_BASE_URL'].replace('https://', '')),
+                (r'127\.0\.0\.1:8000', api_configs['API_BASE_URL'].replace('https://', '')),
+                (r'http://[^/]+', api_configs['API_BASE_URL']),
+                (r'ws://[^/]+', api_configs['WS_BASE_URL'])
+            ]
+            
+            for pattern, replacement in replacements:
+                content = re.sub(pattern, replacement, content)
+            
+            # 确保禁用模拟数据
+            content = re.sub(r'USE_MOCK_DATA.*?=.*?true', 'USE_MOCK_DATA = false', content)
+            
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            self.fixed_files.append(config_file)
+            print(f"✅ 修复前端配置: {config_file}")
+            
+        except Exception as e:
+            print(f"⚠️ 修复前端配置失败 {config_file}: {e}")
+    
+    def _fix_syntax_in_file(self, file_path: str):
+        """修复文件中的语法错误"""
+        try:
+            self._backup_file(file_path)
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 修复常见语法错误
+            fixes = [
+                # 修复未闭合的字符串
+                (r'"""[^"]*$', '"""'),
+                (r"'''[^']*$", "'''"),
+                # 修复缩进问题
+                (r'^(\s*)([^\s])', lambda m: '    ' + m.group(2) if len(m.group(1)) % 4 != 0 else m.group(0)),
+                # 修复导入错误
+                (r'from\s+\.\s+import', 'from . import'),
+            ]
+            
+            for pattern, replacement in fixes:
+                if callable(replacement):
+                    content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+                else:
+                    content = re.sub(pattern, replacement, content)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            self.fixed_files.append(file_path)
+            print(f"✅ 修复语法错误: {file_path}")
+            
+        except Exception as e:
+            print(f"⚠️ 修复语法错误失败 {file_path}: {e}")
+    
+    def _fix_requirements_file(self, req_file: str):
+        """修复requirements文件"""
+        try:
+            self._backup_file(req_file)
+            
+            with open(req_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            fixed_lines = []
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    # 修复版本号格式
+                    if '>=' in line and '==' not in line:
+                        package_name = line.split('>=')[0].strip()
+                        # 使用固定版本
+                        version_map = {
+                            'fastapi': '0.104.1',
+                            'uvicorn': '0.24.0',
+                            'supabase': '2.3.0',
+                            'requests': '2.31.0',
+                            'pandas': '2.1.4',
+                            'numpy': '1.24.3'
+                        }
+                        
+                        if package_name in version_map:
+                            fixed_lines.append(f"{package_name}=={version_map[package_name]}")
+                        else:
+                            fixed_lines.append(line)
+                    else:
+                        fixed_lines.append(line)
+                else:
+                    fixed_lines.append(line)
+            
+            with open(req_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(fixed_lines))
+            
+            self.fixed_files.append(req_file)
+            print(f"✅ 修复依赖文件: {req_file}")
+            
+        except Exception as e:
+            print(f"⚠️ 修复依赖文件失败 {req_file}: {e}")
+
+if __name__ == "__main__":
+    fixer = RemainingIssuesFixer()
+    fixer.fix_all_remaining_issues()

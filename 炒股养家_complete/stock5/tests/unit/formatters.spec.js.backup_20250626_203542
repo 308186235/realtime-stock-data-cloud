@@ -1,0 +1,133 @@
+/**
+ * Tests for formatting utilities
+ */
+
+import {
+  formatMoney,
+  formatLargeNumber,
+  formatVolume,
+  formatPercent,
+  formatDate,
+  parseStockCode
+} from '../../utils/formatters';
+
+describe('formatters.js', () => {
+  describe('formatMoney', () => {
+    test('formats money values correctly', () => {
+      expect(formatMoney(1234.56)).toBe('¥1,234.56');
+      expect(formatMoney(1000)).toBe('¥1,000.00');
+      expect(formatMoney(0)).toBe('¥0.00');
+      expect(formatMoney(-1234.56)).toBe('¥-1,234.56');
+    });
+    
+    test('handles custom decimals and currency', () => {
+      expect(formatMoney(1234.56, 0, '$')).toBe('$1,235');
+      expect(formatMoney(1234.56, 3, '€')).toBe('€1,234.560');
+    });
+    
+    test('handles non-number inputs', () => {
+      expect(formatMoney('1234.56')).toBe('¥1,234.56');
+      expect(formatMoney(null)).toBe('¥0.00');
+      expect(formatMoney(undefined)).toBe('¥0.00');
+      expect(formatMoney('invalid')).toBe('¥0.00');
+    });
+  });
+  
+  describe('formatLargeNumber', () => {
+    test('formats large numbers with K suffix', () => {
+      expect(formatLargeNumber(1000)).toBe('1.0K');
+      expect(formatLargeNumber(1500)).toBe('1.5K');
+      expect(formatLargeNumber(9999)).toBe('10.0K');
+    });
+    
+    test('formats large numbers with M suffix', () => {
+      expect(formatLargeNumber(1000000)).toBe('1.0M');
+      expect(formatLargeNumber(1500000)).toBe('1.5M');
+    });
+    
+    test('formats large numbers with B suffix', () => {
+      expect(formatLargeNumber(1000000000)).toBe('1.0B');
+      expect(formatLargeNumber(1500000000)).toBe('1.5B');
+    });
+    
+    test('does not format small numbers', () => {
+      expect(formatLargeNumber(999)).toBe('999');
+    });
+  });
+  
+  describe('formatVolume', () => {
+    test('formats volume correctly', () => {
+      expect(formatVolume(1000)).toBe('1.00K');
+      expect(formatVolume(1000000)).toBe('1.00M');
+    });
+  });
+  
+  describe('formatPercent', () => {
+    test('formats percentage correctly', () => {
+      expect(formatPercent(0.1)).toBe('10.00%');
+      expect(formatPercent(0.1, 1)).toBe('10.0%');
+      expect(formatPercent(0.1, 0)).toBe('10%');
+    });
+    
+    test('handles negative percentages', () => {
+      expect(formatPercent(-0.1)).toBe('-10.00%');
+    });
+    
+    test('includes sign if requested', () => {
+      expect(formatPercent(0.1, 2, true)).toBe('+10.00%');
+      expect(formatPercent(-0.1, 2, true)).toBe('-10.00%');
+    });
+  });
+  
+  describe('formatDate', () => {
+    test('formats date in YYYY-MM-DD format', () => {
+      const date = new Date(2023, 0, 15); // January 15, 2023
+      expect(formatDate(date)).toBe('2023-01-15');
+    });
+    
+    test('formats date with time when requested', () => {
+      const date = new Date(2023, 0, 15, 10, 30, 45); // January 15, 2023, 10:30:45
+      expect(formatDate(date, true)).toBe('2023-01-15 10:30:45');
+    });
+    
+    test('handles invalid inputs', () => {
+      expect(formatDate(null)).toBe('');
+      expect(formatDate(undefined)).toBe('');
+      expect(formatDate('invalid-date')).toBe('');
+    });
+  });
+  
+  describe('parseStockCode', () => {
+    test('standardizes Chinese stock codes', () => {
+      expect(parseStockCode('600000')).toBe('sh600000');
+      expect(parseStockCode('000001')).toBe('sz000001');
+      expect(parseStockCode('300001')).toBe('sz300001');
+    });
+    
+    test('keeps market prefix if already present', () => {
+      expect(parseStockCode('sh600000')).toBe('sh600000');
+      expect(parseStockCode('SZ000001')).toBe('sz000001');
+    });
+    
+    test('handles Hong Kong stocks', () => {
+      expect(parseStockCode('00700')).toBe('hk00700');
+    });
+    
+    test('handles US stocks', () => {
+      expect(parseStockCode('AAPL')).toBe('AAPL');
+      expect(parseStockCode('aapl')).toBe('AAPL');
+    });
+    
+    test('removes non-alphanumeric characters', () => {
+      expect(parseStockCode('600 000')).toBe('sh600000');
+      expect(parseStockCode('000-001')).toBe('sz000001');
+    });
+    
+    test('handles invalid inputs', () => {
+      expect(parseStockCode('')).toBeNull();
+      expect(parseStockCode(null)).toBeNull();
+      expect(parseStockCode(undefined)).toBeNull();
+    });
+  });
+}); 
+ 

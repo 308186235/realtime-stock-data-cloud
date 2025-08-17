@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""
+🌐 批量子域名迁移脚本
+自动将所有 workers.dev 项目迁移到 aigupiao.me 子域名
+"""
+
+import os
+import json
+import subprocess
+import time
+from pathlib import Path
+
+# 项目映射配置
+PROJECTS_MAPPING = {
+    "stock-api-js": "api.aigupiao.me",           # 主要API (已配置)
+    "cloudflare-api": "data.aigupiao.me",        # 数据API
+    "cloudflare-worker": "quote.aigupiao.me",    # 行情API
+    "trading-api": "trade.aigupiao.me",          # 交易API
+    "realtime-stock": "realtime.aigupiao.me",    # 实时数据
+    "cloud-agent": "agent.aigupiao.me",          # Agent服务
+    "websocket-server": "ws.aigupiao.me",        # WebSocket
+    "mobile-api": "mobile.aigupiao.me",          # 移动端API
+    "admin-api": "admin.aigupiao.me",            # 管理API
+    "docs-api": "docs.aigupiao.me",              # 文档API
+}
+
+# DNS记录配置
+DNS_RECORDS = [
+    {"name": "data", "target": "cloudflare-api.308186235.workers.dev"},
+    {"name": "quote", "target": "cloudflare-worker.308186235.workers.dev"},
+    {"name": "trade", "target": "trading-api.308186235.workers.dev"},
+    {"name": "realtime", "target": "realtime-stock.308186235.workers.dev"},
+    {"name": "agent", "target": "cloud-agent.308186235.workers.dev"},
+    {"name": "ws", "target": "websocket-server.308186235.workers.dev"},
+    {"name": "mobile", "target": "mobile-api.308186235.workers.dev"},
+    {"name": "admin", "target": "admin-api.308186235.workers.dev"},
+    {"name": "docs", "target": "docs-api.308186235.workers.dev"},
+]
+
+class SubdomainMigrator:
+    def __init__(self, base_path="E:/交易8"):
+        self.base_path = Path(base_path)
+        self.results = []
+        
+    def find_worker_projects(self):
+        """查找所有Workers项目"""
+        projects = []
+        
+        # 查找包含wrangler.toml的目录
+        for item in self.base_path.rglob("wrangler.toml"):
+            project_dir = item.parent
+            project_name = project_dir.name
+            projects.append({
+                "name": project_name,
+                "path": project_dir,
+                "config_file": item
+            })
+            
+        return projects
+    
+    def update_wrangler_config(self, project):
+        """更新wrangler.toml配置"""
+        config_file = project["config_file"]
+        project_name = project["name"]
+        
+        # 获取对应的子域名
+        subdomain = PROJECTS_MAPPING.get(project_name)
+        if not subdomain:
+            print(f"⚠️ 项目 {project_name} 没有配置子域名映射")
+            return False
+            
+        try:
+            # 读取现有配置
+            with open(config_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 检查是否已经有路由配置
+            if "[[routes]]" in content:
+                print(f"✅ {project_name} 已有路由配置")
+                return True
+                
+            # 添加路由配置
+            route_config = f'''
+# 自定义域名路由配置
+[[routes]]
+pattern = "{subdomain}/*"
+zone_name = "aigupiao.me"
+'''
+            
+            # 在文件开头添加路由配置
+            lines = content.split('\n')
+            insert_index = 3  # 在基本配置后插入
+            lines.insert(insert_index, route_config)
+            
+            # 写回文件
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines))
+                
+            print(f"✅ 已更新 {project_name} 的wrangler.toml")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 更新 {project_name} 配置失败: {e}")
+            return False
+    
+    def deploy_worker(self, project):
+        """部署Worker"""
+        try:
+            os.chdir(project["path"])
+            
+            # 检查是否有package.json
+            if (project["path"] / "package.json").exists():
+                print(f"📦 安装 {project['name']} 依赖...")
+                subprocess.run(["npm", "install"], check=True, capture_output=True)
+            
+            # 部署Worker
+            print(f"🚀 部署 {project['name']}...")
+            result = subprocess.run(
+                ["npx", "wrangler", "deploy"], 
+                check=True, 
+                capture_output=True, 
+                text=True
+            )
+            
+            print(f"✅ {project['name']} 部署成功")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"❌ {project['name']} 部署失败: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"❌ {project['name']} 部署异常: {e}")
+            return False
+    
+    def generate_dns_config(self):
+        """生成DNS配置指南"""
+        dns_guide = """
+# 🌐 DNS配置指南
+
+请在Cloudflare Dashboard中添加以下DNS记录：
+
+## 登录地址
+https://dash.cloudflare.com
+
+## DNS记录配置
+"""
+        
+        for record in DNS_RECORDS:
+            dns_guide += f"""
+### {record['name']}.aigupiao.me
+- 类型: CNAME
+- 名称: {record['name']}
+- 目标: {record['target']}
+- 代理状态: 已代理 (橙色云朵)
+- TTL: 自动
+"""
+        
+        dns_guide += """
+## 配置完成后测试
+```bash
+# 测试各个子域名
+curl https://data.aigupiao.me/api/health
+curl https://quote.aigupiao.me/api/health
+curl https://trade.aigupiao.me/api/health
+curl https://realtime.aigupiao.me/api/health
+curl https://agent.aigupiao.me/api/health
+```
+
+## 预期结果
+所有子域名都应该返回正常的API响应，不再出现连接超时错误。
+"""
+        
+        # 保存DNS配置指南
+        with open(self.base_path / "DNS_CONFIGURATION_GUIDE.md", 'w', encoding='utf-8') as f:
+            f.write(dns_guide)
+            
+        print("📋 DNS配置指南已生成: DNS_CONFIGURATION_GUIDE.md")
+    
+    def test_subdomain_access(self, subdomain):
+        """测试子域名访问"""
+        try:
+            import requests
+            response = requests.get(f"https://{subdomain}/api/health", timeout=10)
+            if response.status_code == 200:
+                print(f"✅ {subdomain} 访问正常")
+                return True
+            else:
+                print(f"⚠️ {subdomain} 返回状态码: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"❌ {subdomain} 访问失败: {e}")
+            return False
+    
+    def run_migration(self):
+        """执行完整迁移"""
+        print("🚀 开始批量子域名迁移...")
+        print("=" * 50)
+        
+        # 1. 查找所有Workers项目
+        print("1️⃣ 查找Workers项目...")
+        projects = self.find_worker_projects()
+        print(f"找到 {len(projects)} 个Workers项目:")
+        for project in projects:
+            print(f"   - {project['name']} ({project['path']})")
+        
+        # 2. 更新配置文件
+        print("\n2️⃣ 更新wrangler.toml配置...")
+        for project in projects:
+            if project["name"] in PROJECTS_MAPPING:
+                self.update_wrangler_config(project)
+        
+        # 3. 部署Workers
+        print("\n3️⃣ 部署Workers...")
+        for project in projects:
+            if project["name"] in PROJECTS_MAPPING:
+                success = self.deploy_worker(project)
+                self.results.append({
+                    "project": project["name"],
+                    "subdomain": PROJECTS_MAPPING[project["name"]],
+                    "deployed": success
+                })
+        
+        # 4. 生成DNS配置指南
+        print("\n4️⃣ 生成DNS配置指南...")
+        self.generate_dns_config()
+        
+        # 5. 生成迁移报告
+        print("\n5️⃣ 生成迁移报告...")
+        self.generate_migration_report()
+        
+        print("\n🎉 批量迁移完成!")
+        print("📋 请按照 DNS_CONFIGURATION_GUIDE.md 配置DNS记录")
+        print("📊 查看 MIGRATION_REPORT.json 了解详细结果")
+    
+    def generate_migration_report(self):
+        """生成迁移报告"""
+        report = {
+            "migration_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "total_projects": len(self.results),
+            "successful_deployments": len([r for r in self.results if r["deployed"]]),
+            "failed_deployments": len([r for r in self.results if not r["deployed"]]),
+            "projects": self.results,
+            "dns_records_needed": DNS_RECORDS,
+            "next_steps": [
+                "在Cloudflare Dashboard中配置DNS记录",
+                "等待DNS传播 (通常5-10分钟)",
+                "测试所有子域名访问",
+                "更新前端应用的API地址"
+            ]
+        }
+        
+        with open(self.base_path / "MIGRATION_REPORT.json", 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+def main():
+    """主函数"""
+    migrator = SubdomainMigrator()
+    migrator.run_migration()
+
+if __name__ == "__main__":
+    main()

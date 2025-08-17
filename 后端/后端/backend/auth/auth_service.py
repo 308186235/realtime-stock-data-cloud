@@ -1,0 +1,100 @@
+import jwt
+import datetime
+import bcrypt
+import logging
+from typing import Dict, Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+
+# 配置日志
+logger = logging.getLogger(__name__)
+
+# 令牌配置 - 实际生产环境应从环境变量或配置文件中加载
+SECRET_KEY = "bfe35c6f1db9be15e3fd7beb2e9ef8c07bd4b6a25ab15675cae7cdbb0e4a7f15"  # 在生产环境中应使用环境变量
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# OAuth2密码流设置
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+# 模拟用户数据库 - 实际应用中应使用真实数据库
+users_db = {
+    "admin": {
+        "username": "admin",
+        "hashed_password": bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode(),
+        "disabled": False,
+    }
+}
+
+class AuthService:
+    """认证服务类,提供用户认证与令牌管理功能"""
+    
+    @staticmethod
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        """验证密码"""
+        return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
+    
+    @staticmethod
+    def get_user(username: str) -> Optional[Dict]:
+        """获取用户信息"""
+        if username in users_db:
+            user = users_db[username]
+            return user
+        return None
+    
+    @staticmethod
+    def authenticate_user(username: str, password: str) -> Optional[Dict]:
+        """认证用户"""
+        user = AuthService.get_user(username)
+        if not user:
+            return None
+        if not AuthService.verify_password(password, user["hashed_password"]):
+            return None
+        return user
+    
+    @staticmethod
+    def create_access_token(data: Dict, expires_delta: Optional[datetime.timedelta] = None) -> str:
+        """创建访问令牌"""
+        to_encode = data.copy()
+        if expires_delta:
+            expire = datetime.datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        to_encode.update({"exp": expire})
+        
+        try:
+            encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+            return encoded_jwt
+        except Exception as e:
+            logger.error(f"令牌创建失败: {e}")
+            raise
+    
+    @staticmethod
+    async def get_current_user(token: str = Depends(oauth2_scheme)):
+        """获取当前用户"""
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="凭证无效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username: str = payload.get("sub")
+            if username is None:
+                raise credentials_exception
+        except jwt.PyJWTError as e:
+            logger.warning(f"JWT解码失败: {e}")
+            raise credentials_exception
+        
+        user = AuthService.get_user(username)
+        if user is None:
+            raise credentials_exception
+        return user
+    
+    @staticmethod
+    async def get_current_active_user(current_user: Dict = Depends(get_current_user)):
+        """获取当前活跃用户"""
+        if current_user.get("disabled"):
+            raise HTTPException(status_code=400, detail="用户已禁用")
+        return current_user 

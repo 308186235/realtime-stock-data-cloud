@@ -1,0 +1,13 @@
+authtoken: YOUR_NGROK_TOKEN
+tunnels:
+  aigupiao-api:
+    addr: 8000
+    bind_tls: true
+    proto: http
+    region: ap
+  aigupiao-trading:
+    addr: 8888
+    bind_tls: true
+    proto: http
+    region: ap
+version: '2'

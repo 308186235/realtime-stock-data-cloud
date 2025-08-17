@@ -1,0 +1,16 @@
+uni-app兼容性修复报告
+========================================
+
+项目路径: frontend\stock5
+修复时间: 2025-06-26T21:13:47.027536
+
+已执行的修复:
+  1. 更新@dcloudio/uni-app版本: ^2.0.1 -> ^3.0.0-3080620230817001
+  2. 更新@dcloudio/uni-ui版本: ^1.4.20 -> ^1.5.7
+  3. 更新Vue版本: ^2.6.14 -> ^3.3.4
+  4. 更新@dcloudio/uni-cli-shared版本
+  5. 更新@dcloudio/vue-cli-plugin-uni版本
+  6. 修复dev脚本命令
+  7. package.json修复完成
+  8. 创建默认manifest.json
+  9. pages.json检查完成

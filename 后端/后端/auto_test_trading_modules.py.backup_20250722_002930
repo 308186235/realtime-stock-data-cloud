@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+自动化测试交易模块
+直接测试持仓导出、委托导出、成交导出、余额获取
+"""
+
+import sys
+import traceback
+from datetime import datetime
+import os
+
+def auto_test_holdings_export():
+    """自动测试持仓导出"""
+    print("🔍 自动测试持仓导出...")
+    print("=" * 50)
+    
+    try:
+        from trader_export import export_holdings
+        
+        print("✅ 导入export_holdings成功")
+        print("🔄 开始执行持仓导出...")
+        
+        # 记录开始时间
+        start_time = datetime.now()
+        
+        # 执行持仓导出
+        result = export_holdings()
+        
+        # 记录结束时间
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        print(f"⏱️ 执行时间: {duration:.2f} 秒")
+        
+        if result:
+            print("✅ 持仓导出成功！")
+            
+            # 检查是否生成了新文件
+            import glob
+            holdings_files = glob.glob("持仓数据_*.csv")
+            if holdings_files:
+                latest_file = max(holdings_files, key=os.path.getmtime)
+                file_time = datetime.fromtimestamp(os.path.getmtime(latest_file))
+                if (datetime.now() - file_time).total_seconds() < 60:
+                    print(f"📁 生成新文件: {latest_file}")
+                    return True
+            
+            print("⚠️ 函数返回成功但未找到新生成的文件")
+            return False
+        else:
+            print("❌ 持仓导出失败")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 持仓导出测试异常: {e}")
+        traceback.print_exc()
+        return False
+
+def auto_test_orders_export():
+    """自动测试委托导出"""
+    print("\n🔍 自动测试委托导出...")
+    print("=" * 50)
+    
+    try:
+        from trader_export import export_orders
+        
+        print("✅ 导入export_orders成功")
+        print("🔄 开始执行委托导出...")
+        
+        # 记录开始时间
+        start_time = datetime.now()
+        
+        # 执行委托导出
+        result = export_orders()
+        
+        # 记录结束时间
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        print(f"⏱️ 执行时间: {duration:.2f} 秒")
+        
+        if result:
+            print("✅ 委托导出成功！")
+            
+            # 检查是否生成了新文件
+            import glob
+            orders_files = glob.glob("委托数据_*.csv")
+            if orders_files:
+                latest_file = max(orders_files, key=os.path.getmtime)
+                file_time = datetime.fromtimestamp(os.path.getmtime(latest_file))
+                if (datetime.now() - file_time).total_seconds() < 60:
+                    print(f"📁 生成新文件: {latest_file}")
+                    return True
+            
+            print("⚠️ 函数返回成功但未找到新生成的文件")
+            return False
+        else:
+            print("❌ 委托导出失败")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 委托导出测试异常: {e}")
+        traceback.print_exc()
+        return False
+
+def auto_test_transactions_export():
+    """自动测试成交导出"""
+    print("\n🔍 自动测试成交导出...")
+    print("=" * 50)
+    
+    try:
+        from trader_export import export_transactions
+        
+        print("✅ 导入export_transactions成功")
+        print("🔄 开始执行成交导出...")
+        
+        # 记录开始时间
+        start_time = datetime.now()
+        
+        # 执行成交导出
+        result = export_transactions()
+        
+        # 记录结束时间
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        print(f"⏱️ 执行时间: {duration:.2f} 秒")
+        
+        if result:
+            print("✅ 成交导出成功！")
+            
+            # 检查是否生成了新文件
+            import glob
+            transactions_files = glob.glob("成交数据_*.csv")
+            if transactions_files:
+                latest_file = max(transactions_files, key=os.path.getmtime)
+                file_time = datetime.fromtimestamp(os.path.getmtime(latest_file))
+                if (datetime.now() - file_time).total_seconds() < 60:
+                    print(f"📁 生成新文件: {latest_file}")
+                    return True
+            
+            print("⚠️ 函数返回成功但未找到新生成的文件")
+            return False
+        else:
+            print("❌ 成交导出失败")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 成交导出测试异常: {e}")
+        traceback.print_exc()
+        return False
+
+def auto_test_balance_reader():
+    """自动测试余额获取"""
+    print("\n🔍 自动测试余额获取...")
+    print("=" * 50)
+    
+    try:
+        from fixed_balance_reader import FixedBalanceReader
+        
+        print("✅ 导入FixedBalanceReader成功")
+        print("🔄 开始执行余额获取...")
+        
+        # 创建余额读取器
+        balance_reader = FixedBalanceReader()
+        
+        # 记录开始时间
+        start_time = datetime.now()
+        
+        # 执行余额获取
+        balance_data = balance_reader.get_account_balance()
+        
+        # 记录结束时间
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        print(f"⏱️ 执行时间: {duration:.2f} 秒")
+        
+        if balance_data:
+            print("✅ 余额获取成功！")
+            print("💰 获取到的余额数据:")
+            for key, value in balance_data.items():
+                print(f"   {key}: {value}")
+            return True
+        else:
+            print("❌ 余额获取失败 - 返回空数据")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 余额获取测试异常: {e}")
+        traceback.print_exc()
+        return False
+
+def auto_test_all_exports():
+    """自动测试所有导出功能"""
+    print("\n🔍 自动测试所有导出功能...")
+    print("=" * 50)
+    
+    try:
+        from trader_export import export_all_data
+        
+        print("✅ 导入export_all_data成功")
+        print("🔄 开始执行所有导出...")
+        
+        # 记录开始时间
+        start_time = datetime.now()
+        
+        # 执行所有导出
+        results = export_all_data()
+        
+        # 记录结束时间
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        print(f"⏱️ 执行时间: {duration:.2f} 秒")
+        
+        if results:
+            print("✅ 所有导出执行完成！")
+            print("📊 导出结果:")
+            for key, value in results.items():
+                status = "✅ 成功" if value else "❌ 失败"
+                print(f"   {key}: {status}")
+            
+            # 检查整体成功率
+            success_count = sum(1 for v in results.values() if v)
+            total_count = len(results)
+            success_rate = success_count / total_count * 100
+            
+            print(f"📈 成功率: {success_rate:.1f}% ({success_count}/{total_count})")
+            
+            return success_rate > 50  # 超过50%成功率认为基本正常
+        else:
+            print("❌ 所有导出失败")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 所有导出测试异常: {e}")
+        traceback.print_exc()
+        return False
+
+def main():
+    """主测试函数"""
+    print("🚀 自动化测试交易模块")
+    print("=" * 60)
+    print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("⚠️ 注意：将自动执行所有测试，请确保交易软件已打开")
+    print("=" * 60)
+    
+    # 记录测试前的文件数量
+    import glob
+    before_holdings = len(glob.glob("持仓数据_*.csv"))
+    before_orders = len(glob.glob("委托数据_*.csv"))
+    before_transactions = len(glob.glob("成交数据_*.csv"))
+    
+    print(f"📋 测试前文件统计:")
+    print(f"   持仓文件: {before_holdings} 个")
+    print(f"   委托文件: {before_orders} 个")
+    print(f"   成交文件: {before_transactions} 个")
+    
+    # 执行各项测试
+    results = {}
+    
+    # 1. 测试持仓导出
+    results['holdings'] = auto_test_holdings_export()
+    
+    # 2. 测试委托导出
+    results['orders'] = auto_test_orders_export()
+    
+    # 3. 测试成交导出
+    results['transactions'] = auto_test_transactions_export()
+    
+    # 4. 测试余额获取
+    results['balance'] = auto_test_balance_reader()
+    
+    # 5. 测试所有导出
+    results['all_exports'] = auto_test_all_exports()
+    
+    # 记录测试后的文件数量
+    after_holdings = len(glob.glob("持仓数据_*.csv"))
+    after_orders = len(glob.glob("委托数据_*.csv"))
+    after_transactions = len(glob.glob("成交数据_*.csv"))
+    
+    # 生成测试报告
+    print("\n" + "=" * 60)
+    print("📋 自动化测试报告")
+    print("=" * 60)
+    
+    print(f"\n🔧 功能测试结果:")
+    for test_name, result in results.items():
+        status = "✅ 成功" if result else "❌ 失败"
+        print(f"   {test_name}: {status}")
+    
+    print(f"\n📁 文件生成统计:")
+    print(f"   持仓文件: {before_holdings} → {after_holdings} (+{after_holdings - before_holdings})")
+    print(f"   委托文件: {before_orders} → {after_orders} (+{after_orders - before_orders})")
+    print(f"   成交文件: {before_transactions} → {after_transactions} (+{after_transactions - before_transactions})")
+    
+    # 总体评估
+    success_count = sum(1 for v in results.values() if v)
+    total_count = len(results)
+    success_rate = success_count / total_count * 100
+    
+    print(f"\n📈 总体成功率: {success_rate:.1f}% ({success_count}/{total_count})")
+    
+    if success_rate >= 80:
+        print("🎉 模块化功能基本正常！")
+    elif success_rate >= 50:
+        print("⚠️ 模块化功能部分正常，需要优化")
+    else:
+        print("❌ 模块化功能存在严重问题，需要修复")
+    
+    print("=" * 60)
+
+if __name__ == '__main__':
+    main()

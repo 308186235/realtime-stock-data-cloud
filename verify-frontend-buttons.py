@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+前端按钮功能验证脚本
+验证所有按钮是否有对应的功能实现
+"""
+
+import os
+import re
+import json
+from pathlib import Path
+from datetime import datetime
+
+class FrontendButtonVerifier:
+    def __init__(self):
+        self.frontend_path = "E:/正式/移动端"
+        self.results = {
+            "total_buttons": 0,
+            "functional_buttons": 0,
+            "non_functional_buttons": 0,
+            "button_details": [],
+            "page_analysis": {}
+        }
+        
+    def verify_all_buttons(self):
+        """验证所有按钮功能"""
+        print("🔍 前端按钮功能验证")
+        print("=" * 60)
+        print(f"验证时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"前端路径: {self.frontend_path}")
+        print()
+        
+        # 获取所有Vue文件
+        vue_files = self.get_vue_files()
+        print(f"📁 找到 {len(vue_files)} 个Vue文件")
+        
+        # 分析每个文件
+        for vue_file in vue_files:
+            self.analyze_vue_file(vue_file)
+        
+        # 生成报告
+        self.generate_report()
+        
+        return self.results
+    
+    def get_vue_files(self):
+        """获取所有Vue文件"""
+        vue_files = []
+        
+        # 主要页面目录
+        main_dirs = [
+            "pages",
+            "components"
+        ]
+        
+        for main_dir in main_dirs:
+            dir_path = os.path.join(self.frontend_path, main_dir)
+            if os.path.exists(dir_path):
+                for root, dirs, files in os.walk(dir_path):
+                    for file in files:
+                        if file.endswith('.vue'):
+                            vue_files.append(os.path.join(root, file))
+        
+        return vue_files
+    
+    def analyze_vue_file(self, file_path):
+        """分析Vue文件中的按钮"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            relative_path = os.path.relpath(file_path, self.frontend_path)
+            print(f"📄 分析文件: {relative_path}")
+            
+            # 查找按钮和点击事件
+            buttons = self.find_buttons_and_clicks(content)
+            methods = self.find_methods(content)
+            
+            # 分析按钮功能
+            page_result = {
+                "file_path": relative_path,
+                "total_buttons": len(buttons),
+                "functional_buttons": 0,
+                "button_details": []
+            }
+            
+            for button in buttons:
+                is_functional = self.check_button_functionality(button, methods, content)
+                
+                button_detail = {
+                    "text": button.get("text", ""),
+                    "click_handler": button.get("click_handler", ""),
+                    "line_number": button.get("line_number", 0),
+                    "is_functional": is_functional,
+                    "functionality_type": self.get_functionality_type(button, methods, content)
+                }
+                
+                page_result["button_details"].append(button_detail)
+                self.results["button_details"].append({
+                    **button_detail,
+                    "file": relative_path
+                })
+                
+                if is_functional:
+                    page_result["functional_buttons"] += 1
+                    self.results["functional_buttons"] += 1
+                
+                self.results["total_buttons"] += 1
+            
+            self.results["non_functional_buttons"] = self.results["total_buttons"] - self.results["functional_buttons"]
+            self.results["page_analysis"][relative_path] = page_result
+            
+            if buttons:
+                functional_rate = (page_result["functional_buttons"] / page_result["total_buttons"]) * 100
+                print(f"   📊 按钮统计: {page_result['functional_buttons']}/{page_result['total_buttons']} 功能完整 ({functional_rate:.1f}%)")
+            
+        except Exception as e:
+            print(f"   ❌ 分析失败: {e}")
+    
+    def find_buttons_and_clicks(self, content):
+        """查找按钮和点击事件"""
+        buttons = []
+        lines = content.split('\n')
+        
+        # 查找@click事件
+        click_pattern = r'@click[^=]*=\s*["\']([^"\']+)["\']'
+        button_text_pattern = r'>([^<]+)<'
+        
+        for i, line in enumerate(lines, 1):
+            # 查找@click事件
+            click_matches = re.findall(click_pattern, line)
+            
+            for click_handler in click_matches:
+                # 提取按钮文本
+                text_matches = re.findall(button_text_pattern, line)
+                button_text = text_matches[0] if text_matches else ""
+                
+                # 清理点击处理器名称
+                clean_handler = click_handler.split('(')[0].strip()
+                
+                buttons.append({
+                    "text": button_text.strip(),
+                    "click_handler": clean_handler,
+                    "line_number": i,
+                    "full_line": line.strip()
+                })
+        
+        return buttons
+    
+    def find_methods(self, content):
+        """查找Vue组件中的方法"""
+        methods = []
+        
+        # 查找methods对象中的方法
+        methods_pattern = r'methods\s*:\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}'
+        methods_match = re.search(methods_pattern, content, re.DOTALL)
+        
+        if methods_match:
+            methods_content = methods_match.group(1)
+            
+            # 查找方法名
+            method_pattern = r'(\w+)\s*\([^)]*\)\s*\{'
+            method_matches = re.findall(method_pattern, methods_content)
+            methods.extend(method_matches)
+        
+        # 查找async方法
+        async_pattern = r'async\s+(\w+)\s*\('
+        async_matches = re.findall(async_pattern, content)
+        methods.extend(async_matches)
+        
+        return list(set(methods))  # 去重
+    
+    def check_button_functionality(self, button, methods, content):
+        """检查按钮是否有功能"""
+        click_handler = button.get("click_handler", "")
+        
+        if not click_handler:
+            return False
+        
+        # 检查是否是内置方法
+        builtin_methods = [
+            "navigateTo", "uni.navigateTo", "uni.switchTab", 
+            "uni.showModal", "uni.showToast", "console.log"
+        ]
+        
+        for builtin in builtin_methods:
+            if builtin in click_handler:
+                return True
+        
+        # 检查是否在methods中定义
+        if click_handler in methods:
+            return True
+        
+        # 检查是否是简单的赋值操作
+        assignment_patterns = [
+            r'\w+\s*=\s*[^=]',  # 变量赋值
+            r'this\.\w+\s*=',   # this属性赋值
+        ]
+        
+        for pattern in assignment_patterns:
+            if re.search(pattern, click_handler):
+                return True
+        
+        return False
+    
+    def get_functionality_type(self, button, methods, content):
+        """获取按钮功能类型"""
+        click_handler = button.get("click_handler", "")
+        
+        if "navigateTo" in click_handler or "switchTab" in click_handler:
+            return "页面导航"
+        elif "showModal" in click_handler or "showToast" in click_handler:
+            return "用户交互"
+        elif click_handler in methods:
+            return "自定义方法"
+        elif "=" in click_handler:
+            return "状态变更"
+        elif click_handler:
+            return "其他功能"
+        else:
+            return "无功能"
+    
+    def generate_report(self):
+        """生成验证报告"""
+        print("\n" + "=" * 60)
+        print("📊 前端按钮功能验证报告")
+        print("=" * 60)
+        
+        # 总体统计
+        total = self.results["total_buttons"]
+        functional = self.results["functional_buttons"]
+        non_functional = self.results["non_functional_buttons"]
+        
+        if total > 0:
+            functional_rate = (functional / total) * 100
+            print(f"\n📈 总体统计:")
+            print(f"   📱 总按钮数: {total}")
+            print(f"   ✅ 功能完整: {functional} ({functional_rate:.1f}%)")
+            print(f"   ❌ 无功能: {non_functional} ({100-functional_rate:.1f}%)")
+        
+        # 按功能类型统计
+        functionality_stats = {}
+        for button in self.results["button_details"]:
+            func_type = button["functionality_type"]
+            functionality_stats[func_type] = functionality_stats.get(func_type, 0) + 1
+        
+        print(f"\n🔧 功能类型分布:")
+        for func_type, count in sorted(functionality_stats.items()):
+            print(f"   {func_type}: {count}")
+        
+        # 页面级别统计
+        print(f"\n📄 页面级别统计:")
+        for file_path, page_data in self.results["page_analysis"].items():
+            if page_data["total_buttons"] > 0:
+                rate = (page_data["functional_buttons"] / page_data["total_buttons"]) * 100
+                status = "✅" if rate >= 90 else "⚠️" if rate >= 70 else "❌"
+                print(f"   {status} {file_path}: {page_data['functional_buttons']}/{page_data['total_buttons']} ({rate:.1f}%)")
+        
+        # 无功能按钮详情
+        non_functional_buttons = [b for b in self.results["button_details"] if not b["is_functional"]]
+        if non_functional_buttons:
+            print(f"\n❌ 无功能按钮详情:")
+            for button in non_functional_buttons:
+                print(f"   📍 {button['file']}:{button['line_number']}")
+                print(f"      文本: '{button['text']}'")
+                print(f"      处理器: '{button['click_handler']}'")
+                print()
+        
+        # 评级
+        if total > 0:
+            if functional_rate >= 95:
+                grade = "A+ 优秀"
+                status = "🎉 前端按钮功能完整度极高,用户体验优秀"
+            elif functional_rate >= 90:
+                grade = "A 良好"
+                status = "✅ 前端按钮功能基本完整,少数功能需要完善"
+            elif functional_rate >= 80:
+                grade = "B 合格"
+                status = "⚠️ 前端按钮功能大部分完整,需要优化"
+            else:
+                grade = "C 需要改进"
+                status = "❌ 前端按钮功能不完整,需要大量修复"
+            
+            print(f"\n🎯 最终评价:")
+            print(f"   等级: {grade}")
+            print(f"   状态: {status}")
+        
+        # 保存详细报告
+        self.save_detailed_report()
+    
+    def save_detailed_report(self):
+        """保存详细报告到JSON文件"""
+        report_file = "frontend_button_verification_report.json"
+        
+        report_data = {
+            "verification_time": datetime.now().isoformat(),
+            "summary": {
+                "total_buttons": self.results["total_buttons"],
+                "functional_buttons": self.results["functional_buttons"],
+                "non_functional_buttons": self.results["non_functional_buttons"],
+                "functional_rate": (self.results["functional_buttons"] / self.results["total_buttons"] * 100) if self.results["total_buttons"] > 0 else 0
+            },
+            "page_analysis": self.results["page_analysis"],
+            "button_details": self.results["button_details"]
+        }
+        
+        try:
+            with open(report_file, 'w', encoding='utf-8') as f:
+                json.dump(report_data, f, ensure_ascii=False, indent=2)
+            print(f"\n💾 详细报告已保存: {report_file}")
+        except Exception as e:
+            print(f"\n❌ 保存报告失败: {e}")
+
+def main():
+    """主函数"""
+    verifier = FrontendButtonVerifier()
+    verifier.verify_all_buttons()
+
+if __name__ == "__main__":
+    main()

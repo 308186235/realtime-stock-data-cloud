@@ -1,0 +1,30 @@
+// 移动平均策略工具类
+export class StrategyUtils {
+  /**
+   * 计算移动平均线
+   * @param {Array} prices 价格数组
+   * @param {number} window 窗口周期
+   * @returns {Array} 移动平均值数组
+   */
+  static movingAverage(prices, window) {
+    return prices.map((_, idx, arr) => {
+      if (idx >= window - 1) {
+        const sum = arr.slice(idx - window + 1, idx + 1)
+          .reduce((acc, val) => acc + val, 0);
+        return sum / window;
+      }
+      return null;
+    });
+  }
+
+  // 新增其他轻量级策略计算方法
+  static exponentialMovingAverage(prices, window) {
+    const multiplier = 2 / (window + 1);
+    let ema = [prices[0]];
+    
+    for (let i = 1; i < prices.length; i++) {
+      ema.push((prices[i] - ema[i-1]) * multiplier + ema[i-1]);
+    }
+    return ema;
+  }
+}

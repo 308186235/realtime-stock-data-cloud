@@ -1,0 +1,188 @@
+// AI Training API Handler
+// This file provides a bridge between the frontend and Python backend
+
+const fs = require('fs');
+const path = require('path');
+const { exec } = require('child_process');
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+
+// Create Express app
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+// Training jobs storage
+const activeTrainingJobs = new Map();
+
+// API routes
+app.post('/api/ai/training/start', (req, res) => {
+  const { model_type, parameters, use_gpu } = req.body;
+  
+  if (!model_type) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Missing model_type parameter'
+    });
+  }
+  
+  // Generate a unique job ID
+  const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log(`Starting training job ${jobId} for model ${model_type} with GPU: ${use_gpu}`);
+  
+  // Format parameters for shell script
+  const epochs = parameters.epochs || 50;
+  const learningRate = parameters.learning_rate || 0.001;
+  const batchSize = parameters.batch_size || 32;
+  const useGpu = use_gpu ? 'true' : 'false';
+  
+  // Path to run_training.sh
+  const scriptPath = path.join(__dirname, 'run_training.sh');
+  
+  // Make script executable
+  fs.chmodSync(scriptPath, '755');
+  
+  // Command to run
+  const command = `${scriptPath} ${model_type} ${epochs} ${learningRate} ${batchSize} ${useGpu}`;
+  
+  // Execute the command
+  const process = exec(command, {
+    cwd: __dirname
+  });
+  
+  // Store job info
+  activeTrainingJobs.set(jobId, {
+    id: jobId,
+    model_type,
+    parameters: {
+      epochs,
+      learning_rate: learningRate,
+      batch_size: batchSize,
+      use_gpu: use_gpu
+    },
+    process,
+    start_time: Date.now(),
+    status: 'training'
+  });
+  
+  // Log output
+  process.stdout.on('data', (data) => {
+    console.log(`[${jobId}] ${data}`);
+  });
+  
+  process.stderr.on('data', (data) => {
+    console.error(`[${jobId}] Error: ${data}`);
+  });
+  
+  // Handle completion
+  process.on('close', (code) => {
+    if (code === 0) {
+      console.log(`[${jobId}] Training completed successfully`);
+      if (activeTrainingJobs.has(jobId)) {
+        const job = activeTrainingJobs.get(jobId);
+        job.status = 'complete';
+        job.end_time = Date.now();
+      }
+    } else {
+      console.error(`[${jobId}] Training failed with code ${code}`);
+      if (activeTrainingJobs.has(jobId)) {
+        const job = activeTrainingJobs.get(jobId);
+        job.status = 'failed';
+        job.end_time = Date.now();
+        job.error_code = code;
+      }
+    }
+  });
+  
+  // Calculate estimated time based on GPU usage
+  const estimatedMinutes = use_gpu ? epochs * 0.5 : epochs * 2;
+  
+  // Return success response
+  return res.json({
+    status: 'success',
+    message: `Training job started${use_gpu ? ' with GPU acceleration' : ''}`,
+    job_id: jobId,
+    model_type,
+    estimated_time: `${Math.round(estimatedMinutes)} minutes`,
+    use_gpu
+  });
+});
+
+app.post('/api/ai/training/stop', (req, res) => {
+  const { job_id } = req.body;
+  
+  if (!job_id || !activeTrainingJobs.has(job_id)) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Job not found'
+    });
+  }
+  
+  const job = activeTrainingJobs.get(job_id);
+  
+  // Kill the process
+  if (job.process) {
+    job.process.kill();
+  }
+  
+  job.status = 'stopped';
+  job.end_time = Date.now();
+  
+  return res.json({
+    status: 'success',
+    message: 'Training job stopped',
+    job_id
+  });
+});
+
+app.get('/api/ai/training/progress', (req, res) => {
+  const modelType = req.query.model_type;
+  
+  // Read status file for the specified model
+  try {
+    const modelDir = path.join(__dirname, 'models', modelType || 'price_prediction');
+    const statusPath = path.join(modelDir, 'status.json');
+    
+    if (fs.existsSync(statusPath)) {
+      const statusJson = fs.readFileSync(statusPath, 'utf8');
+      const status = JSON.parse(statusJson);
+      
+      return res.json({
+        status: 'success',
+        data: status
+      });
+    } else {
+      // Return default status if no file exists
+      return res.json({
+        status: 'success',
+        data: {
+          status: 'idle',
+          progress: 0,
+          current_epoch: 0,
+          total_epochs: 50,
+          metrics: {
+            loss: [],
+            val_loss: [],
+            accuracy: [],
+            val_accuracy: []
+          }
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error reading model status:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to get training progress'
+    });
+  }
+});
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`AI Training API Server running on port ${PORT}`);
+  console.log(`GPU acceleration ${fs.existsSync('/usr/bin/nvidia-smi') ? 'available' : 'not detected'}`);
+}); 

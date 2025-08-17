@@ -1,0 +1,487 @@
+/**
+ * 云端茶股帮实时数据接收系统
+ * 在Cloudflare Workers中接收茶股帮推送的A股所有实时数据
+ * 这是真正的数据源，不再使用模拟数据
+ */
+
+// 茶股帮连接配置
+const CHAGUBANG_CONFIG = {
+  host: 'l1.chagubang.com',
+  port: 6380,
+  token: 'QT_wat5QfcJ6N9pDZM5',
+  reconnectInterval: 5000,
+  heartbeatInterval: 30000
+};
+
+// 全局变量
+let chagubangSocket = null;
+let isConnected = false;
+let reconnectTimer = null;
+let heartbeatTimer = null;
+let stockDataCache = new Map();
+let lastDataTime = null;
+
+/**
+ * 云端茶股帮实时数据管理器
+ */
+class CloudChagubangDataManager {
+  constructor() {
+    this.connectionStatus = 'disconnected';
+    this.dataStats = {
+      totalReceived: 0,
+      lastUpdateTime: null,
+      stockCount: 0,
+      dataRate: 0
+    };
+  }
+
+  /**
+   * 启动云端数据接收
+   */
+  async startCloudDataReceiver() {
+    console.log('🚀 启动云端茶股帮实时数据接收系统...');
+    
+    try {
+      // 检查交易时间
+      if (!this.isMarketHours()) {
+        console.log('⏰ 非交易时间，等待市场开盘...');
+        this.scheduleMarketOpen();
+        return { success: true, message: '等待市场开盘' };
+      }
+
+      // 建立WebSocket连接
+      await this.connectToChagubang();
+      
+      return { success: true, message: '云端数据接收系统已启动' };
+      
+    } catch (error) {
+      console.error('❌ 启动云端数据接收失败:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 连接到茶股帮服务器
+   */
+  async connectToChagubang() {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log(`🔗 连接茶股帮服务器: ${CHAGUBANG_CONFIG.host}:${CHAGUBANG_CONFIG.port}`);
+        
+        // 在Cloudflare Workers中使用WebSocket
+        const wsUrl = `wss://${CHAGUBANG_CONFIG.host}:${CHAGUBANG_CONFIG.port}`;
+        chagubangSocket = new WebSocket(wsUrl);
+
+        chagubangSocket.onopen = () => {
+          console.log('✅ 茶股帮连接成功');
+          isConnected = true;
+          this.connectionStatus = 'connected';
+          
+          // 发送认证token
+          this.sendAuthToken();
+          
+          // 启动心跳
+          this.startHeartbeat();
+          
+          resolve();
+        };
+
+        chagubangSocket.onmessage = (event) => {
+          this.handleRealTimeData(event.data);
+        };
+
+        chagubangSocket.onclose = () => {
+          console.log('⚠️ 茶股帮连接断开');
+          isConnected = false;
+          this.connectionStatus = 'disconnected';
+          this.scheduleReconnect();
+        };
+
+        chagubangSocket.onerror = (error) => {
+          console.error('❌ 茶股帮连接错误:', error);
+          reject(error);
+        };
+
+        // 连接超时处理
+        setTimeout(() => {
+          if (!isConnected) {
+            reject(new Error('连接超时'));
+          }
+        }, 10000);
+
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * 发送认证token
+   */
+  sendAuthToken() {
+    if (chagubangSocket && isConnected) {
+      console.log('🔐 发送认证token...');
+      chagubangSocket.send(CHAGUBANG_CONFIG.token);
+    }
+  }
+
+  /**
+   * 处理实时数据
+   */
+  handleRealTimeData(data) {
+    try {
+      // 茶股帮数据格式：33个字段，用$分隔
+      const fields = data.split('$');
+      
+      if (fields.length >= 33) {
+        const stockData = this.parseChagubangData(fields);
+        
+        // 更新缓存
+        stockDataCache.set(stockData.symbol, stockData);
+        
+        // 更新统计
+        this.updateDataStats();
+        
+        // 触发智能分析
+        this.triggerIntelligentAnalysis(stockData);
+        
+        console.log(`📊 接收实时数据: ${stockData.symbol} ${stockData.price} ${stockData.change_percent}%`);
+      }
+      
+    } catch (error) {
+      console.error('❌ 处理实时数据失败:', error);
+    }
+  }
+
+  /**
+   * 解析茶股帮数据格式
+   */
+  parseChagubangData(fields) {
+    return {
+      symbol: fields[0],           // 股票代码
+      name: fields[1],             // 股票名称
+      price: parseFloat(fields[2]), // 当前价格
+      change: parseFloat(fields[3]), // 涨跌额
+      change_percent: parseFloat(fields[4]), // 涨跌幅
+      volume: parseInt(fields[5]),   // 成交量
+      turnover: parseFloat(fields[6]), // 成交额
+      open: parseFloat(fields[7]),   // 开盘价
+      high: parseFloat(fields[8]),   // 最高价
+      low: parseFloat(fields[9]),    // 最低价
+      prev_close: parseFloat(fields[10]), // 昨收价
+      bid1: parseFloat(fields[11]),  // 买一价
+      bid1_vol: parseInt(fields[12]), // 买一量
+      ask1: parseFloat(fields[13]),  // 卖一价
+      ask1_vol: parseInt(fields[14]), // 卖一量
+      timestamp: new Date().toISOString(),
+      market_cap: parseFloat(fields[15]) || 0, // 市值
+      pe_ratio: parseFloat(fields[16]) || 0,   // 市盈率
+      pb_ratio: parseFloat(fields[17]) || 0,   // 市净率
+      // 更多字段...
+    };
+  }
+
+  /**
+   * 更新数据统计
+   */
+  updateDataStats() {
+    this.dataStats.totalReceived++;
+    this.dataStats.lastUpdateTime = new Date().toISOString();
+    this.dataStats.stockCount = stockDataCache.size;
+    
+    // 计算数据接收速率
+    const now = Date.now();
+    if (lastDataTime) {
+      const interval = now - lastDataTime;
+      this.dataStats.dataRate = 1000 / interval; // 每秒接收数据条数
+    }
+    lastDataTime = now;
+  }
+
+  /**
+   * 触发智能分析
+   */
+  async triggerIntelligentAnalysis(stockData) {
+    try {
+      // 只对重要变化触发分析，避免过度计算
+      if (Math.abs(stockData.change_percent) > 1 || stockData.volume > 1000000) {
+        
+        // 调用云端智能Agent进行分析
+        const analysisResult = await this.callCloudIntelligentAgent(stockData);
+        
+        // 如果分析结果建议交易，发送指令到本地
+        if (analysisResult.shouldTrade) {
+          await this.sendTradingSignalToLocal(analysisResult);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ 触发智能分析失败:', error);
+    }
+  }
+
+  /**
+   * 调用云端智能Agent
+   */
+  async callCloudIntelligentAgent(stockData) {
+    try {
+      // 获取相关市场数据
+      const marketContext = this.buildMarketContext(stockData);
+      
+      // 调用智能分析API
+      const response = await fetch('/api/cloud-intelligent-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stockData,
+          marketContext,
+          timestamp: new Date().toISOString()
+        })
+      });
+      
+      return await response.json();
+      
+    } catch (error) {
+      console.error('❌ 调用云端智能Agent失败:', error);
+      return { shouldTrade: false, error: error.message };
+    }
+  }
+
+  /**
+   * 构建市场上下文
+   */
+  buildMarketContext(currentStock) {
+    const marketData = Array.from(stockDataCache.values());
+    
+    return {
+      totalStocks: marketData.length,
+      risingCount: marketData.filter(s => s.change_percent > 0).length,
+      fallingCount: marketData.filter(s => s.change_percent < 0).length,
+      averageChange: marketData.reduce((sum, s) => sum + s.change_percent, 0) / marketData.length,
+      totalVolume: marketData.reduce((sum, s) => sum + s.volume, 0),
+      hotStocks: marketData
+        .filter(s => Math.abs(s.change_percent) > 3)
+        .sort((a, b) => Math.abs(b.change_percent) - Math.abs(a.change_percent))
+        .slice(0, 10),
+      currentStock
+    };
+  }
+
+  /**
+   * 发送交易信号到本地
+   */
+  async sendTradingSignalToLocal(analysisResult) {
+    try {
+      console.log('📤 发送交易信号到本地电脑...');
+      
+      // 通过API发送到本地交易系统
+      const response = await fetch('/api/send-trading-signal-to-local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signal: analysisResult,
+          timestamp: new Date().toISOString(),
+          source: 'cloud-intelligent-agent'
+        })
+      });
+      
+      const result = await response.json();
+      console.log('✅ 交易信号已发送:', result);
+      
+    } catch (error) {
+      console.error('❌ 发送交易信号失败:', error);
+    }
+  }
+
+  /**
+   * 检查是否在交易时间
+   */
+  isMarketHours() {
+    const now = new Date();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const day = now.getDay();
+    
+    // 工作日检查
+    if (day === 0 || day === 6) return false;
+    
+    // 交易时间检查
+    const morningStart = 9 * 60 + 30; // 9:30
+    const morningEnd = 11 * 60 + 30;  // 11:30
+    const afternoonStart = 13 * 60;   // 13:00
+    const afternoonEnd = 15 * 60;     // 15:00
+    
+    const currentTime = hour * 60 + minute;
+    
+    return (currentTime >= morningStart && currentTime <= morningEnd) ||
+           (currentTime >= afternoonStart && currentTime <= afternoonEnd);
+  }
+
+  /**
+   * 安排市场开盘时启动
+   */
+  scheduleMarketOpen() {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 25, 0, 0); // 明天9:25启动
+    
+    const delay = tomorrow.getTime() - now.getTime();
+    
+    setTimeout(() => {
+      this.startCloudDataReceiver();
+    }, delay);
+    
+    console.log(`⏰ 已安排明天 ${tomorrow.toLocaleString()} 启动数据接收`);
+  }
+
+  /**
+   * 启动心跳
+   */
+  startHeartbeat() {
+    heartbeatTimer = setInterval(() => {
+      if (chagubangSocket && isConnected) {
+        chagubangSocket.send('PING');
+      }
+    }, CHAGUBANG_CONFIG.heartbeatInterval);
+  }
+
+  /**
+   * 安排重连
+   */
+  scheduleReconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    
+    reconnectTimer = setTimeout(() => {
+      console.log('🔄 尝试重新连接茶股帮...');
+      this.connectToChagubang().catch(console.error);
+    }, CHAGUBANG_CONFIG.reconnectInterval);
+  }
+
+  /**
+   * 获取实时数据统计
+   */
+  getDataStats() {
+    return {
+      connectionStatus: this.connectionStatus,
+      dataStats: this.dataStats,
+      stockCount: stockDataCache.size,
+      isMarketHours: this.isMarketHours()
+    };
+  }
+
+  /**
+   * 获取股票实时数据
+   */
+  getStockData(symbol) {
+    return stockDataCache.get(symbol) || null;
+  }
+
+  /**
+   * 获取所有股票数据
+   */
+  getAllStockData() {
+    return Array.from(stockDataCache.values());
+  }
+
+  /**
+   * 停止数据接收
+   */
+  stopDataReceiver() {
+    console.log('🛑 停止云端数据接收系统...');
+    
+    if (chagubangSocket) {
+      chagubangSocket.close();
+      chagubangSocket = null;
+    }
+    
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    
+    isConnected = false;
+    this.connectionStatus = 'disconnected';
+    
+    console.log('✅ 云端数据接收系统已停止');
+  }
+}
+
+// 导出云端数据管理器
+const cloudDataManager = new CloudChagubangDataManager();
+
+// Cloudflare Workers事件处理
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request));
+});
+
+/**
+ * 处理HTTP请求
+ */
+async function handleRequest(request) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  // CORS头
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    // 启动数据接收
+    if (path === '/api/start-cloud-data-receiver') {
+      const result = await cloudDataManager.startCloudDataReceiver();
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 获取数据统计
+    if (path === '/api/cloud-data-stats') {
+      const stats = cloudDataManager.getDataStats();
+      return new Response(JSON.stringify(stats), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 获取股票数据
+    if (path === '/api/cloud-stock-data') {
+      const symbol = url.searchParams.get('symbol');
+      const data = symbol ? 
+        cloudDataManager.getStockData(symbol) : 
+        cloudDataManager.getAllStockData();
+      
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 停止数据接收
+    if (path === '/api/stop-cloud-data-receiver') {
+      cloudDataManager.stopDataReceiver();
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    return new Response('Not Found', { status: 404, headers: corsHeaders });
+
+  } catch (error) {
+    console.error('❌ 请求处理失败:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}

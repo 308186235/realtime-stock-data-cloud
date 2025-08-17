@@ -1,0 +1,7 @@
+tunnel: 1fb27cbf-d69a-4e23-995e-f8bd0f42c0a2
+credentials-file: C:\Users\锋\.cloudflared\1fb27cbf-d69a-4e23-995e-f8bd0f42c0a2.json
+
+ingress:
+  - hostname: api.aigupiao.me
+    service: http://127.0.0.1:8000
+  - service: http_status:404

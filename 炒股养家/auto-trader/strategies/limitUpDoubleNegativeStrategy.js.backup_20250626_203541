@@ -1,0 +1,195 @@
+/**
+ * 涨停双阴买入法策略
+ * 实现涨停双阴买入法的检测和分析
+ */
+
+import { calculateMA, calculateMACD, calculateKDJ, calculateRSI, calculateBOLL } from '../indicators/technicalIndicators.js';
+
+/**
+ * 涨停双阴买入法策略类
+ */
+class LimitUpDoubleNegativeStrategy {
+  constructor() {
+    // 策略名称和描述
+    this.name = "涨停双阴买入法";
+    this.description = "涨停双阴买入法是一种适用于股票市场的交易策略，主要识别涨停后连续两个阴线的形态，这通常预示着主力机构在洗盘后可能有较大概率的上涨行情。";
+  }
+
+  /**
+   * 分析股票数据
+   * @param {Object} stockData 股票数据
+   * @returns {Object} 分析结果
+   */
+  analyze(stockData) {
+    const { prices, volumes, dates, highPrices, lowPrices, openPrices } = stockData;
+    
+    // 计算涨停双阴信号
+    const signals = this.calculateLimitUpDoubleNegativeSignals(stockData);
+    
+    // 解释策略结果
+    const interpretation = this.interpretResults(signals);
+    
+    return {
+      strategyName: this.name,
+      description: this.description,
+      signals: signals,
+      score: signals.overallScore,
+      interpretation: interpretation,
+      recommendation: signals.overallScore > 70 ? '建议买入' : (signals.overallScore > 50 ? '观察' : '不建议操作')
+    };
+  }
+
+  /**
+   * 计算涨停双阴信号
+   * @param {Object} stockData 股票数据
+   * @returns {Object} 信号结果
+   */
+  calculateLimitUpDoubleNegativeSignals(stockData) {
+    const { prices, volumes, highPrices, lowPrices, openPrices } = stockData;
+    
+    // 确保有足够的数据计算
+    if (prices.length < 16) {
+      return {
+        limitUpDetected: false,
+        doubleNegativeDetected: false,
+        volumeConditionMet: false,
+        strengthConditionMet: false,
+        overallScore: 0
+      };
+    }
+    
+    const result = {
+      limitUpDetected: false,
+      doubleNegativeDetected: false,
+      volumeConditionMet: false,
+      strengthConditionMet: false,
+      priceStrength: 0,
+      volumeRatio: 0,
+      overallScore: 0
+    };
+    
+    // 根据图片中的公式实现
+    // 升势 = MAX(C, 10) > REF(MAX(C, 10), 1)
+    // 阴K = C > REF(C, 1) * 1.01
+    // 双阴 = COUNT(C < REF(C, 1), 2) > 2
+    // 强势 = MAX(C, 0) < REF(MIN(C, 0), 1)
+    // 缩量 = V < REF(V, 1) * REF(V, 2)
+    
+    // 检测涨停：收盘价比前一日上涨超过9.8%视为涨停（接近涨停板）
+    const limitUpThreshold = 0.098;
+    for (let i = 10; i < prices.length; i++) {
+      const dailyReturn = (prices[i] - prices[i-1]) / prices[i-1];
+      if (dailyReturn >= limitUpThreshold) {
+        // 检测到涨停，然后查找后续是否有双阴
+        result.limitUpDetected = true;
+        
+        // 检查涨停后是否有双阴（连续两天收盘价低于开盘价）
+        if (i + 2 < prices.length) {
+          const isNegativeDay1 = prices[i+1] < openPrices[i+1];
+          const isNegativeDay2 = prices[i+2] < openPrices[i+2];
+          
+          result.doubleNegativeDetected = isNegativeDay1 && isNegativeDay2;
+          
+          // 检查双阴期间的成交量是否递减（缩量条件）
+          if (result.doubleNegativeDetected && i + 2 < volumes.length) {
+            result.volumeConditionMet = volumes[i+2] < volumes[i+1] && volumes[i+1] < volumes[i];
+            result.volumeRatio = volumes[i+2] / volumes[i];
+          }
+          
+          // 检查强势条件（双阴后的最高价不低于涨停前的最低价）
+          if (result.doubleNegativeDetected && i + 2 < highPrices.length && i > 0) {
+            result.strengthConditionMet = highPrices[i+2] >= lowPrices[i-1];
+            result.priceStrength = highPrices[i+2] / lowPrices[i-1];
+          }
+          
+          // 如果找到了完整信号，跳出循环
+          if (result.doubleNegativeDetected) {
+            break;
+          }
+        }
+      }
+    }
+    
+    // 计算综合得分
+    let score = 0;
+    if (result.limitUpDetected) score += 20;
+    if (result.doubleNegativeDetected) score += 30;
+    if (result.volumeConditionMet) score += 25;
+    if (result.strengthConditionMet) score += 25;
+    
+    result.overallScore = score;
+    
+    // 执行 NG 条件检查： 升势 AND 双阴 AND 强势 AND 缩量 AND NOT(阴K)
+    result.signalTriggered = result.limitUpDetected && 
+                             result.doubleNegativeDetected && 
+                             result.strengthConditionMet && 
+                             result.volumeConditionMet;
+    
+    return result;
+  }
+
+  /**
+   * 解释策略结果
+   * @param {Object} signals 信号结果
+   * @returns {String} 解释文本
+   */
+  interpretResults(signals) {
+    if (!signals.limitUpDetected) {
+      return "未检测到近期涨停信号，暂不符合涨停双阴买入法条件。";
+    }
+    
+    if (!signals.doubleNegativeDetected) {
+      return "检测到涨停信号，但未形成双阴形态，需继续观察。";
+    }
+    
+    let interpretation = "检测到涨停后双阴形态";
+    
+    if (signals.volumeConditionMet) {
+      interpretation += "，成交量呈递减趋势，符合缩量条件";
+    } else {
+      interpretation += "，但成交量未有效递减，不符合缩量条件";
+    }
+    
+    if (signals.strengthConditionMet) {
+      interpretation += "，价格强度保持良好，未跌破重要支撑位";
+    } else {
+      interpretation += "，价格强度较弱，可能跌破重要支撑位";
+    }
+    
+    if (signals.signalTriggered) {
+      interpretation += "。综合判断，符合涨停双阴买入法条件，可考虑买入。";
+    } else {
+      interpretation += "。综合判断，部分符合涨停双阴买入法条件，建议观察。";
+    }
+    
+    return interpretation;
+  }
+  
+  /**
+   * 获取优势场景
+   * @returns {Array} 优势场景列表
+   */
+  getAdvantageousScenarios() {
+    return [
+      "涨停后缩量调整的股票",
+      "有主力控盘特征的个股",
+      "基本面良好但短期调整的股票",
+      "板块轮动中的强势股"
+    ];
+  }
+  
+  /**
+   * 获取风险提示
+   * @returns {Array} 风险提示列表
+   */
+  getRiskWarnings() {
+    return [
+      "大盘处于明显下跌趋势时慎用",
+      "个股基本面出现重大不利变化时不宜使用",
+      "连续跌停后反弹不适用此策略",
+      "成交量异常放大时需谨慎判断"
+    ];
+  }
+}
+
+export default LimitUpDoubleNegativeStrategy; 

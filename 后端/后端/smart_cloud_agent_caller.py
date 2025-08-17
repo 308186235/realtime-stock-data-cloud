@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+智能云端Agent调用系统
+记住调用时间,根据时间找到对应文件,支持重试机制
+"""
+
+import time
+import json
+import subprocess
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+import os
+import glob
+
+class SmartCloudAgentCaller:
+    def __init__(self):
+        self.rclone_path = r"C:\Users\锋\Downloads\rclone-v1.70.2-windows-amd64 (1)\rclone-v1.70.2-windows-amd64\rclone.exe"
+        self.onedrive_remote = "onedrive_personal:TradingData"
+        self.call_history = []
+        
+    def record_call(self, operation_type: str, call_time: datetime, expected_filename: str = None):
+        """记录调用信息"""
+        call_record = {
+            'operation_type': operation_type,
+            'call_time': call_time.isoformat(),
+            'expected_filename': expected_filename,
+            'status': 'pending',
+            'actual_filename': None,
+            'retry_count': 0,
+            'max_retries': 3
+        }
+        self.call_history.append(call_record)
+        return len(self.call_history) - 1  # 返回记录索引
+    
+    def generate_expected_filename(self, operation_type: str, call_time: datetime) -> str:
+        """根据操作类型和时间生成期望的文件名"""
+        time_str = call_time.strftime('%m%d_%H%M%S')
+        
+        filename_map = {
+            'holdings': f'持仓数据_{time_str}.csv',
+            'orders': f'委托数据_{time_str}.csv', 
+            'transactions': f'成交数据_{time_str}.csv',
+            'balance': f'latest_balance.json'
+        }
+        
+        return filename_map.get(operation_type, f'{operation_type}_{time_str}.csv')
+    
+    def list_onedrive_files(self) -> List[str]:
+        """列出OneDrive中的文件"""
+        try:
+            result = subprocess.run([
+                self.rclone_path, 'ls', self.onedrive_remote
+            ], capture_output=True, text=True, encoding='utf-8')
+            
+            if result.returncode == 0:
+                files = []
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        # 提取文件名(去掉文件大小)
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            filename = ' '.join(parts[1:])
+                            files.append(filename)
+                return files
+            else:
+                print(f"❌ 列出OneDrive文件失败: {result.stderr}")
+                return []
+        except Exception as e:
+            print(f"❌ 列出OneDrive文件异常: {e}")
+            return []
+    
+    def find_file_by_time_pattern(self, operation_type: str, call_time: datetime, tolerance_minutes: int = 5) -> Optional[str]:
+        """根据时间模式查找文件"""
+        files = self.list_onedrive_files()
+        
+        # 生成可能的时间模式
+        time_patterns = []
+        for i in range(-tolerance_minutes, tolerance_minutes + 1):
+            adjusted_time = call_time + timedelta(minutes=i)
+            time_str = adjusted_time.strftime('%m%d_%H%M')  # 不包含秒,因为可能有偏差
+            time_patterns.append(time_str)
+        
+        # 查找匹配的文件
+        type_map = {
+            'holdings': '持仓数据',
+            'orders': '委托数据',
+            'transactions': '成交数据',
+            'balance': 'latest_balance'
+        }
+        
+        file_prefix = type_map.get(operation_type, operation_type)
+        
+        for file in files:
+            if file_prefix in file:
+                # 检查时间模式是否匹配
+                for pattern in time_patterns:
+                    if pattern in file:
+                        return file
+        
+        return None
+    
+    def download_file_from_onedrive(self, filename: str, local_path: str = './cloud_downloads/') -> bool:
+        """从OneDrive下载文件"""
+        try:
+            # 确保本地目录存在
+            os.makedirs(local_path, exist_ok=True)
+            
+            result = subprocess.run([
+                self.rclone_path, 'copy',
+                f'{self.onedrive_remote}/{filename}',
+                local_path
+            ], capture_output=True, text=True, encoding='utf-8')
+            
+            if result.returncode == 0:
+                local_file = os.path.join(local_path, filename)
+                if os.path.exists(local_file):
+                    print(f"✅ 文件下载成功: {filename}")
+                    return True
+            
+            print(f"❌ 文件下载失败: {result.stderr}")
+            return False
+            
+        except Exception as e:
+            print(f"❌ 下载文件异常: {e}")
+            return False
+    
+    def call_export_function(self, operation_type: str) -> Tuple[bool, str]:
+        """调用导出函数"""
+        try:
+            if operation_type == 'holdings':
+                from trader_export import export_holdings
+                result = export_holdings()
+            elif operation_type == 'orders':
+                from trader_export import export_orders
+                result = export_orders()
+            elif operation_type == 'transactions':
+                from trader_export import export_transactions
+                result = export_transactions()
+            elif operation_type == 'balance':
+                from fixed_balance_reader import FixedBalanceReader
+                balance_reader = FixedBalanceReader()
+                balance_data = balance_reader.get_account_balance()
+                result = balance_data is not None
+            else:
+                return False, f"未知操作类型: {operation_type}"
+            
+            return result, "调用成功" if result else "调用失败"
+            
+        except Exception as e:
+            return False, f"调用异常: {e}"
+    
+    def smart_call_with_retry(self, operation_type: str, max_wait_minutes: int = 3) -> Dict:
+        """智能调用,带重试机制"""
+        print(f"🚀 开始智能调用: {operation_type}")
+        print("=" * 50)
+        
+        # 记录调用时间
+        call_time = datetime.now()
+        expected_filename = self.generate_expected_filename(operation_type, call_time)
+        call_index = self.record_call(operation_type, call_time, expected_filename)
+        
+        print(f"📅 调用时间: {call_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📁 期望文件: {expected_filename}")
+        
+        # 第一次调用
+        print(f"\n🔄 执行第1次调用...")
+        success, message = self.call_export_function(operation_type)
+        
+        if not success:
+            print(f"❌ 第1次调用失败: {message}")
+            self.call_history[call_index]['status'] = 'failed'
+            return {
+                'success': False,
+                'message': f'调用失败: {message}',
+                'call_time': call_time.isoformat(),
+                'filename': None
+            }
+        
+        print(f"✅ 第1次调用成功: {message}")
+        
+        # 等待文件生成并同步
+        print(f"\n⏳ 等待文件生成和同步...")
+        max_wait_seconds = max_wait_minutes * 60
+        wait_interval = 10  # 每10秒检查一次
+        
+        for wait_seconds in range(0, max_wait_seconds, wait_interval):
+            print(f"   检查中... ({wait_seconds}s/{max_wait_seconds}s)")
+            
+            # 查找文件
+            found_file = self.find_file_by_time_pattern(operation_type, call_time)
+            
+            if found_file:
+                print(f"✅ 找到文件: {found_file}")
+                
+                # 下载文件验证
+                if self.download_file_from_onedrive(found_file):
+                    self.call_history[call_index]['status'] = 'success'
+                    self.call_history[call_index]['actual_filename'] = found_file
+                    
+                    return {
+                        'success': True,
+                        'message': '调用成功,文件已生成',
+                        'call_time': call_time.isoformat(),
+                        'expected_filename': expected_filename,
+                        'actual_filename': found_file,
+                        'local_path': f'./cloud_downloads/{found_file}'
+                    }
+            
+            time.sleep(wait_interval)
+        
+        # 如果等待超时,尝试重试
+        print(f"\n⚠️ 等待超时,未找到期望文件")
+        
+        # 重试机制
+        for retry_count in range(1, 4):  # 最多重试3次
+            print(f"\n🔄 执行第{retry_count + 1}次调用(重试{retry_count})...")
+            
+            # 检查是否在交易时间(避免影响交易)
+            current_time = datetime.now()
+            if self.is_trading_time(current_time):
+                print("⚠️ 当前为交易时间,延迟重试...")
+                time.sleep(30)  # 等待30秒
+                continue
+            
+            # 重新调用
+            retry_call_time = datetime.now()
+            success, message = self.call_export_function(operation_type)
+            
+            if not success:
+                print(f"❌ 第{retry_count + 1}次调用失败: {message}")
+                continue
+            
+            print(f"✅ 第{retry_count + 1}次调用成功")
+            
+            # 等待文件生成
+            time.sleep(30)  # 等待30秒
+            found_file = self.find_file_by_time_pattern(operation_type, retry_call_time)
+            
+            if found_file:
+                print(f"✅ 重试成功,找到文件: {found_file}")
+                
+                if self.download_file_from_onedrive(found_file):
+                    self.call_history[call_index]['status'] = 'success_retry'
+                    self.call_history[call_index]['actual_filename'] = found_file
+                    self.call_history[call_index]['retry_count'] = retry_count
+                    
+                    return {
+                        'success': True,
+                        'message': f'重试成功(第{retry_count + 1}次调用)',
+                        'call_time': call_time.isoformat(),
+                        'retry_call_time': retry_call_time.isoformat(),
+                        'expected_filename': expected_filename,
+                        'actual_filename': found_file,
+                        'local_path': f'./cloud_downloads/{found_file}',
+                        'retry_count': retry_count
+                    }
+        
+        # 所有重试都失败
+        self.call_history[call_index]['status'] = 'failed_all_retries'
+        return {
+            'success': False,
+            'message': '所有调用和重试都失败',
+            'call_time': call_time.isoformat(),
+            'expected_filename': expected_filename,
+            'retry_count': 3
+        }
+    
+    def is_trading_time(self, check_time: datetime) -> bool:
+        """检查是否为交易时间"""
+        # 简单的交易时间检查:工作日 9:30-11:30, 13:00-15:00
+        if check_time.weekday() >= 5:  # 周末
+            return False
+        
+        time_str = check_time.strftime('%H:%M')
+        morning_trading = '09:30' <= time_str <= '11:30'
+        afternoon_trading = '13:00' <= time_str <= '15:00'
+        
+        return morning_trading or afternoon_trading
+    
+    def get_call_history(self) -> List[Dict]:
+        """获取调用历史"""
+        return self.call_history
+    
+    def save_call_history(self, filename: str = 'cloud_agent_call_history.json'):
+        """保存调用历史"""
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(self.call_history, f, ensure_ascii=False, indent=2)
+
+def demo_usage():
+    """演示用法"""
+    print("🚀 智能云端Agent调用系统演示")
+    print("=" * 60)
+    
+    caller = SmartCloudAgentCaller()
+    
+    # 演示持仓导出
+    print("\n📊 测试持仓导出...")
+    result = caller.smart_call_with_retry('holdings')
+    print(f"结果: {result}")
+    
+    # 演示余额获取
+    print("\n💰 测试余额获取...")
+    result = caller.smart_call_with_retry('balance')
+    print(f"结果: {result}")
+    
+    # 保存调用历史
+    caller.save_call_history()
+    print(f"\n📋 调用历史已保存")
+
+if __name__ == '__main__':
+    demo_usage()

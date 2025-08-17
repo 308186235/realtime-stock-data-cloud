@@ -1,0 +1,722 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">交易历史</text>
+    </view>
+    
+    <view class="filter-section">
+      <view class="date-filters">
+        <view class="date-picker">
+          <text class="filter-label">开始日期</text>
+          <picker 
+            mode="date" 
+            :value="startDate" 
+            :start="availableDateRange.start" 
+            :end="availableDateRange.end" 
+            @change="onStartDateChange"
+          >
+            <view class="picker-value">{{startDate}}</view>
+          </picker>
+        </view>
+        <text class="date-separator">至</text>
+        <view class="date-picker">
+          <text class="filter-label">结束日期</text>
+          <picker 
+            mode="date" 
+            :value="endDate" 
+            :start="availableDateRange.start" 
+            :end="availableDateRange.end" 
+            @change="onEndDateChange"
+          >
+            <view class="picker-value">{{endDate}}</view>
+          </picker>
+        </view>
+      </view>
+      
+      <view class="filter-row">
+        <view class="filter-item">
+          <text class="filter-label">交易类型</text>
+          <picker 
+            mode="selector" 
+            :range="tradeTypes" 
+            @change="onTradeTypeChange"
+          >
+            <view class="picker-value">{{selectedTradeType || '全部'}}</view>
+          </picker>
+        </view>
+        
+        <view class="filter-item">
+          <text class="filter-label">股票</text>
+          <picker 
+            mode="selector" 
+            :range="stockOptions" 
+            @change="onStockChange"
+          >
+            <view class="picker-value">{{selectedStock || '全部'}}</view>
+          </picker>
+        </view>
+      </view>
+      
+      <view class="filter-row">
+        <view class="filter-item">
+          <text class="filter-label">交易结果</text>
+          <picker 
+            mode="selector" 
+            :range="resultTypes" 
+            @change="onResultTypeChange"
+          >
+            <view class="picker-value">{{selectedResultType || '全部'}}</view>
+          </picker>
+        </view>
+        
+        <view class="filter-item">
+          <text class="filter-label">策略</text>
+          <picker 
+            mode="selector" 
+            :range="strategyOptions" 
+            @change="onStrategyChange"
+          >
+            <view class="picker-value">{{selectedStrategy || '全部'}}</view>
+          </picker>
+        </view>
+      </view>
+      
+      <view class="filter-actions">
+        <button class="filter-btn reset" @click="resetFilters">重置</button>
+        <button class="filter-btn apply" @click="applyFilters">应用筛选</button>
+      </view>
+    </view>
+    
+    <view class="summary-section">
+      <view class="summary-item">
+        <text class="summary-label">总交易次数</text>
+        <text class="summary-value">{{summary.totalTrades}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">盈利交易</text>
+        <text class="summary-value profit">{{summary.profitTrades}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">亏损交易</text>
+        <text class="summary-value loss">{{summary.lossTrades}}</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-label">胜率</text>
+        <text class="summary-value">{{summary.winRate}}%</text>
+      </view>
+    </view>
+    
+    <view class="trade-list">
+      <view v-for="(trade, index) in filteredTrades" :key="index" class="trade-item">
+        <view class="trade-header">
+          <view class="stock-info">
+            <text class="stock-name">{{trade.stockName}}</text>
+            <text class="stock-code">{{trade.stockCode}}</text>
+          </view>
+          <text :class="['trade-result', trade.profit >= 0 ? 'profit' : 'loss']">
+            {{trade.profit >= 0 ? '+' : ''}}¥{{trade.profit.toFixed(2)}}
+          </text>
+        </view>
+        
+        <view class="trade-details">
+          <view class="detail-column">
+            <view class="detail-row">
+              <text class="detail-label">买入价格</text>
+              <text class="detail-value">¥{{trade.buyPrice}}</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">买入时间</text>
+              <text class="detail-value">{{trade.buyTime}}</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">买入数量</text>
+              <text class="detail-value">{{trade.quantity}}股</text>
+            </view>
+          </view>
+          
+          <view class="detail-column">
+            <view class="detail-row">
+              <text class="detail-label">卖出价格</text>
+              <text class="detail-value">¥{{trade.sellPrice}}</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">卖出时间</text>
+              <text class="detail-value">{{trade.sellTime}}</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">收益率</text>
+              <text :class="['detail-value', trade.profitPercentage >= 0 ? 'profit' : 'loss']">
+                {{trade.profitPercentage >= 0 ? '+' : ''}}{{trade.profitPercentage}}%
+              </text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="trade-footer">
+          <text class="strategy-tag">{{trade.strategy}}</text>
+          <text class="trade-type-tag">{{trade.type}}</text>
+          <text class="view-detail" @click="viewTradeDetail(trade)">查看详情</text>
+        </view>
+      </view>
+      
+      <view v-if="filteredTrades.length === 0" class="empty-trades">
+        <text class="empty-text">暂无符合条件的交易记录</text>
+      </view>
+    </view>
+    
+    <view class="pagination">
+      <text 
+        :class="['page-btn', currentPage === 1 ? 'disabled' : '']" 
+        @click="prevPage"
+      >上一页</text>
+      <text class="page-info">{{currentPage}}/{{totalPages}}</text>
+      <text 
+        :class="['page-btn', currentPage === totalPages ? 'disabled' : '']" 
+        @click="nextPage"
+      >下一页</text>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      // 日期筛选
+      startDate: '2023-01-01',
+      endDate: '2023-05-10',
+      availableDateRange: {
+        start: '2020-01-01',
+        end: '2023-05-10'
+      },
+      
+      // 筛选选项
+      tradeTypes: ['全部', '手动买入', '手动卖出', '策略买入', '策略卖出', '止盈卖出', '止损卖出'],
+      selectedTradeType: '全部',
+      
+      resultTypes: ['全部', '盈利', '亏损'],
+      selectedResultType: '全部',
+      
+      stockOptions: ['全部', '贵州茅台', '宁德时代', '中国平安', '阿里巴巴', '腾讯控股', '平安银行'],
+      selectedStock: '全部',
+      
+      strategyOptions: ['全部', '均线突破策略', 'RSI超买超卖策略', '价值投资策略'],
+      selectedStrategy: '全部',
+      
+      // 分页
+      currentPage: 1,
+      pageSize: 10,
+      totalPages: 5,
+      
+      // 交易数据
+      trades: [],
+      
+      // 统计摘要
+      summary: {
+        totalTrades: 0,
+        profitTrades: 0,
+        lossTrades: 0,
+        winRate: 0
+      }
+    };
+  },
+  computed: {
+    filteredTrades() {
+      // 实际应用中应该根据筛选条件过滤
+      // 这里简单返回当前页的数据
+      const start = (this.currentPage - 1) * this.pageSize;
+      const end = start + this.pageSize;
+      return this.trades.slice(start, end);
+    }
+  },
+  created() {
+    this.loadTradeData();
+  },
+  methods: {
+    loadTradeData() {
+      // 模拟数据加载
+      // 实际应用中应该从API或数据库加载
+      this.trades = [
+        {
+          stockName: '贵州茅台',
+          stockCode: '600519',
+          buyPrice: 1680.50,
+          sellPrice: 1789.20,
+          buyTime: '2023-04-15 10:24:35',
+          sellTime: '2023-05-08 14:36:22',
+          quantity: 10,
+          profit: 1087.00,
+          profitPercentage: 6.47,
+          type: '策略买入',
+          strategy: '均线突破策略'
+        },
+        {
+          stockName: '宁德时代',
+          stockCode: '300750',
+          buyPrice: 240.10,
+          sellPrice: 226.40,
+          buyTime: '2023-04-20 09:31:15',
+          sellTime: '2023-05-05 15:28:45',
+          quantity: 100,
+          profit: -1370.00,
+          profitPercentage: -5.71,
+          type: '策略买入',
+          strategy: 'RSI超买超卖策略'
+        },
+        {
+          stockName: '平安银行',
+          stockCode: '000001',
+          buyPrice: 14.20,
+          sellPrice: 15.60,
+          buyTime: '2023-03-22 13:45:00',
+          sellTime: '2023-05-02 10:12:35',
+          quantity: 2000,
+          profit: 2800.00,
+          profitPercentage: 9.86,
+          type: '手动买入',
+          strategy: '手动交易'
+        },
+        {
+          stockName: '中国平安',
+          stockCode: '601318',
+          buyPrice: 50.80,
+          sellPrice: 48.60,
+          buyTime: '2023-04-10 11:18:25',
+          sellTime: '2023-04-28 14:03:12',
+          quantity: 500,
+          profit: -1100.00,
+          profitPercentage: -4.33,
+          type: '策略买入',
+          strategy: '价值投资策略'
+        },
+        {
+          stockName: '阿里巴巴',
+          stockCode: '9988.HK',
+          buyPrice: 88.50,
+          sellPrice: 95.20,
+          buyTime: '2023-04-05 09:36:40',
+          sellTime: '2023-04-25 11:40:38',
+          quantity: 300,
+          profit: 2010.00,
+          profitPercentage: 7.57,
+          type: '手动买入',
+          strategy: '手动交易'
+        },
+        {
+          stockName: '腾讯控股',
+          stockCode: '0700.HK',
+          buyPrice: 370.80,
+          sellPrice: 380.60,
+          buyTime: '2023-03-29 10:22:15',
+          sellTime: '2023-04-18 15:08:53',
+          quantity: 50,
+          profit: 490.00,
+          profitPercentage: 2.64,
+          type: '策略买入',
+          strategy: 'RSI超买超卖策略'
+        },
+        {
+          stockName: '美的集团',
+          stockCode: '000333',
+          buyPrice: 55.25,
+          sellPrice: 50.10,
+          buyTime: '2023-04-12 13:52:31',
+          sellTime: '2023-04-17 09:58:44',
+          quantity: 400,
+          profit: -2060.00,
+          profitPercentage: -9.32,
+          type: '止损卖出',
+          strategy: '均线突破策略'
+        },
+        {
+          stockName: '五粮液',
+          stockCode: '000858',
+          buyPrice: 168.30,
+          sellPrice: 181.20,
+          buyTime: '2023-03-20 14:28:15',
+          sellTime: '2023-04-12 10:36:28',
+          quantity: 100,
+          profit: 1290.00,
+          profitPercentage: 7.67,
+          type: '止盈卖出',
+          strategy: '价值投资策略'
+        },
+        {
+          stockName: '工商银行',
+          stockCode: '601398',
+          buyPrice: 4.68,
+          sellPrice: 4.81,
+          buyTime: '2023-03-15 09:45:22',
+          sellTime: '2023-04-10 14:20:05',
+          quantity: 5000,
+          profit: 650.00,
+          profitPercentage: 2.78,
+          type: '策略买入',
+          strategy: '价值投资策略'
+        },
+        {
+          stockName: '宁德时代',
+          stockCode: '300750',
+          buyPrice: 220.40,
+          sellPrice: 240.10,
+          buyTime: '2023-03-10 11:05:38',
+          sellTime: '2023-04-05 15:30:00',
+          quantity: 80,
+          profit: 1576.00,
+          profitPercentage: 8.94,
+          type: '手动买入',
+          strategy: '手动交易'
+        }
+      ];
+      
+      this.updateSummary();
+    },
+    
+    updateSummary() {
+      const profitTrades = this.trades.filter(trade => trade.profit >= 0);
+      const lossTrades = this.trades.filter(trade => trade.profit < 0);
+      
+      this.summary = {
+        totalTrades: this.trades.length,
+        profitTrades: profitTrades.length,
+        lossTrades: lossTrades.length,
+        winRate: this.trades.length > 0 ? 
+          Math.round((profitTrades.length / this.trades.length) * 100) : 0
+      };
+    },
+    
+    onStartDateChange(e) {
+      this.startDate = e.detail.value;
+    },
+    
+    onEndDateChange(e) {
+      this.endDate = e.detail.value;
+    },
+    
+    onTradeTypeChange(e) {
+      this.selectedTradeType = this.tradeTypes[e.detail.value];
+    },
+    
+    onResultTypeChange(e) {
+      this.selectedResultType = this.resultTypes[e.detail.value];
+    },
+    
+    onStockChange(e) {
+      this.selectedStock = this.stockOptions[e.detail.value];
+    },
+    
+    onStrategyChange(e) {
+      this.selectedStrategy = this.strategyOptions[e.detail.value];
+    },
+    
+    resetFilters() {
+      this.startDate = this.availableDateRange.start;
+      this.endDate = this.availableDateRange.end;
+      this.selectedTradeType = '全部';
+      this.selectedResultType = '全部';
+      this.selectedStock = '全部';
+      this.selectedStrategy = '全部';
+    },
+    
+    applyFilters() {
+      // 实际应用中应该根据筛选条件重新获取数据
+      // 这里简单显示一个提示
+      uni.showToast({
+        title: '筛选条件已应用',
+        icon: 'success'
+      });
+      
+      // 重置到第一页
+      this.currentPage = 1;
+    },
+    
+    prevPage() {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+      }
+    },
+    
+    nextPage() {
+      if (this.currentPage < this.totalPages) {
+        this.currentPage++;
+      }
+    },
+    
+    viewTradeDetail(trade) {
+      // 实际应用中应该跳转到详情页
+      uni.showModal({
+        title: '交易详情',
+        content: `${trade.stockName} (${trade.stockCode})\n买入: ¥${trade.buyPrice} × ${trade.quantity}股\n卖出: ¥${trade.sellPrice}\n收益: ${trade.profit >= 0 ? '+' : ''}¥${trade.profit.toFixed(2)} (${trade.profitPercentage}%)`,
+        showCancel: false
+      });
+    }
+  }
+};
+</script>
+
+<style>
+.container {
+  background-color: #141414;
+  color: #eee;
+  min-height: 100vh;
+  padding: 20rpx;
+}
+
+.header {
+  padding: 20rpx 0;
+}
+
+.title {
+  font-size: 36rpx;
+  font-weight: bold;
+}
+
+.filter-section {
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.date-filters {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.date-picker {
+  flex: 1;
+}
+
+.date-separator {
+  margin: 0 20rpx;
+  color: #999;
+}
+
+.filter-row {
+  display: flex;
+  margin-bottom: 20rpx;
+}
+
+.filter-item {
+  flex: 1;
+  margin-right: 20rpx;
+}
+
+.filter-item:last-child {
+  margin-right: 0;
+}
+
+.filter-label {
+  font-size: 26rpx;
+  color: #999;
+  margin-bottom: 10rpx;
+  display: block;
+}
+
+.picker-value {
+  background-color: #333;
+  padding: 15rpx;
+  border-radius: 6rpx;
+  color: #eee;
+  font-size: 28rpx;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.filter-btn {
+  margin-left: 20rpx;
+  width: 180rpx;
+  height: 70rpx;
+  line-height: 70rpx;
+  text-align: center;
+  border-radius: 6rpx;
+  font-size: 28rpx;
+}
+
+.reset {
+  background-color: #444;
+  color: white;
+}
+
+.apply {
+  background-color: #4c8dff;
+  color: white;
+}
+
+.summary-section {
+  display: flex;
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.summary-item {
+  flex: 1;
+  text-align: center;
+  padding: 0 10rpx;
+  border-right: 1px solid #333;
+}
+
+.summary-item:last-child {
+  border-right: none;
+}
+
+.summary-label {
+  font-size: 26rpx;
+  color: #999;
+  margin-bottom: 10rpx;
+  display: block;
+}
+
+.summary-value {
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.profit {
+  color: #ff5252;
+}
+
+.loss {
+  color: #4caf50;
+}
+
+.trade-list {
+  margin-bottom: 20rpx;
+}
+
+.trade-item {
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.trade-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15rpx;
+  padding-bottom: 15rpx;
+  border-bottom: 1px solid #333;
+}
+
+.stock-info {
+  display: flex;
+  align-items: baseline;
+}
+
+.stock-name {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-right: 15rpx;
+}
+
+.stock-code {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.trade-result {
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.trade-details {
+  display: flex;
+  margin-bottom: 15rpx;
+  padding-bottom: 15rpx;
+  border-bottom: 1px solid #333;
+}
+
+.detail-column {
+  flex: 1;
+}
+
+.detail-row {
+  display: flex;
+  margin-bottom: 10rpx;
+}
+
+.detail-label {
+  width: 150rpx;
+  font-size: 26rpx;
+  color: #999;
+}
+
+.detail-value {
+  font-size: 26rpx;
+}
+
+.trade-footer {
+  display: flex;
+  align-items: center;
+}
+
+.strategy-tag, .trade-type-tag {
+  font-size: 24rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 4rpx;
+  margin-right: 15rpx;
+}
+
+.strategy-tag {
+  background-color: rgba(76, 141, 255, 0.2);
+  color: #4c8dff;
+}
+
+.trade-type-tag {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.view-detail {
+  margin-left: auto;
+  font-size: 26rpx;
+  color: #4c8dff;
+}
+
+.empty-trades {
+  background-color: #222;
+  border-radius: 10rpx;
+  padding: 40rpx;
+  text-align: center;
+}
+
+.empty-text {
+  color: #666;
+  font-size: 28rpx;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 20rpx;
+  margin-bottom: 40rpx;
+}
+
+.page-btn {
+  padding: 10rpx 20rpx;
+  background-color: #333;
+  color: #eee;
+  border-radius: 6rpx;
+  font-size: 28rpx;
+}
+
+.page-btn.disabled {
+  background-color: #222;
+  color: #666;
+}
+
+.page-info {
+  margin: 0 30rpx;
+  font-size: 28rpx;
+  color: #999;
+}
+</style> 

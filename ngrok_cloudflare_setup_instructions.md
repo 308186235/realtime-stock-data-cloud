@@ -1,0 +1,56 @@
+# ngrok + Cloudflare混合方案配置说明
+
+## 🎯 配置目标
+将api.aigupiao.me指向ngrok隧道,保留Cloudflare的SSL和CDN功能
+
+## 📋 Cloudflare DNS配置步骤
+
+### 1. 登录Cloudflare控制台
+- 访问: https://dash.cloudflare.com
+- 选择域名: aigupiao.me
+
+### 2. 添加/修改DNS记录
+```
+类型: CNAME
+名称: api
+目标: 2346443b1406.ngrok-free.app
+TTL: 300秒 (5分钟)
+代理状态: 已代理 (橙色云朵)
+```
+
+### 3. 验证配置
+运行测试脚本验证配置是否生效:
+```bash
+python test_ngrok_cloudflare_hybrid.py
+```
+
+## 🔄 架构说明
+```
+移动端 → Cloudflare DNS → Cloudflare CDN/SSL → ngrok隧道 → 本地服务器
+```
+
+## 💡 优势
+- ✅ 保留Cloudflare的SSL证书
+- ✅ 保留Cloudflare的DDoS防护
+- ✅ 保留Cloudflare的CDN加速
+- ✅ 使用更快的ngrok隧道
+- ✅ 降低API延迟
+
+## 📊 预期性能
+- ngrok直连: 200-800ms
+- Cloudflare代理: 可能增加100-300ms开销
+- 总体延迟: 300-1100ms (比纯Cloudflare隧道快50-80%)
+
+## 🔧 故障排除
+1. 如果DNS不生效,等待5-10分钟
+2. 如果ngrok隧道断开,重新运行配置脚本
+3. 如果延迟仍然很高,检查网络连接
+
+## 📱 移动端配置
+更新移动端API地址为:
+- API地址: https://api.aigupiao.me
+- WebSocket: wss://api.aigupiao.me/ws
+
+生成时间: 2025-07-21 21:31:23
+ngrok隧道: https://2346443b1406.ngrok-free.app
+本地服务: http://localhost:8000

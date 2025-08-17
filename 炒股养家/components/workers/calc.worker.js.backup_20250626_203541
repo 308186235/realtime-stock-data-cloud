@@ -1,0 +1,8 @@
+// 新增Web Worker处理指标计算
+self.addEventListener('message', ({data}) => {
+    const result = technicalIndicators[data.method](data.payload)
+    self.postMessage({ 
+        id: data.id, 
+        result 
+    })
+})

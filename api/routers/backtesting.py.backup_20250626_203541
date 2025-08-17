@@ -1,0 +1,610 @@
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
+from typing import List, Dict, Any, Optional
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import logging
+import uuid
+import os
+import json
+from pydantic import BaseModel
+
+from backend.backtesting.engine import BacktestEngine
+from backend.backtesting.strategies.inverted_three_red_backtest import InvertedThreeRedBacktest
+from backend.backtesting.strategies.red_three_soldiers_backtest import RedThreeSoldiersBacktest
+from backend.backtesting.analysis.performance_analyzer import PerformanceAnalyzer
+from backend.backtesting.analysis.benchmark_comparison import BenchmarkComparison
+from backend.backtesting.risk_management import RiskManager
+from backend.backtesting.indicators.technical_indicators import TechnicalIndicators
+from backend.auth.auth_service import AuthService
+
+# 设置日志
+logger = logging.getLogger(__name__)
+
+# 创建路由
+router = APIRouter(prefix="/backtesting", tags=["backtesting"])
+
+# 添加测试端点
+@router.get("/test")
+async def test_backtesting_api():
+    """
+    测试回测API是否可访问
+    """
+    return {
+        "message": "回测API服务器正常工作", 
+        "status": "ok",
+        "time": datetime.now().isoformat()
+    }
+
+# 数据模型
+class StrategyConfig(BaseModel):
+    type: str
+    params: Dict[str, Any] = {}
+
+class RiskConfig(BaseModel):
+    enabled: bool = True
+    max_position_size: float = 0.2
+    max_drawdown: float = 0.1
+    fixed_stop_loss: float = 0.05
+    trailing_stop_loss: float = 0.08
+    time_stop_loss: int = 10
+    position_sizing_method: str = "risk"
+    risk_per_trade: float = 0.02
+
+class TechnicalIndicatorConfig(BaseModel):
+    enabled: bool = True
+    indicators: List[str] = ["ma", "ema", "macd", "rsi", "bollinger"]
+
+class BenchmarkConfig(BaseModel):
+    enabled: bool = False
+    symbol: str = "000001.SS"
+
+class BacktestRequest(BaseModel):
+    strategies: List[StrategyConfig]
+    symbols: List[str]
+    start_date: str
+    end_date: str
+    initial_capital: float = 100000.0
+    commission: float = 0.0003
+    name: Optional[str] = None
+    risk_management: Optional[RiskConfig] = None
+    technical_indicators: Optional[TechnicalIndicatorConfig] = None
+    benchmark_comparison: Optional[BenchmarkConfig] = None
+
+class BacktestSaveRequest(BaseModel):
+    backtest_id: str
+    name: str
+
+# 数据服务（模拟）
+class DataService:
+    """
+    数据服务类，负责获取历史数据
+    注意：这是一个模拟实现，实际项目中应该连接到数据库或API
+    """
+    async def get_historical_data(self, symbols, start_date, end_date):
+        """
+        获取历史数据
+        
+        参数:
+        - symbols: 股票代码列表
+        - start_date: 开始日期
+        - end_date: 结束日期
+        
+        返回:
+        - DataFrame: 包含历史数据的DataFrame
+        """
+        # 转换日期格式
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        
+        # 模拟数据生成
+        # 在实际项目中，这里应该从数据库或API获取真实数据
+        all_data = []
+        
+        for symbol in symbols:
+            # 生成日期序列
+            dates = []
+            current_date = start
+            while current_date <= end:
+                # 跳过周末
+                if current_date.weekday() < 5:  # 0-4 对应周一至周五
+                    dates.append(current_date)
+                current_date += timedelta(days=1)
+            
+            # 生成模拟价格数据
+            n = len(dates)
+            if n == 0:
+                continue
+                
+            # 基础价格和随机波动
+            base_price = 100.0 + (hash(symbol) % 400)  # 使用hash值来为不同股票生成不同的基础价格
+            volatility = 0.02  # 日波动率
+            trend = 0.0001  # 微小的上升趋势
+            
+            # 生成价格序列
+            closes = []
+            base = base_price
+            for i in range(n):
+                # 添加随机波动和微小趋势
+                random_change = np.random.normal(trend, volatility)
+                base = max(base * (1 + random_change), 1.0)  # 确保价格为正
+                closes.append(base)
+            
+            # 生成OHLC数据
+            opens = []
+            highs = []
+            lows = []
+            for i in range(n):
+                daily_volatility = volatility * base_price
+                # 开盘价在前一天收盘价附近浮动
+                if i == 0:
+                    opens.append(closes[i] * (1 + np.random.normal(0, 0.005)))
+                else:
+                    opens.append(closes[i-1] * (1 + np.random.normal(0, 0.01)))
+                
+                # 确保高低价合理
+                price_range = abs(closes[i] - opens[i]) + daily_volatility
+                highs.append(max(opens[i], closes[i]) + abs(np.random.normal(0, 0.5) * price_range))
+                lows.append(min(opens[i], closes[i]) - abs(np.random.normal(0, 0.5) * price_range))
+            
+            # 生成成交量
+            volumes = []
+            base_volume = 10000 + (hash(symbol) % 90000)
+            for i in range(n):
+                # 成交量与价格变化有一定相关性
+                price_change = abs(closes[i] / opens[i] - 1)
+                vol = base_volume * (1 + np.random.normal(0, 0.3) + price_change * 10)
+                volumes.append(max(int(vol), 100))
+            
+            # 构建数据
+            for i in range(n):
+                all_data.append({
+                    'symbol': symbol,
+                    'date': dates[i],
+                    'open': opens[i],
+                    'high': highs[i],
+                    'low': lows[i],
+                    'close': closes[i],
+                    'volume': volumes[i]
+                })
+        
+        # 转换为DataFrame
+        df = pd.DataFrame(all_data)
+        
+        # 注入模拟的倒三红形模式和红三兵模式
+        if len(symbols) > 0 and len(dates) >= 10:
+            if len(symbols) >= 2:
+                # 在第一个股票中注入倒三红形模式
+                self._inject_inverted_three_red_pattern(df, symbols[0], dates)
+                
+                # 在第二个股票中注入红三兵模式
+                if len(symbols) >= 2:
+                    self._inject_red_three_soldiers_pattern(df, symbols[1], dates)
+            else:
+                # 只有一只股票时，选择随机注入一种模式
+                if np.random.random() > 0.5:
+                    self._inject_inverted_three_red_pattern(df, symbols[0], dates)
+                else:
+                    self._inject_red_three_soldiers_pattern(df, symbols[0], dates)
+        
+        return df
+    
+    def _inject_inverted_three_red_pattern(self, df, symbol, dates):
+        """注入倒三红形模式"""
+        # 在靠近结束日期的地方创建一个倒三红形模式
+        pattern_start = len(dates) - 5
+        if pattern_start > 0:
+            pattern_dates = dates[pattern_start:pattern_start+3]
+            
+            # 过滤出对应日期数据
+            mask = (df['symbol'] == symbol) & df['date'].isin(pattern_dates)
+            pattern_indices = df[mask].index
+            
+            if len(pattern_indices) == 3:
+                # 修改这些天的数据以形成倒三红形
+                # 第一天：较大阳线
+                df.loc[pattern_indices[0], 'open'] = 100
+                df.loc[pattern_indices[0], 'close'] = 110
+                df.loc[pattern_indices[0], 'high'] = 112
+                df.loc[pattern_indices[0], 'low'] = 99
+                df.loc[pattern_indices[0], 'volume'] = 150000
+                
+                # 第二天：中等阳线，但实体比第一天小
+                df.loc[pattern_indices[1], 'open'] = 111
+                df.loc[pattern_indices[1], 'close'] = 117
+                df.loc[pattern_indices[1], 'high'] = 121
+                df.loc[pattern_indices[1], 'low'] = 110
+                df.loc[pattern_indices[1], 'volume'] = 130000
+                
+                # 第三天：小阳线，上影线长
+                df.loc[pattern_indices[2], 'open'] = 118
+                df.loc[pattern_indices[2], 'close'] = 119
+                df.loc[pattern_indices[2], 'high'] = 127
+                df.loc[pattern_indices[2], 'low'] = 117
+                df.loc[pattern_indices[2], 'volume'] = 110000
+    
+    def _inject_red_three_soldiers_pattern(self, df, symbol, dates):
+        """注入红三兵模式"""
+        # 在靠近结束日期的地方创建一个红三兵模式
+        pattern_start = len(dates) - 6
+        if pattern_start > 0:
+            pattern_dates = dates[pattern_start:pattern_start+3]
+            
+            # 过滤出对应日期数据
+            mask = (df['symbol'] == symbol) & df['date'].isin(pattern_dates)
+            pattern_indices = df[mask].index
+            
+            if len(pattern_indices) == 3:
+                # 修改这些天的数据以形成红三兵
+                # 第一天：第一根阳线
+                df.loc[pattern_indices[0], 'open'] = 100
+                df.loc[pattern_indices[0], 'close'] = 108
+                df.loc[pattern_indices[0], 'high'] = 109
+                df.loc[pattern_indices[0], 'low'] = 99
+                df.loc[pattern_indices[0], 'volume'] = 120000
+                
+                # 第二天：第二根阳线，与第一根相似
+                df.loc[pattern_indices[1], 'open'] = 108.5
+                df.loc[pattern_indices[1], 'close'] = 117
+                df.loc[pattern_indices[1], 'high'] = 118
+                df.loc[pattern_indices[1], 'low'] = 108
+                df.loc[pattern_indices[1], 'volume'] = 140000
+                
+                # 第三天：第三根阳线，上影线短
+                df.loc[pattern_indices[2], 'open'] = 117.5
+                df.loc[pattern_indices[2], 'close'] = 126
+                df.loc[pattern_indices[2], 'high'] = 127
+                df.loc[pattern_indices[2], 'low'] = 117
+                df.loc[pattern_indices[2], 'volume'] = 160000
+
+# 存储回测结果的字典（在真实应用中应该使用数据库，并进行适当的加密）
+backtest_results_store = {}
+
+# 获取数据服务
+def get_data_service():
+    return DataService()
+
+@router.post("/run")
+async def run_backtest(
+    request: BacktestRequest,
+    data_service: DataService = Depends(get_data_service),
+    current_user: Dict = Depends(AuthService.get_current_active_user)
+):
+    """
+    执行回测
+    
+    参数:
+    - request: 回测请求参数
+    - data_service: 数据服务
+    - current_user: 当前用户
+    
+    返回:
+    - 回测结果
+    """
+    try:
+        logger.info(f"用户 {current_user['username']} 开始执行回测: {request.symbols}")
+        
+        # 输入验证 - 增加对股票代码和日期的安全检查
+        for symbol in request.symbols:
+            if not symbol.isalnum() and not all(c in '.-_' for c in symbol if not c.isalnum()):
+                raise HTTPException(status_code=400, detail=f"无效的股票代码格式: {symbol}")
+        
+        try:
+            start_date = datetime.strptime(request.start_date, "%Y-%m-%d")
+            end_date = datetime.strptime(request.end_date, "%Y-%m-%d")
+            
+            # 验证日期范围是否合理
+            if start_date > end_date:
+                raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
+                
+            # 限制回测最长时间范围为5年
+            if (end_date - start_date).days > 1825:  # 5年 * 365天
+                raise HTTPException(status_code=400, detail="回测时间范围不能超过5年")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式无效，请使用YYYY-MM-DD格式")
+        
+        # 获取历史数据
+        data = await data_service.get_historical_data(request.symbols, request.start_date, request.end_date)
+        
+        if data.empty:
+            raise HTTPException(status_code=404, detail="未找到符合条件的历史数据")
+        
+        # 处理技术指标
+        if request.technical_indicators and request.technical_indicators.enabled:
+            logger.info("添加技术指标")
+            
+            # 按股票分组处理
+            for symbol, group in data.groupby('symbol'):
+                # 按日期排序
+                symbol_data = group.sort_values('date')
+                
+                # 根据配置添加指标
+                indicators = request.technical_indicators.indicators
+                
+                if "ma" in indicators:
+                    symbol_data = TechnicalIndicators.add_moving_average(symbol_data)
+                    
+                if "ema" in indicators:
+                    symbol_data = TechnicalIndicators.add_exponential_moving_average(symbol_data)
+                    
+                if "macd" in indicators:
+                    symbol_data = TechnicalIndicators.add_macd(symbol_data)
+                    
+                if "rsi" in indicators:
+                    symbol_data = TechnicalIndicators.add_rsi(symbol_data)
+                    
+                if "bollinger" in indicators:
+                    symbol_data = TechnicalIndicators.add_bollinger_bands(symbol_data)
+                
+                # 更新原始数据
+                data.loc[symbol_data.index] = symbol_data
+            
+            # 生成交易信号
+            data = TechnicalIndicators.generate_signals(data)
+            
+        # 创建回测引擎
+        engine = BacktestEngine(
+            initial_capital=request.initial_capital,
+            commission=request.commission
+        )
+        
+        # 添加策略
+        for strategy_config in request.strategies:
+            # 验证策略类型
+            if strategy_config.type not in ["inverted_three_red", "red_three_soldiers"]:
+                raise HTTPException(status_code=400, detail=f"不支持的策略类型: {strategy_config.type}")
+                
+            # 验证策略参数
+            self._validate_strategy_params(strategy_config)
+            
+            if strategy_config.type == "inverted_three_red":
+                engine.add_strategy(InvertedThreeRedBacktest(params=strategy_config.params))
+            elif strategy_config.type == "red_three_soldiers":
+                engine.add_strategy(RedThreeSoldiersBacktest(params=strategy_config.params))
+        
+        # 初始化风险管理器
+        if request.risk_management and request.risk_management.enabled:
+            risk_params = {
+                'max_position_size': request.risk_management.max_position_size,
+                'max_drawdown': request.risk_management.max_drawdown,
+                'fixed_stop_loss': request.risk_management.fixed_stop_loss,
+                'trailing_stop_loss': request.risk_management.trailing_stop_loss,
+                'time_stop_loss': request.risk_management.time_stop_loss,
+                'position_sizing_method': request.risk_management.position_sizing_method,
+                'risk_per_trade': request.risk_management.risk_per_trade
+            }
+            
+            risk_manager = RiskManager(request.initial_capital, risk_params)
+            engine.set_risk_manager(risk_manager)
+        
+        # 运行回测
+        results = engine.run(data, request.start_date, request.end_date)
+        
+        # 使用性能分析器生成报告
+        report = PerformanceAnalyzer.generate_report(results['equity_curve'], results['trades'])
+        
+        # 基准比较
+        benchmark_report = None
+        if request.benchmark_comparison and request.benchmark_comparison.enabled:
+            benchmark_symbol = request.benchmark_comparison.symbol
+            logger.info(f"进行基准比较: {benchmark_symbol}")
+            
+            # 获取基准数据
+            benchmark_data = BenchmarkComparison.get_benchmark_data(
+                benchmark_symbol, 
+                request.start_date, 
+                request.end_date
+            )
+            
+            if not benchmark_data.empty:
+                benchmark_report = BenchmarkComparison.compare_with_benchmark(
+                    results['equity_curve'], 
+                    benchmark_data,
+                    request.initial_capital
+                )
+        
+        # 生成回测ID
+        backtest_id = str(uuid.uuid4())
+        
+        # 转换DataFrame为可序列化格式
+        if 'equity_curve' in results and isinstance(results['equity_curve'], pd.DataFrame):
+            # 转换日期列
+            if 'date' in results['equity_curve'].columns:
+                results['equity_curve']['date'] = results['equity_curve']['date'].astype(str)
+            # 转换为字典列表
+            results['equity_curve'] = results['equity_curve'].to_dict('records')
+        
+        # 存储回测结果
+        saved_results = {
+            'id': backtest_id,
+            'name': request.name or f"回测 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            'request': request.dict(),
+            'results': results,
+            'report': report,
+            'benchmark_report': benchmark_report,
+            'created_at': datetime.now().isoformat(),
+            'user_id': current_user['username']  # 添加用户关联
+        }
+        
+        backtest_results_store[backtest_id] = saved_results
+        
+        # 准备响应
+        response = {
+            'backtest_id': backtest_id,
+            'metrics': report['metrics'],
+            'charts': report['charts'],
+            'trades': results['trades'][:50],  # 限制返回的交易记录数量
+            'benchmark_report': benchmark_report
+        }
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"回测执行失败: {str(e)}", exc_info=True)
+        # 隐藏敏感异常信息
+        if isinstance(e, HTTPException):
+            raise e
+        else:
+            raise HTTPException(status_code=500, detail="回测执行出错，请联系管理员")
+    
+    def _validate_strategy_params(self, strategy_config):
+        """验证策略参数的安全性"""
+        # 检查参数类型
+        for key, value in strategy_config.params.items():
+            if not isinstance(value, (int, float, bool, str)):
+                raise HTTPException(status_code=400, detail=f"不支持的参数类型: {key}:{type(value)}")
+            
+            # 检查数值范围
+            if isinstance(value, (int, float)):
+                if value < 0 or value > 10:  # 设置一个合理的上限
+                    raise HTTPException(status_code=400, detail=f"参数 {key} 的值超出范围")
+            
+            # 检查字符串参数
+            if isinstance(value, str):
+                if len(value) > 100:  # 设置字符串长度上限
+                    raise HTTPException(status_code=400, detail=f"参数 {key} 的长度超出限制")
+                
+                # 检查字符串内容
+                if any(c in value for c in "'\";`|&"):
+                    raise HTTPException(status_code=400, detail=f"参数 {key} 包含非法字符")
+
+@router.get("/results/{backtest_id}")
+async def get_backtest_results(
+    backtest_id: str,
+    current_user: Dict = Depends(AuthService.get_current_active_user)
+):
+    """
+    获取回测结果
+    
+    参数:
+    - backtest_id: 回测ID
+    - current_user: 当前用户
+    
+    返回:
+    - 回测结果
+    """
+    if backtest_id not in backtest_results_store:
+        raise HTTPException(status_code=404, detail="回测结果不存在")
+    
+    result = backtest_results_store[backtest_id]
+    
+    # 检查是否为当前用户的回测记录
+    if result.get('user_id') != current_user['username']:
+        raise HTTPException(status_code=403, detail="您无权访问此回测结果")
+    
+    # 限制返回的交易记录数量
+    if 'results' in result and 'trades' in result['results']:
+        result['results']['trades'] = result['results']['trades'][:50]
+    
+    return result
+
+@router.post("/save")
+async def save_backtest(
+    request: BacktestSaveRequest,
+    current_user: Dict = Depends(AuthService.get_current_active_user)
+):
+    """
+    保存回测结果
+    
+    参数:
+    - request: 保存请求
+    - current_user: 当前用户
+    
+    返回:
+    - 保存结果
+    """
+    if request.backtest_id not in backtest_results_store:
+        raise HTTPException(status_code=404, detail="回测结果不存在")
+    
+    result = backtest_results_store[request.backtest_id]
+    
+    # 检查是否为当前用户的回测记录
+    if result.get('user_id') != current_user['username']:
+        raise HTTPException(status_code=403, detail="您无权修改此回测结果")
+    
+    # 验证名称
+    if len(request.name) > 100:
+        raise HTTPException(status_code=400, detail="名称长度不能超过100个字符")
+    
+    # 过滤名称中的潜在有害字符
+    sanitized_name = ''.join(c for c in request.name if c.isalnum() or c in ' -_.')
+    
+    # 更新名称
+    backtest_results_store[request.backtest_id]['name'] = sanitized_name
+    
+    return {"status": "success", "message": "回测结果已保存"}
+
+@router.get("/history")
+async def get_backtest_history(
+    current_user: Dict = Depends(AuthService.get_current_active_user)
+):
+    """
+    获取回测历史
+    
+    参数:
+    - current_user: 当前用户
+    
+    返回:
+    - 回测历史列表
+    """
+    history = []
+    
+    # 只返回当前用户的回测记录
+    for backtest_id, result in backtest_results_store.items():
+        if result.get('user_id') == current_user['username']:
+            history.append({
+                'id': backtest_id,
+                'name': result['name'],
+                'symbols': result['request']['symbols'],
+                'start_date': result['request']['start_date'],
+                'end_date': result['request']['end_date'],
+                'total_return': result['report']['metrics']['total_return'] if 'report' in result and 'metrics' in result['report'] else 0,
+                'created_at': result['created_at']
+            })
+    
+    # 按创建时间倒序排序
+    history.sort(key=lambda x: x['created_at'], reverse=True)
+    
+    return history
+
+@router.get("/indicators")
+async def get_available_indicators():
+    """
+    获取可用的技术指标列表
+    
+    返回:
+    - 可用技术指标列表
+    """
+    indicators = [
+        {"id": "ma", "name": "移动平均线", "parameters": [{"name": "periods", "type": "list_int", "default": [5, 10, 20, 50, 200]}]},
+        {"id": "ema", "name": "指数移动平均线", "parameters": [{"name": "periods", "type": "list_int", "default": [5, 10, 20, 50, 200]}]},
+        {"id": "macd", "name": "MACD", "parameters": [
+            {"name": "fast_period", "type": "int", "default": 12},
+            {"name": "slow_period", "type": "int", "default": 26},
+            {"name": "signal_period", "type": "int", "default": 9}
+        ]},
+        {"id": "rsi", "name": "相对强弱指数", "parameters": [{"name": "period", "type": "int", "default": 14}]},
+        {"id": "bollinger", "name": "布林带", "parameters": [
+            {"name": "period", "type": "int", "default": 20},
+            {"name": "std_dev", "type": "float", "default": 2.0}
+        ]},
+        {"id": "stochastic", "name": "随机指标", "parameters": [
+            {"name": "k_period", "type": "int", "default": 14},
+            {"name": "d_period", "type": "int", "default": 3}
+        ]},
+        {"id": "atr", "name": "平均真实范围", "parameters": [{"name": "period", "type": "int", "default": 14}]},
+        {"id": "obv", "name": "能量潮指标", "parameters": []},
+        {"id": "mfi", "name": "资金流量指标", "parameters": [{"name": "period", "type": "int", "default": 14}]}
+    ]
+    
+    return indicators
+
+@router.get("/benchmarks")
+async def get_available_benchmarks():
+    """
+    获取可用的基准指数列表
+    
+    返回:
+    - 可用基准指数列表
+    """
+    return BenchmarkComparison.get_benchmark_list() 

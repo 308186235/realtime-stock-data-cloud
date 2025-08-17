@@ -1,0 +1,771 @@
+#!/usr/bin/env python3
+"""
+优化配置管理
+"""
+
+import os
+import shutil
+import re
+from datetime import datetime
+from pathlib import Path
+
+class ConfigurationOptimizer:
+    """配置管理优化器"""
+    
+    def __init__(self):
+        self.backup_dir = f"config_optimization_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.optimized_files = []
+        
+    def optimize_all_configurations(self):
+        """优化所有配置"""
+        print("⚙️ 优化配置管理")
+        print("=" * 50)
+        
+        # 创建备份目录
+        os.makedirs(self.backup_dir, exist_ok=True)
+        
+        # 1. 修复版本依赖
+        self._fix_version_dependencies()
+        
+        # 2. 优化环境变量管理
+        self._optimize_environment_variables()
+        
+        # 3. 创建配置验证器
+        self._create_config_validator()
+        
+        # 4. 统一配置管理
+        self._unify_configuration_management()
+        
+        # 5. 添加配置热重载
+        self._add_config_hot_reload()
+        
+        print(f"\n✅ 配置管理优化完成！")
+        print(f"📁 备份文件保存在: {self.backup_dir}")
+        print(f"⚙️ 优化了 {len(self.optimized_files)} 个文件")
+        
+    def _fix_version_dependencies(self):
+        """修复版本依赖"""
+        print("\n⚙️ 修复版本依赖...")
+        
+        # 查找所有依赖文件
+        dependency_files = [
+            "requirements.txt",
+            "package.json",
+            "backend/requirements.txt"
+        ]
+        
+        for file_path in dependency_files:
+            if os.path.exists(file_path):
+                self._backup_file(file_path)
+                self._fix_dependency_versions(file_path)
+                self.optimized_files.append(file_path)
+                print(f"✅ 已修复: {file_path}")
+    
+    def _optimize_environment_variables(self):
+        """优化环境变量管理"""
+        print("\n⚙️ 优化环境变量管理...")
+        
+        # 更新.env.template
+        if os.path.exists(".env.template"):
+            self._backup_file(".env.template")
+            self._enhance_env_template()
+            self.optimized_files.append(".env.template")
+            print("✅ 已优化: .env.template")
+        
+        # 创建环境变量验证器
+        self._create_env_validator()
+        print("✅ 已创建: backend/config/env_validator.py")
+    
+    def _create_config_validator(self):
+        """创建配置验证器"""
+        print("\n⚙️ 创建配置验证器...")
+        
+        validator_code = '''"""
+配置验证器
+"""
+
+import os
+import logging
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ConfigValidationResult:
+    """配置验证结果"""
+    is_valid: bool
+    errors: List[str]
+    warnings: List[str]
+    missing_vars: List[str]
+
+class ConfigValidator:
+    """配置验证器"""
+    
+    def __init__(self):
+        self.required_vars = {
+            # 数据库配置
+            'SUPABASE_URL': 'Supabase数据库URL',
+            'SUPABASE_ANON_KEY': 'Supabase匿名密钥',
+            'SUPABASE_SERVICE_ROLE_KEY': 'Supabase服务角色密钥',
+            'DATABASE_URL': '数据库连接URL',
+            
+            # API配置
+            'STOCK_API_KEY': '股票数据API密钥',
+            'JWT_SECRET_KEY': 'JWT密钥',
+            
+            # 应用配置
+            'APP_ENV': '应用环境',
+        }
+        
+        self.optional_vars = {
+            'STOCK_API_KEY_TEST': '测试环境API密钥',
+            'CHAGUBANG_TOKEN': '茶股帮Token',
+            'REDIS_URL': 'Redis连接URL',
+            'DEBUG': '调试模式',
+        }
+        
+        self.validation_rules = {
+            'SUPABASE_URL': self._validate_url,
+            'DATABASE_URL': self._validate_database_url,
+            'JWT_SECRET_KEY': self._validate_jwt_secret,
+            'APP_ENV': self._validate_app_env,
+        }
+    
+    def validate_configuration(self) -> ConfigValidationResult:
+        """验证配置"""
+        errors = []
+        warnings = []
+        missing_vars = []
+        
+        # 检查必需的环境变量
+        for var_name, description in self.required_vars.items():
+            value = os.getenv(var_name)
+            if not value:
+                missing_vars.append(var_name)
+                errors.append(f"缺少必需的环境变量: {var_name} ({description})")
+            else:
+                # 运行特定验证规则
+                if var_name in self.validation_rules:
+                    validation_error = self.validation_rules[var_name](value)
+                    if validation_error:
+                        errors.append(f"{var_name}: {validation_error}")
+        
+        # 检查可选的环境变量
+        for var_name, description in self.optional_vars.items():
+            value = os.getenv(var_name)
+            if not value:
+                warnings.append(f"建议设置环境变量: {var_name} ({description})")
+        
+        # 检查.env文件是否存在
+        if not os.path.exists('.env'):
+            warnings.append("未找到.env文件，建议从.env.template复制并配置")
+        
+        is_valid = len(errors) == 0
+        
+        return ConfigValidationResult(
+            is_valid=is_valid,
+            errors=errors,
+            warnings=warnings,
+            missing_vars=missing_vars
+        )
+    
+    def _validate_url(self, url: str) -> Optional[str]:
+        """验证URL格式"""
+        if not url.startswith(('http://', 'https://')):
+            return "URL必须以http://或https://开头"
+        return None
+    
+    def _validate_database_url(self, url: str) -> Optional[str]:
+        """验证数据库URL"""
+        if not url.startswith('postgresql://'):
+            return "数据库URL必须以postgresql://开头"
+        if 'your_password' in url or 'YOUR_PASSWORD' in url:
+            return "数据库URL包含占位符密码，请设置真实密码"
+        return None
+    
+    def _validate_jwt_secret(self, secret: str) -> Optional[str]:
+        """验证JWT密钥"""
+        if len(secret) < 32:
+            return "JWT密钥长度应至少32个字符"
+        if secret in ['process.env.JWT_SECRET_KEY', 'your_jwt_secret_here']:
+            return "JWT密钥不能使用默认值"
+        return None
+    
+    def _validate_app_env(self, env: str) -> Optional[str]:
+        """验证应用环境"""
+        valid_envs = ['development', 'production', 'testing']
+        if env not in valid_envs:
+            return f"应用环境必须是: {', '.join(valid_envs)}"
+        return None
+    
+    def print_validation_report(self, result: ConfigValidationResult):
+        """打印验证报告"""
+        print("⚙️ 配置验证报告")
+        print("=" * 40)
+        
+        if result.is_valid:
+            print("✅ 配置验证通过")
+        else:
+            print("❌ 配置验证失败")
+        
+        if result.errors:
+            print("\n🚨 错误:")
+            for error in result.errors:
+                print(f"  - {error}")
+        
+        if result.warnings:
+            print("\n⚠️ 警告:")
+            for warning in result.warnings:
+                print(f"  - {warning}")
+        
+        if result.missing_vars:
+            print(f"\n📋 缺少的环境变量: {', '.join(result.missing_vars)}")
+
+# 全局配置验证器
+config_validator = ConfigValidator()
+
+def validate_config_on_startup():
+    """启动时验证配置"""
+    result = config_validator.validate_configuration()
+    config_validator.print_validation_report(result)
+    
+    if not result.is_valid:
+        logger.error("配置验证失败，请检查环境变量设置")
+        return False
+    
+    return True
+'''
+        
+        with open("backend/config/config_validator.py", "w", encoding="utf-8") as f:
+            f.write(validator_code)
+        
+        print("✅ 已创建: backend/config/config_validator.py")
+    
+    def _unify_configuration_management(self):
+        """统一配置管理"""
+        print("\n⚙️ 统一配置管理...")
+        
+        unified_config_code = '''"""
+统一配置管理器
+"""
+
+import os
+import json
+import yaml
+import logging
+from typing import Dict, Any, Optional, Union
+from pathlib import Path
+from backend.config.config_validator import config_validator
+
+logger = logging.getLogger(__name__)
+
+class UnifiedConfigManager:
+    """统一配置管理器"""
+    
+    def __init__(self):
+        self._config_cache = {}
+        self._config_files = {}
+        self._load_all_configs()
+    
+    def _load_all_configs(self):
+        """加载所有配置"""
+        # 加载环境变量
+        self._load_env_config()
+        
+        # 加载JSON配置文件
+        self._load_json_configs()
+        
+        # 加载YAML配置文件
+        self._load_yaml_configs()
+        
+        # 验证配置
+        self._validate_configs()
+    
+    def _load_env_config(self):
+        """加载环境变量配置"""
+        env_config = {}
+        
+        # 从.env文件加载
+        env_file = Path('.env')
+        if env_file.exists():
+            with open(env_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        env_config[key.strip()] = value.strip()
+        
+        # 合并系统环境变量
+        for key, value in os.environ.items():
+            env_config[key] = value
+        
+        self._config_cache['env'] = env_config
+    
+    def _load_json_configs(self):
+        """加载JSON配置文件"""
+        json_files = [
+            'config.json',
+            'backend/config/settings.json',
+            'api_keys.json'
+        ]
+        
+        for file_path in json_files:
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                    
+                    config_name = Path(file_path).stem
+                    self._config_cache[config_name] = config
+                    self._config_files[config_name] = file_path
+                    
+                except Exception as e:
+                    logger.error(f"加载JSON配置失败 {file_path}: {e}")
+    
+    def _load_yaml_configs(self):
+        """加载YAML配置文件"""
+        yaml_files = [
+            'config.yml',
+            'config.yaml',
+            'backend/config/settings.yml'
+        ]
+        
+        for file_path in yaml_files:
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        config = yaml.safe_load(f)
+                    
+                    config_name = Path(file_path).stem
+                    self._config_cache[config_name] = config
+                    self._config_files[config_name] = file_path
+                    
+                except Exception as e:
+                    logger.error(f"加载YAML配置失败 {file_path}: {e}")
+    
+    def _validate_configs(self):
+        """验证配置"""
+        result = config_validator.validate_configuration()
+        if not result.is_valid:
+            logger.warning("配置验证发现问题，请检查配置")
+    
+    def get(self, key: str, default: Any = None, config_type: str = 'env') -> Any:
+        """获取配置值"""
+        config = self._config_cache.get(config_type, {})
+        return config.get(key, default)
+    
+    def get_nested(self, path: str, default: Any = None, config_type: str = 'env') -> Any:
+        """获取嵌套配置值 (例: 'database.host')"""
+        config = self._config_cache.get(config_type, {})
+        
+        keys = path.split('.')
+        value = config
+        
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                return default
+        
+        return value
+    
+    def set(self, key: str, value: Any, config_type: str = 'env'):
+        """设置配置值"""
+        if config_type not in self._config_cache:
+            self._config_cache[config_type] = {}
+        
+        self._config_cache[config_type][key] = value
+    
+    def reload_config(self, config_type: Optional[str] = None):
+        """重新加载配置"""
+        if config_type:
+            # 重新加载特定类型的配置
+            if config_type == 'env':
+                self._load_env_config()
+            elif config_type in self._config_files:
+                file_path = self._config_files[config_type]
+                if file_path.endswith('.json'):
+                    self._load_json_configs()
+                elif file_path.endswith(('.yml', '.yaml')):
+                    self._load_yaml_configs()
+        else:
+            # 重新加载所有配置
+            self._load_all_configs()
+        
+        logger.info(f"配置重新加载完成: {config_type or 'all'}")
+    
+    def get_all_config(self) -> Dict[str, Any]:
+        """获取所有配置"""
+        return self._config_cache.copy()
+    
+    def export_config(self, file_path: str, config_type: str = 'env'):
+        """导出配置到文件"""
+        config = self._config_cache.get(config_type, {})
+        
+        if file_path.endswith('.json'):
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        elif file_path.endswith(('.yml', '.yaml')):
+            with open(file_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+        
+        logger.info(f"配置已导出到: {file_path}")
+
+# 全局配置管理器
+unified_config = UnifiedConfigManager()
+'''
+        
+        with open("backend/config/unified_config.py", "w", encoding="utf-8") as f:
+            f.write(unified_config_code)
+        
+        print("✅ 已创建: backend/config/unified_config.py")
+    
+    def _add_config_hot_reload(self):
+        """添加配置热重载"""
+        print("\n⚙️ 添加配置热重载...")
+        
+        hot_reload_code = '''"""
+配置热重载监控器
+"""
+
+import os
+import time
+import threading
+import logging
+from pathlib import Path
+from typing import Dict, Callable, List
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from backend.config.unified_config import unified_config
+
+logger = logging.getLogger(__name__)
+
+class ConfigFileHandler(FileSystemEventHandler):
+    """配置文件变化处理器"""
+    
+    def __init__(self, reload_callback: Callable):
+        self.reload_callback = reload_callback
+        self.config_extensions = {'.env', '.json', '.yml', '.yaml'}
+    
+    def on_modified(self, event):
+        """文件修改事件"""
+        if event.is_directory:
+            return
+        
+        file_path = Path(event.src_path)
+        if file_path.suffix in self.config_extensions:
+            logger.info(f"检测到配置文件变化: {file_path}")
+            self.reload_callback(str(file_path))
+
+class ConfigHotReloader:
+    """配置热重载器"""
+    
+    def __init__(self):
+        self.observer = Observer()
+        self.watching = False
+        self.watched_paths = set()
+        self.reload_callbacks: List[Callable] = []
+        
+    def add_reload_callback(self, callback: Callable):
+        """添加重载回调"""
+        self.reload_callbacks.append(callback)
+    
+    def start_watching(self, paths: List[str] = None):
+        """开始监控配置文件"""
+        if self.watching:
+            return
+        
+        if paths is None:
+            paths = ['.', 'backend/config']
+        
+        handler = ConfigFileHandler(self._on_config_changed)
+        
+        for path in paths:
+            if os.path.exists(path):
+                self.observer.schedule(handler, path, recursive=True)
+                self.watched_paths.add(path)
+                logger.info(f"开始监控配置目录: {path}")
+        
+        self.observer.start()
+        self.watching = True
+        logger.info("配置热重载监控已启动")
+    
+    def stop_watching(self):
+        """停止监控"""
+        if not self.watching:
+            return
+        
+        self.observer.stop()
+        self.observer.join()
+        self.watching = False
+        logger.info("配置热重载监控已停止")
+    
+    def _on_config_changed(self, file_path: str):
+        """配置文件变化回调"""
+        try:
+            # 等待文件写入完成
+            time.sleep(0.1)
+            
+            # 重新加载配置
+            file_name = Path(file_path).stem
+            unified_config.reload_config(file_name)
+            
+            # 调用所有回调函数
+            for callback in self.reload_callbacks:
+                try:
+                    callback(file_path)
+                except Exception as e:
+                    logger.error(f"配置重载回调失败: {e}")
+            
+            logger.info(f"配置热重载完成: {file_path}")
+            
+        except Exception as e:
+            logger.error(f"配置热重载失败: {e}")
+
+# 全局配置热重载器
+config_hot_reloader = ConfigHotReloader()
+
+def start_config_monitoring():
+    """启动配置监控"""
+    config_hot_reloader.start_watching()
+
+def stop_config_monitoring():
+    """停止配置监控"""
+    config_hot_reloader.stop_watching()
+'''
+        
+        with open("backend/services/config_hot_reloader.py", "w", encoding="utf-8") as f:
+            f.write(hot_reload_code)
+        
+        print("✅ 已创建: backend/services/config_hot_reloader.py")
+    
+    def _backup_file(self, file_path: str):
+        """备份文件"""
+        backup_name = file_path.replace("/", "_").replace("\\", "_") + ".backup"
+        backup_path = os.path.join(self.backup_dir, backup_name)
+        shutil.copy2(file_path, backup_path)
+    
+    def _fix_dependency_versions(self, file_path: str):
+        """修复依赖版本"""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        if file_path.endswith('requirements.txt'):
+            # 修复Python依赖版本
+            lines = content.split('\n')
+            fixed_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    # 将 >= 改为 ==
+                    if '>=' in line and '==' not in line:
+                        package_name = line.split('>=')[0].strip()
+                        # 这里可以添加具体的版本号映射
+                        version_map = {
+                            'fastapi': '0.104.1',
+                            'uvicorn': '0.24.0',
+                            'supabase': '2.3.0',
+                            'asyncpg': '0.29.0',
+                            'psutil': '5.9.6'
+                        }
+                        
+                        if package_name in version_map:
+                            fixed_lines.append(f"{package_name}=={version_map[package_name]}")
+                        else:
+                            fixed_lines.append(line)
+                    else:
+                        fixed_lines.append(line)
+                else:
+                    fixed_lines.append(line)
+            
+            content = '\n'.join(fixed_lines)
+        
+        elif file_path.endswith('package.json'):
+            # 修复Node.js依赖版本
+            import json
+            try:
+                package_data = json.loads(content)
+                
+                # 修复dependencies中的版本
+                if 'dependencies' in package_data:
+                    for package, version in package_data['dependencies'].items():
+                        if version.startswith('^') or version.startswith('~'):
+                            # 移除版本前缀，固定版本
+                            package_data['dependencies'][package] = version[1:]
+                
+                content = json.dumps(package_data, indent=2, ensure_ascii=False)
+            except json.JSONDecodeError:
+                pass
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+    
+    def _enhance_env_template(self):
+        """增强环境变量模板"""
+        with open(".env.template", 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 添加更多配置项和说明
+        enhanced_content = content + '''
+
+# 性能配置
+MAX_MEMORY_MB=500
+MEMORY_CHECK_INTERVAL=1.0
+DB_MIN_CONNECTIONS=5
+DB_MAX_CONNECTIONS=20
+DB_CONNECTION_TIMEOUT=30
+
+# 监控配置
+ENABLE_MONITORING=true
+MONITORING_INTERVAL=1.0
+ALERT_CPU_THRESHOLD=80.0
+ALERT_MEMORY_THRESHOLD=85.0
+
+# 缓存配置
+MAX_CACHE_SIZE=1000
+CACHE_TTL=300
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# 日志配置
+LOG_LEVEL=info
+LOG_FILE=logs/app.log
+LOG_MAX_SIZE=10MB
+LOG_BACKUP_COUNT=5
+
+# 安全配置
+CORS_ORIGINS=http://localhost:3000,https://yourdomain.com
+RATE_LIMIT_PER_MINUTE=60
+SESSION_TIMEOUT=3600
+
+# 配置验证提醒:
+# 1. 复制此文件为 .env
+# 2. 填入真实的配置值
+# 3. 不要将 .env 文件提交到代码仓库
+# 4. 定期检查和更新配置
+'''
+        
+        with open(".env.template", 'w', encoding='utf-8') as f:
+            f.write(enhanced_content)
+    
+    def _create_env_validator(self):
+        """创建环境变量验证器"""
+        validator_code = '''"""
+环境变量验证器
+"""
+
+import os
+import sys
+import logging
+from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+class EnvValidator:
+    """环境变量验证器"""
+    
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+    
+    def validate_all(self) -> bool:
+        """验证所有环境变量"""
+        self.errors.clear()
+        self.warnings.clear()
+        
+        # 验证必需的环境变量
+        self._validate_required_vars()
+        
+        # 验证数据库配置
+        self._validate_database_config()
+        
+        # 验证API配置
+        self._validate_api_config()
+        
+        # 验证安全配置
+        self._validate_security_config()
+        
+        # 打印验证结果
+        self._print_results()
+        
+        return len(self.errors) == 0
+    
+    def _validate_required_vars(self):
+        """验证必需的环境变量"""
+        required_vars = [
+            'SUPABASE_URL',
+            'SUPABASE_ANON_KEY',
+            'SUPABASE_SERVICE_ROLE_KEY',
+            'DATABASE_URL',
+            'STOCK_API_KEY',
+            'JWT_SECRET_KEY',
+            'APP_ENV'
+        ]
+        
+        for var in required_vars:
+            if not os.getenv(var):
+                self.errors.append(f"缺少必需的环境变量: {var}")
+    
+    def _validate_database_config(self):
+        """验证数据库配置"""
+        db_url = os.getenv('DATABASE_URL')
+        if db_url:
+            if not db_url.startswith('postgresql://'):
+                self.errors.append("DATABASE_URL必须以postgresql://开头")
+            if 'your_password' in db_url.lower():
+                self.errors.append("DATABASE_URL包含占位符密码")
+    
+    def _validate_api_config(self):
+        """验证API配置"""
+        api_key = os.getenv('STOCK_API_KEY')
+        if api_key and api_key in ['your_api_key_here', 'YOUR_API_KEY_HERE']:
+            self.errors.append("STOCK_API_KEY不能使用占位符值")
+    
+    def _validate_security_config(self):
+        """验证安全配置"""
+        jwt_secret = os.getenv('JWT_SECRET_KEY')
+        if jwt_secret:
+            if len(jwt_secret) < 32:
+                self.warnings.append("JWT_SECRET_KEY长度建议至少32个字符")
+            if jwt_secret in ['process.env.JWT_SECRET_KEY', 'your_jwt_secret_here']:
+                self.errors.append("JWT_SECRET_KEY不能使用默认值")
+    
+    def _print_results(self):
+        """打印验证结果"""
+        if self.errors:
+            print("❌ 环境变量验证失败:")
+            for error in self.errors:
+                print(f"  - {error}")
+        
+        if self.warnings:
+            print("⚠️ 环境变量警告:")
+            for warning in self.warnings:
+                print(f"  - {warning}")
+        
+        if not self.errors and not self.warnings:
+            print("✅ 环境变量验证通过")
+
+def validate_env_on_startup():
+    """启动时验证环境变量"""
+    validator = EnvValidator()
+    is_valid = validator.validate_all()
+    
+    if not is_valid:
+        print("\\n请检查环境变量配置后重新启动应用")
+        return False
+    
+    return True
+
+if __name__ == "__main__":
+    validate_env_on_startup()
+'''
+        
+        with open("backend/config/env_validator.py", "w", encoding="utf-8") as f:
+            f.write(validator_code)
+
+if __name__ == "__main__":
+    optimizer = ConfigurationOptimizer()
+    optimizer.optimize_all_configurations()

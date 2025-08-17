@@ -1,0 +1,17 @@
+services:
+- buildCommand: pip install -r requirements.txt
+  envVars:
+  - key: PORT
+    value: '10000'
+  - key: MARKET_DATA_API_KEY
+    value: YOUR_STOCK_API_KEY
+  - key: ENVIRONMENT
+    value: production
+  - key: REALTIME_DATA_ENABLED
+    value: 'true'
+  healthCheckPath: /
+  name: cloud-agent-system
+  plan: free
+  runtime: python3
+  startCommand: python cloud-agent-system.py
+  type: web

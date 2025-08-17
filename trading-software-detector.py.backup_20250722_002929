@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+交易软件接口检测工具
+检测当前运行的交易软件并尝试找到可用的交易接口
+"""
+
+import psutil
+import win32gui
+import win32process
+import win32api
+import win32con
+import pyautogui
+import time
+import json
+from datetime import datetime
+
+class TradingSoftwareDetector:
+    def __init__(self):
+        self.trading_processes = []
+        self.trading_windows = []
+        self.detected_interfaces = []
+        
+    def detect_trading_processes(self):
+        """检测可能的交易软件进程"""
+        trading_keywords = [
+            '同花顺', 'tonghuashun', 'ths',
+            '东方财富', 'eastmoney', 'em',
+            '大智慧', 'dzh', 'gw',
+            '华泰', 'htsc',
+            '中信', 'citic',
+            '招商', 'cmschina',
+            '国泰君安', 'gtja',
+            '广发', 'gf',
+            '海通', 'htsec',
+            'trader', 'trading', 'stock'
+        ]
+        
+        print("🔍 检测交易软件进程...")
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                proc_name = proc.info['name'].lower()
+                proc_exe = proc.info['exe'] or ''
+                
+                for keyword in trading_keywords:
+                    if keyword in proc_name or keyword in proc_exe.lower():
+                        self.trading_processes.append({
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'exe': proc_exe,
+                            'keyword': keyword
+                        })
+                        print(f"  ✅ 发现交易软件: {proc.info['name']} (PID: {proc.info['pid']})")
+                        break
+                        
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+                
+        return self.trading_processes
+    
+    def detect_trading_windows(self):
+        """检测交易软件窗口"""
+        print("\n🪟 检测交易软件窗口...")
+        
+        def enum_windows_callback(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd)
+                class_name = win32gui.GetClassName(hwnd)
+                
+                trading_window_keywords = [
+                    '交易', '买卖', '委托', '持仓', '资金',
+                    '同花顺', '东方财富', '大智慧', '华泰',
+                    'trading', 'trader', 'stock'
+                ]
+                
+                for keyword in trading_window_keywords:
+                    if keyword in window_text or keyword in class_name:
+                        try:
+                            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                            windows.append({
+                                'hwnd': hwnd,
+                                'title': window_text,
+                                'class': class_name,
+                                'pid': pid
+                            })
+                            print(f"  ✅ 发现交易窗口: {window_text} ({class_name})")
+                            break
+                        except:
+                            pass
+            return True
+        
+        win32gui.EnumWindows(enum_windows_callback, self.trading_windows)
+        return self.trading_windows
+    
+    def check_api_interfaces(self):
+        """检查可能的API接口"""
+        print("\n🔌 检查API接口...")
+        
+        # 检查常见的交易API端口
+        api_ports = [7708, 7709, 8080, 8888, 9999, 18080]
+        
+        import socket
+        for port in api_ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex(('127.0.0.1', port))
+                sock.close()
+                
+                if result == 0:
+                    print(f"  ✅ 发现开放端口: {port}")
+                    self.detected_interfaces.append({
+                        'type': 'tcp_port',
+                        'port': port,
+                        'status': 'open'
+                    })
+            except:
+                pass
+    
+    def check_dde_support(self):
+        """检查DDE支持"""
+        print("\n📡 检查DDE支持...")
+        try:
+            import dde
+            print("  ✅ DDE模块可用")
+            self.detected_interfaces.append({
+                'type': 'dde',
+                'status': 'available'
+            })
+        except ImportError:
+            print("  ❌ DDE模块不可用，需要安装: pip install pywin32")
+    
+    def analyze_window_controls(self, hwnd):
+        """分析窗口控件结构"""
+        print(f"\n🎛 分析窗口控件: {win32gui.GetWindowText(hwnd)}")
+        
+        controls = []
+        
+        def enum_child_windows(child_hwnd, controls_list):
+            try:
+                class_name = win32gui.GetClassName(child_hwnd)
+                window_text = win32gui.GetWindowText(child_hwnd)
+                rect = win32gui.GetWindowRect(child_hwnd)
+                
+                # 查找可能的交易相关控件
+                trading_controls = ['买入', '卖出', '委托', '撤单', 'Button', 'Edit']
+                
+                for control_type in trading_controls:
+                    if control_type in class_name or control_type in window_text:
+                        controls_list.append({
+                            'hwnd': child_hwnd,
+                            'class': class_name,
+                            'text': window_text,
+                            'rect': rect
+                        })
+                        print(f"    🎯 发现控件: {window_text} ({class_name}) at {rect}")
+                        break
+                        
+            except:
+                pass
+            return True
+        
+        try:
+            win32gui.EnumChildWindows(hwnd, enum_child_windows, controls)
+        except:
+            pass
+            
+        return controls
+    
+    def generate_trading_interface(self):
+        """生成交易接口代码"""
+        print("\n🔧 生成交易接口代码...")
+        
+        interface_code = '''
+class TradingInterface:
+    def __init__(self):
+        self.trading_window = None
+        self.controls = {}
+        
+    def connect_to_trading_software(self):
+        """连接到交易软件"""
+        # 根据检测结果连接到交易软件
+        pass
+        
+    def buy_stock(self, symbol, quantity, price):
+        """买入股票"""
+        try:
+            # 方法1: API调用
+            # return self.api_buy(symbol, quantity, price)
+            
+            # 方法2: 模拟操作
+            return self.simulate_buy(symbol, quantity, price)
+        except Exception as e:
+            print(f"买入失败: {e}")
+            return False
+            
+    def sell_stock(self, symbol, quantity, price):
+        """卖出股票"""
+        try:
+            # 方法1: API调用
+            # return self.api_sell(symbol, quantity, price)
+            
+            # 方法2: 模拟操作
+            return self.simulate_sell(symbol, quantity, price)
+        except Exception as e:
+            print(f"卖出失败: {e}")
+            return False
+            
+    def simulate_buy(self, symbol, quantity, price):
+        """模拟买入操作"""
+        # 这里需要根据具体软件界面调整坐标
+        # pyautogui.click(买入按钮坐标)
+        # pyautogui.typewrite(symbol)
+        # pyautogui.typewrite(str(quantity))
+        # pyautogui.typewrite(str(price))
+        # pyautogui.click(确认按钮坐标)
+        pass
+        
+    def simulate_sell(self, symbol, quantity, price):
+        """模拟卖出操作"""
+        # 类似买入操作
+        pass
+'''
+        
+        with open('E:\\交易8 - 副本\\trading_interface.py', 'w', encoding='utf-8') as f:
+            f.write(interface_code)
+            
+        print("  ✅ 交易接口代码已生成: trading_interface.py")
+    
+    def run_detection(self):
+        """运行完整检测"""
+        print("🚀 开始检测交易软件接口...\n")
+        
+        # 检测进程
+        processes = self.detect_trading_processes()
+        
+        # 检测窗口
+        windows = self.detect_trading_windows()
+        
+        # 检查API接口
+        self.check_api_interfaces()
+        
+        # 检查DDE支持
+        self.check_dde_support()
+        
+        # 分析主要交易窗口的控件
+        for window in windows[:2]:  # 只分析前2个窗口
+            controls = self.analyze_window_controls(window['hwnd'])
+            window['controls'] = controls
+        
+        # 生成报告
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'processes': processes,
+            'windows': windows,
+            'interfaces': self.detected_interfaces,
+            'recommendations': self.generate_recommendations()
+        }
+        
+        # 保存报告
+        with open('E:\\交易8 - 副本\\trading_detection_report.json', 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        
+        # 生成交易接口
+        self.generate_trading_interface()
+        
+        print(f"\n📊 检测完成！")
+        print(f"  - 发现 {len(processes)} 个交易进程")
+        print(f"  - 发现 {len(windows)} 个交易窗口")
+        print(f"  - 发现 {len(self.detected_interfaces)} 个可用接口")
+        print(f"  - 报告已保存: trading_detection_report.json")
+        
+        return report
+    
+    def generate_recommendations(self):
+        """生成使用建议"""
+        recommendations = []
+        
+        if self.trading_processes:
+            recommendations.append("建议使用API接口方式，更稳定可靠")
+        
+        if any(iface['type'] == 'tcp_port' for iface in self.detected_interfaces):
+            recommendations.append("发现TCP端口，可尝试直接API调用")
+            
+        if any(iface['type'] == 'dde' for iface in self.detected_interfaces):
+            recommendations.append("支持DDE，可使用数据交换方式")
+            
+        if self.trading_windows:
+            recommendations.append("可使用界面自动化方式，需要精确定位控件")
+            
+        return recommendations
+
+if __name__ == "__main__":
+    detector = TradingSoftwareDetector()
+    detector.run_detection()

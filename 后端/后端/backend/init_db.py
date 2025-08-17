@@ -1,0 +1,162 @@
+from sqlalchemy.orm import Session
+import pandas as pd
+from datetime import datetime
+import logging
+import os
+
+from backend.models import init_db, engine, SessionLocal
+from backend.models.models import User, TechnicalIndicator, Benchmark
+from backend.services.user_service import create_user, get_user_by_username, get_password_hash
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
+
+logger = logging.getLogger(__name__)
+
+def init_benchmarks(db: Session):
+    """初始化基准指数数据"""
+    benchmarks = [
+        {"symbol": "000001.SS", "name": "上证指数", "market": "中国"},
+        {"symbol": "399001.SZ", "name": "深证成指", "market": "中国"},
+        {"symbol": "399006.SZ", "name": "创业板指", "market": "中国"},
+        {"symbol": "SPY", "name": "标普500ETF", "market": "美国"},
+        {"symbol": "QQQ", "name": "纳斯达克100ETF", "market": "美国"},
+        {"symbol": "^HSI", "name": "恒生指数", "market": "香港"}
+    ]
+    
+    for benchmark_data in benchmarks:
+        benchmark = db.query(Benchmark).filter(Benchmark.symbol == benchmark_data["symbol"]).first()
+        if not benchmark:
+            benchmark = Benchmark(**benchmark_data)
+            db.add(benchmark)
+    
+    db.commit()
+    logger.info(f"已初始化 {len(benchmarks)} 个基准指数")
+
+def init_indicators(db: Session):
+    """初始化技术指标数据"""
+    indicators = [
+        {
+            "name": "ma", 
+            "display_name": "移动平均线", 
+            "parameters": [{"name": "periods", "type": "list_int", "default": [5, 10, 20, 50, 200]}],
+            "category": "趋势指标"
+        },
+        {
+            "name": "ema", 
+            "display_name": "指数移动平均线", 
+            "parameters": [{"name": "periods", "type": "list_int", "default": [5, 10, 20, 50, 200]}],
+            "category": "趋势指标"
+        },
+        {
+            "name": "macd", 
+            "display_name": "MACD", 
+            "parameters": [
+                {"name": "fast_period", "type": "int", "default": 12},
+                {"name": "slow_period", "type": "int", "default": 26},
+                {"name": "signal_period", "type": "int", "default": 9}
+            ],
+            "category": "动量指标"
+        },
+        {
+            "name": "rsi", 
+            "display_name": "相对强弱指数", 
+            "parameters": [{"name": "period", "type": "int", "default": 14}],
+            "category": "动量指标"
+        },
+        {
+            "name": "bollinger", 
+            "display_name": "布林带", 
+            "parameters": [
+                {"name": "period", "type": "int", "default": 20},
+                {"name": "std_dev", "type": "float", "default": 2.0}
+            ],
+            "category": "波动指标"
+        },
+        {
+            "name": "stochastic", 
+            "display_name": "随机指标", 
+            "parameters": [
+                {"name": "k_period", "type": "int", "default": 14},
+                {"name": "d_period", "type": "int", "default": 3}
+            ],
+            "category": "动量指标"
+        },
+        {
+            "name": "atr", 
+            "display_name": "平均真实范围", 
+            "parameters": [{"name": "period", "type": "int", "default": 14}],
+            "category": "波动指标"
+        },
+        {
+            "name": "obv", 
+            "display_name": "能量潮指标", 
+            "parameters": [],
+            "category": "成交量指标"
+        },
+        {
+            "name": "mfi", 
+            "display_name": "资金流量指标", 
+            "parameters": [{"name": "period", "type": "int", "default": 14}],
+            "category": "成交量指标"
+        }
+    ]
+    
+    for indicator_data in indicators:
+        indicator = db.query(TechnicalIndicator).filter(TechnicalIndicator.name == indicator_data["name"]).first()
+        if not indicator:
+            indicator = TechnicalIndicator(**indicator_data)
+            db.add(indicator)
+    
+    db.commit()
+    logger.info(f"已初始化 {len(indicators)} 个技术指标")
+
+def init_users(db: Session):
+    """初始化用户数据"""
+    # 创建测试用户
+    if not get_user_by_username(db, "admin"):
+        user = create_user(
+            db=db,
+            username="admin",
+            email="admin@example.com",
+            password="admin123",
+            role="admin"
+        )
+        logger.info(f"已创建管理员用户: {user.username}")
+    
+    if not get_user_by_username(db, "test_user"):
+        user = create_user(
+            db=db,
+            username="test_user",
+            email="test@example.com",
+            password="test123",
+            role="user"
+        )
+        logger.info(f"已创建测试用户: {user.username}")
+
+def main():
+    """初始化数据库"""
+    logger.info("开始初始化数据库...")
+    
+    # 创建表
+    init_db()
+    logger.info("已创建数据库表")
+    
+    # 获取会话
+    db = SessionLocal()
+    
+    try:
+        # 初始化基础数据
+        init_users(db)
+        init_benchmarks(db)
+        init_indicators(db)
+        
+        logger.info("数据库初始化完成")
+    finally:
+        db.close()
+
+if __name__ == "__main__":
+    main() 

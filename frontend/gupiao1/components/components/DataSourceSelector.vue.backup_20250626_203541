@@ -1,0 +1,98 @@
+<template>
+  <view class="data-source-selector">
+    <picker @change="changeDataSource" :value="dataSourceIndex" :range="dataSourceOptions">
+      <view class="picker">
+        <text class="source-label">数据源:</text>
+        <text class="source-value">{{ dataSourceOptions[dataSourceIndex] }}</text>
+        <text class="source-arrow">▼</text>
+      </view>
+    </picker>
+  </view>
+</template>
+
+<script>
+export default {
+  name: 'DataSourceSelector',
+  props: {
+    defaultSource: {
+      type: String,
+      default: 'auto'
+    }
+  },
+  data() {
+    return {
+      dataSourceIndex: 0,
+      dataSourceOptions: ['自动选择', '通达信', '同花顺', '合并数据', '对比模式'],
+      dataSourceValues: ['auto', 'tdx', 'ths', 'merge', 'compare']
+    };
+  },
+  created() {
+    console.log('DataSourceSelector created, defaultSource:', this.defaultSource);
+    // Set initial selection based on defaultSource prop
+    const index = this.dataSourceValues.indexOf(this.defaultSource);
+    if (index !== -1) {
+      this.dataSourceIndex = index;
+      console.log('Setting initial dataSourceIndex to', index);
+    }
+  },
+  methods: {
+    changeDataSource(e) {
+      const newIndex = e.detail.value;
+      console.log('DataSource changed:', {
+        oldIndex: this.dataSourceIndex, 
+        newIndex: newIndex,
+        oldValue: this.dataSourceValues[this.dataSourceIndex],
+        newValue: this.dataSourceValues[newIndex]
+      });
+      
+      this.dataSourceIndex = newIndex;
+      
+      // Emit the selected data source value to parent component
+      const newSource = this.dataSourceValues[newIndex];
+      this.$emit('change', newSource);
+    }
+  },
+  // Watch for changes to the defaultSource prop
+  watch: {
+    defaultSource(newValue) {
+      console.log('defaultSource prop changed:', newValue);
+      const index = this.dataSourceValues.indexOf(newValue);
+      if (index !== -1 && index !== this.dataSourceIndex) {
+        console.log('Updating dataSourceIndex to', index);
+        this.dataSourceIndex = index;
+      }
+    }
+  }
+}
+</script>
+
+<style>
+.data-source-selector {
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  padding: 4px 8px;
+  display: inline-block;
+}
+
+.picker {
+  display: flex;
+  align-items: center;
+}
+
+.source-label {
+  font-size: 12px;
+  color: #666;
+  margin-right: 4px;
+}
+
+.source-value {
+  font-size: 12px;
+  color: #333;
+  margin-right: 4px;
+}
+
+.source-arrow {
+  font-size: 10px;
+  color: #999;
+}
+</style> 

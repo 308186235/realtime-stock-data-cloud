@@ -1,0 +1,436 @@
+from fastapi import APIRouter, HTTPException, Query, Depends
+from datetime import datetime, timedelta
+from typing import List, Optional
+import pandas as pd
+import logging
+import os
+
+from services.market_data_service import MarketDataService
+
+router = APIRouter()
+market_data_service = MarketDataService()
+
+@router.get("/stocks")
+async def get_stock_list(
+    industry: Optional[str] = None,
+    data_source: Optional[str] = "auto", 
+    refresh_cache: bool = False
+):
+    """
+    获取股票列表
+    
+    Args:
+        industry: 可选的行业过滤
+        data_source: 数据源,可选 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+        refresh_cache: 是否刷新缓存
+        
+    Returns:
+        股票列表数据
+    """
+    use_cache = not refresh_cache
+    
+    if industry:
+        stocks = market_data_service.get_industry_stocks(
+            industry, 
+            data_source=data_source, 
+            use_cache=use_cache
+        )
+    else:
+        stocks = market_data_service.get_stock_list(
+            data_source=data_source, 
+            use_cache=use_cache
+        )
+    
+    if stocks.empty:
+        raise HTTPException(status_code=404, detail="未找到股票数据")
+    
+    # 转换为JSON友好格式
+    return {
+        "success": True,
+        "data": stocks.to_dict(orient="records"),
+        "count": len(stocks)
+    }
+
+@router.get("/kdata/{code}")
+async def get_stock_k_data(
+    code: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    freq: str = "daily",
+    data_source: Optional[str] = "auto", 
+    refresh_cache: bool = False,
+    merge_sources: bool = False
+):
+    """
+    获取股票K线数据
+    
+    Args:
+        code: 股票代码
+        start_date: 开始日期,格式:YYYY-MM-DD
+        end_date: 结束日期,格式:YYYY-MM-DD
+        freq: 数据频率,支持 daily, weekly, monthly
+        data_source: 数据源,可选 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+        refresh_cache: 是否刷新缓存
+        merge_sources: 是否合并多个数据源的数据,以获取更完整的数据集
+        
+    Returns:
+        K线数据
+    """
+    use_cache = not refresh_cache
+    
+    # 设置默认日期
+    if not start_date:
+        start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+    if not end_date:
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # 如果需要合并多个数据源
+    if merge_sources:
+        data = market_data_service.merge_data_sources(
+            code, 
+            start_date, 
+            end_date, 
+            freq
+        )
+    else:
+        data = market_data_service.get_k_data(
+            code, 
+            start_date, 
+            end_date, 
+            freq, 
+            data_source=data_source,
+            use_cache=use_cache
+        )
+    
+    if data.empty:
+        raise HTTPException(status_code=404, detail=f"未找到股票{code}的K线数据")
+    
+    # 处理日期列,确保JSON序列化
+    if 'date' in data.columns:
+        data['date'] = data['date'].astype(str)
+    
+    return {
+        "success": True,
+        "data": data.to_dict(orient="records"),
+        "count": len(data)
+    }
+
+@router.get("/realtime")
+async def get_realtime_quotes(
+    codes: str = Query(..., description="股票代码,多个代码用逗号分隔,如 000001,600000"),
+    data_source: Optional[str] = "auto"
+):
+    """
+    获取实时行情数据
+    
+    Args:
+        codes: 股票代码,多个代码用逗号分隔
+        data_source: 数据源,可选 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+        
+    Returns:
+        实时行情数据
+    """
+    code_list = codes.split(',')
+    data = market_data_service.get_realtime_quotes(code_list, data_source=data_source)
+    
+    if data.empty:
+        raise HTTPException(status_code=404, detail="未找到实时行情数据")
+    
+    return {
+        "success": True,
+        "data": data.to_dict(orient="records"),
+        "count": len(data)
+    }
+
+@router.get("/index/{index_code}")
+async def get_index_data(
+    index_code: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    data_source: Optional[str] = "auto", 
+    refresh_cache: bool = False
+):
+    """
+    获取指数数据
+    
+    Args:
+        index_code: 指数代码,如 000001 (上证指数)
+        start_date: 开始日期,格式:YYYY-MM-DD
+        end_date: 结束日期,格式:YYYY-MM-DD
+        data_source: 数据源,可选 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+        refresh_cache: 是否刷新缓存
+        
+    Returns:
+        指数数据
+    """
+    use_cache = not refresh_cache
+    
+    # 设置默认日期
+    if not start_date:
+        start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+    if not end_date:
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    data = market_data_service.get_index_data(
+        index_code, 
+        start_date, 
+        end_date, 
+        data_source=data_source,
+        use_cache=use_cache
+    )
+    
+    if data.empty:
+        raise HTTPException(status_code=404, detail=f"未找到指数{index_code}的数据")
+    
+    # 处理日期列,确保JSON序列化
+    if 'date' in data.columns:
+        data['date'] = data['date'].astype(str)
+    
+    return {
+        "success": True,
+        "data": data.to_dict(orient="records"),
+        "count": len(data)
+    }
+
+@router.get("/fundamental/{code}")
+async def get_stock_fundamental(
+    code: str,
+    data_source: Optional[str] = "tdx"
+):
+    """
+    获取股票基本面数据
+    
+    Args:
+        code: 股票代码
+        data_source: 数据源,可选 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+        
+    Returns:
+        股票基本面数据
+    """
+    data = market_data_service.get_stock_fundamentals(code, data_source=data_source)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"未找到股票{code}的基本面数据")
+    
+    return {
+        "success": True,
+        "data": data
+    }
+
+@router.get("/finance/{code}")
+async def get_finance_indicators(
+    code: str,
+    data_source: Optional[str] = "tdx"
+):
+    """
+    获取主要财务指标
+    
+    Args:
+        code: 股票代码
+        data_source: 数据源,可选 'tdx'=通达信, 'ths'=同花顺, 'auto'=自动选择
+        
+    Returns:
+        主要财务指标
+    """
+    data = market_data_service.get_main_finance_indicators(code, data_source=data_source)
+    
+    if data.empty:
+        raise HTTPException(status_code=404, detail=f"未找到股票{code}的财务指标数据")
+    
+    # 确保日期等列可JSON序列化
+    if 'report_date' in data.columns:
+        data['report_date'] = data['report_date'].astype(str)
+    
+    return {
+        "success": True,
+        "data": data.to_dict(orient="records"),
+        "count": len(data)
+    }
+
+@router.post("/cache/clear")
+async def clear_cache(
+    older_than_days: Optional[int] = None,
+    pattern: Optional[str] = None,
+    data_source: Optional[str] = None
+):
+    """
+    清除缓存数据
+    
+    Args:
+        older_than_days: 清除早于指定天数的缓存
+        pattern: 文件名匹配模式,如 'index_*.csv'
+        data_source: 指定数据源的缓存,如 'tdx', 'ths'
+        
+    Returns:
+        清除结果
+    """
+    count = market_data_service.clear_cache(older_than_days, pattern, data_source)
+    
+    return {
+        "success": True,
+        "message": f"成功清除{count}个缓存文件"
+    }
+
+@router.get("/data-sources")
+async def get_data_sources():
+    """
+    获取可用的数据源信息
+    
+    Returns:
+        数据源信息
+    """
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": "tdx",
+                "name": "通达信",
+                "description": "从通达信本地数据或API获取数据"
+            },
+            {
+                "id": "ths",
+                "name": "同花顺",
+                "description": "从同花顺网站接口获取数据"
+            },
+            {
+                "id": "auto",
+                "name": "自动选择",
+                "description": "自动选择最佳数据源"
+            }
+        ]
+    }
+
+@router.get("/compare/{code}")
+async def compare_data_sources(
+    code: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    freq: str = "daily",
+    refresh_cache: bool = False
+):
+    """
+    比较不同数据源的数据差异
+    
+    Args:
+        code: 股票代码
+        start_date: 开始日期,格式:YYYY-MM-DD
+        end_date: 结束日期,格式:YYYY-MM-DD
+        freq: 数据频率,支持 daily, weekly, monthly
+        refresh_cache: 是否刷新缓存
+        
+    Returns:
+        各数据源数据
+    """
+    use_cache = not refresh_cache
+    
+    # 设置默认日期
+    if not start_date:
+        start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    if not end_date:
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # 获取不同数据源的数据
+    tdx_data = market_data_service.get_k_data(
+        code, start_date, end_date, freq, data_source='tdx', use_cache=use_cache
+    )
+    
+    ths_data = market_data_service.get_k_data(
+        code, start_date, end_date, freq, data_source='ths', use_cache=use_cache
+    )
+    
+    # 处理日期列,确保JSON序列化
+    if 'date' in tdx_data.columns:
+        tdx_data['date'] = tdx_data['date'].astype(str)
+        
+    if 'date' in ths_data.columns:
+        ths_data['date'] = ths_data['date'].astype(str)
+    
+    return {
+        "success": True,
+        "data": {
+            "tdx": {
+                "data": tdx_data.to_dict(orient="records"),
+                "count": len(tdx_data)
+            },
+            "ths": {
+                "data": ths_data.to_dict(orient="records"),
+                "count": len(ths_data)
+            }
+        }
+    }
+
+@router.get("/status")
+async def get_market_data_status(
+    # 添加授权依赖
+    auth_token: str = Query(None, description="认证令牌"),
+):
+    """
+    获取市场数据状态,包括通达信和同花顺的连接延迟,数据更新时间等信息
+    
+    Args:
+        auth_token: API授权令牌,用于验证请求权限
+        
+    Returns:
+        市场数据状态信息
+    """
+    # 简单的授权验证 - 实际项目中应使用更复杂的认证机制
+    if auth_token is None:
+        # 用户未提供token时,返回有限的信息
+        return {
+            "success": True,
+            "data": {
+                "lastUpdate": datetime.now().isoformat(),
+                "connected": True,
+                "marketStatus": "normal",
+                "limitedAccess": True  # 标记为有限访问模式
+            }
+        }
+        
+    # 此处应该实现更严格的token验证
+    valid_token = os.environ.get("MARKET_API_TOKEN", "api_secure_token")
+    if auth_token != valid_token:
+        return {
+            "success": False,
+            "message": "无效的授权令牌",
+            "data": {
+                "connected": True,
+                "limitedAccess": True
+            }
+        }
+    
+    try:
+        # 获取数据源延迟信息
+        tdx_delay = market_data_service.get_data_source_delay("tdx")
+        ths_delay = market_data_service.get_data_source_delay("ths")
+        
+        # 获取最新市场指数数据
+        indices = market_data_service.get_market_indices()
+        
+        # 获取行业板块
+        sectors = market_data_service.get_sector_performance()
+        
+        return {
+            "success": True,
+            "data": {
+                "lastUpdate": datetime.now().isoformat(),
+                "indices": indices,
+                "sectors": sectors,
+                "marketStatus": "normal",
+                "tradeDate": datetime.now().strftime('%Y-%m-%d'),
+                "dataSourceDelays": {
+                    "tdx": tdx_delay or 300,  # 通达信延迟,默认300ms
+                    "ths": ths_delay or 350   # 同花顺延迟,默认350ms
+                },
+                "connected": True,
+                "isSimulated": market_data_service.is_using_simulated_data() # 标记是否使用模拟数据
+            }
+        }
+    except Exception as e:
+        logging.error(f"获取市场数据状态失败: {str(e)}")
+        return {
+            "success": False, 
+            "message": f"获取市场数据状态失败: {str(e)}",
+            "data": {
+                "connected": False
+            }
+        } 

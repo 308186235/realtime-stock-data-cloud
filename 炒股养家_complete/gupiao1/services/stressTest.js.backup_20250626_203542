@@ -1,0 +1,50 @@
+// 压力测试服务模块
+import { StrategySimulator } from './strategySimulator';
+
+// 压力测试接口规范
+export const StressTestService = {
+  async runStressTest(scenarioType, strategyParams) {
+    const simulator = new StrategySimulator();
+    const historicalData = await this._loadScenarioData(scenarioType);
+    
+    // 应用压力场景参数
+    const modifiedData = this._applyScenarioParams(historicalData, scenarioType);
+    
+    // 执行策略模拟
+    const result = await simulator.run(
+      strategyParams.strategyId,
+      modifiedData,
+      strategyParams
+    );
+    
+    return {
+      scenario: scenarioType,
+      metrics: this._analyzeResults(result),
+      rawData: result
+    };
+  }
+};
+
+_applyScenarioParams(data, scenarioType) {
+    // 实现具体场景参数应用逻辑
+    const scenarios = {
+      'MAIN_FORCE_DUMPING': {
+        volumeMultiplier: 5,
+        priceDropRate: 0.3
+      }
+    };
+    return data.map(tick => ({
+      ...tick,
+      volume: tick.volume * scenarios[scenarioType].volumeMultiplier,
+      close: tick.close * (1 - scenarios[scenarioType].priceDropRate)
+    }));
+  },
+
+  async _loadScenarioData(type) {
+    // 数据加载实现
+  },
+
+  _analyzeResults(results) {
+    // 结果分析实现
+  }
+};

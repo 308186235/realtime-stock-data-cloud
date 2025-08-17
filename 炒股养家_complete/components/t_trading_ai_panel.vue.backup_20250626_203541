@@ -1,0 +1,576 @@
+<template>
+  <view class="ai-panel">
+    <view class="panel-header">
+      <text class="title">AI 交易助手</text>
+      <view class="toggle-container">
+        <switch :checked="aiEnabled" @change="toggleAI" color="#409eff" />
+        <text :class="{'status-on': aiEnabled, 'status-off': !aiEnabled}">{{ aiEnabled ? '已启用' : '已禁用' }}</text>
+      </view>
+    </view>
+
+    <view v-if="!aiEnabled" class="ai-disabled">
+      <text>Agent交易助手已禁用，开启后可获得智能交易建议</text>
+      <button class="btn enable-btn" @click="toggleAI">启用AI</button>
+    </view>
+
+    <view v-else class="ai-content">
+      <!-- AI状态信息 -->
+      <view class="info-section">
+        <view class="info-row">
+          <text class="info-label">风险等级</text>
+          <view class="risk-selector">
+            <view 
+              v-for="risk in ['low', 'medium', 'high']" 
+              :key="risk" 
+              :class="['risk-option', {'selected': riskLevel === risk}]"
+              @click="setRiskLevel(risk)"
+            >
+              <text>{{ getRiskText(risk) }}</text>
+            </view>
+          </view>
+        </view>
+        <view class="info-row">
+          <text class="info-label">置信度阈值</text>
+          <view class="slider-container">
+            <slider 
+              :value="confidenceThreshold * 100" 
+              @change="updateConfidence" 
+              min="50" 
+              max="95" 
+              show-value 
+              activeColor="#409eff"
+            />
+          </view>
+        </view>
+        <view class="info-row">
+          <text class="info-label">自动交易</text>
+          <switch :checked="autoTrading" @change="toggleAutoTrading" color="#409eff" />
+        </view>
+      </view>
+
+      <!-- AI建议区域 -->
+      <view v-if="recommendation" class="recommendation-section">
+        <view class="section-title">
+          <text>Agent交易建议</text>
+          <text v-if="lastUpdated" class="update-time">{{ lastUpdated }}</text>
+        </view>
+        
+        <view class="recommendation-content">
+          <view class="recommendation-header" :class="{
+            'recommendation-buy': recommendation.action === 'buy',
+            'recommendation-sell': recommendation.action === 'sell',
+            'recommendation-hold': recommendation.action === 'hold'
+          }">
+            <text class="recommendation-action">{{ getActionText(recommendation.action) }}</text>
+          </view>
+          
+          <view v-if="recommendation.action !== 'hold'" class="recommendation-details">
+            <view class="detail-row">
+              <text class="detail-label">建议操作</text>
+              <text class="detail-value">{{ recommendation.message }}</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">交易价格</text>
+              <text class="detail-value">¥{{ recommendation.price.toFixed(2) }}</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">交易数量</text>
+              <text class="detail-value">{{ recommendation.quantity }}股</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">置信度</text>
+              <text class="detail-value confidence" :class="{
+                'high': recommendation.confidence > 0.8,
+                'medium': recommendation.confidence > 0.6 && recommendation.confidence <= 0.8,
+                'low': recommendation.confidence <= 0.6
+              }">{{ (recommendation.confidence * 100).toFixed(0) }}%</text>
+            </view>
+            <view class="detail-row">
+              <text class="detail-label">理由</text>
+              <text class="detail-value reason">{{ recommendation.reason }}</text>
+            </view>
+          </view>
+          
+          <view v-else class="recommendation-hold">
+            <text>{{ recommendation.message }}</text>
+          </view>
+          
+          <view v-if="recommendation.action !== 'hold'" class="recommendation-actions">
+            <button class="btn execute-btn" @click="executeRecommendation">执行建议</button>
+            <button class="btn refresh-btn" @click="refreshRecommendation">刷新建议</button>
+          </view>
+        </view>
+      </view>
+      
+      <view v-else-if="loading" class="loading-section">
+        <text>正在分析市场数据，生成Agent交易建议...</text>
+      </view>
+      
+      <view v-else class="no-recommendation">
+        <text>尚未生成交易建议，请提供股票信息</text>
+        <button class="btn refresh-btn" @click="refreshRecommendation">获取建议</button>
+      </view>
+      
+      <!-- AI训练区域 -->
+      <view class="training-section">
+        <view class="section-title">
+          <text>Agent模型训练</text>
+        </view>
+        <view class="training-content">
+          <text class="training-info">AI模型通过历史交易数据学习，提高预测精度</text>
+          <button class="btn train-btn" @click="trainModel" :disabled="isTraining">
+            {{ isTraining ? '训练中...' : '训练模型' }}
+          </button>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  props: {
+    stockInfo: {
+      type: Object,
+      default: () => ({})
+    }
+  },
+  data() {
+    return {
+      aiEnabled: true,
+      riskLevel: 'medium',
+      confidenceThreshold: 0.65,
+      autoTrading: false,
+      recommendation: null,
+      loading: false,
+      lastUpdated: '',
+      isTraining: false
+    }
+  },
+  watch: {
+    stockInfo: {
+      deep: true,
+      handler(newVal) {
+        if (newVal && newVal.code && this.aiEnabled) {
+          this.refreshRecommendation();
+        }
+      }
+    }
+  },
+  created() {
+    // 加载AI设置
+    this.loadAISettings();
+  },
+  methods: {
+    // 加载AI设置
+    async loadAISettings() {
+      try {
+        const response = await this.$http.get('/api/t-trading/ai-settings');
+        this.aiEnabled = response.data.enabled;
+        this.riskLevel = response.data.risk_level;
+        this.confidenceThreshold = response.data.confidence_threshold;
+        this.autoTrading = response.data.auto_trading;
+      } catch (error) {
+        console.error('加载AI设置失败', error);
+      }
+    },
+    
+    // 更新AI设置
+    async updateAISettings() {
+      try {
+        await this.$http.post('/api/t-trading/update-ai-settings', {
+          enabled: this.aiEnabled,
+          risk_level: this.riskLevel,
+          auto_trading: this.autoTrading,
+          confidence_threshold: this.confidenceThreshold
+        });
+      } catch (error) {
+        console.error('更新AI设置失败', error);
+        this.$toast.error('更新AI设置失败');
+      }
+    },
+    
+    // 切换AI启用状态
+    toggleAI(e) {
+      this.aiEnabled = e.target ? e.target.value : !this.aiEnabled;
+      this.updateAISettings();
+      
+      if (this.aiEnabled && this.stockInfo.code) {
+        this.refreshRecommendation();
+      }
+    },
+    
+    // 设置风险等级
+    setRiskLevel(level) {
+      this.riskLevel = level;
+      this.updateAISettings();
+      
+      if (this.stockInfo.code) {
+        this.refreshRecommendation();
+      }
+    },
+    
+    // 更新置信度阈值
+    updateConfidence(e) {
+      this.confidenceThreshold = e.detail.value / 100;
+      this.updateAISettings();
+    },
+    
+    // 切换自动交易
+    toggleAutoTrading(e) {
+      this.autoTrading = e.target ? e.target.value : !this.autoTrading;
+      this.updateAISettings();
+      
+      if (this.autoTrading) {
+        this.$toast.info('已启用自动交易，系统将根据AI建议自动执行交易');
+      }
+    },
+    
+    // 获取风险等级文本
+    getRiskText(risk) {
+      const riskMap = {
+        'low': '低风险',
+        'medium': '中等风险',
+        'high': '高风险'
+      };
+      return riskMap[risk] || risk;
+    },
+    
+    // 获取操作文本
+    getActionText(action) {
+      const actionMap = {
+        'buy': '建议买入',
+        'sell': '建议卖出',
+        'hold': '建议观望'
+      };
+      return actionMap[action] || action;
+    },
+    
+    // 刷新AI建议
+    async refreshRecommendation() {
+      if (!this.stockInfo.code || !this.aiEnabled) return;
+      
+      this.loading = true;
+      
+      try {
+        const response = await this.$http.post('/api/t-trading/ai-recommendation', this.stockInfo);
+        this.recommendation = response.data;
+        this.lastUpdated = this.formatTime(new Date());
+      } catch (error) {
+        console.error('获取AI建议失败', error);
+        this.$toast.error('获取AI建议失败');
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    // 执行AI建议
+    executeRecommendation() {
+      if (!this.recommendation || this.recommendation.action === 'hold') return;
+      
+      // 发送交易信号给父组件
+      this.$emit('execute-trade', {
+        trade_type: this.recommendation.action,
+        price: this.recommendation.price,
+        quantity: this.recommendation.quantity,
+        mode: this.recommendation.opportunity.mode
+      });
+      
+      this.$toast.success('已执行AI建议');
+    },
+    
+    // 训练模型
+    async trainModel() {
+      if (this.isTraining) return;
+      
+      this.isTraining = true;
+      
+      try {
+        const response = await this.$http.post('/api/t-trading/train-ai-model');
+        
+        if (response.data.status === 'success') {
+          this.$toast.success(response.data.message);
+        } else {
+          this.$toast.info(response.data.message);
+        }
+      } catch (error) {
+        console.error('训练模型失败', error);
+        this.$toast.error('训练模型失败');
+      } finally {
+        this.isTraining = false;
+      }
+    },
+    
+    // 格式化时间
+    formatTime(date) {
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const seconds = date.getSeconds().toString().padStart(2, '0');
+      return `${hours}:${minutes}:${seconds}`;
+    }
+  }
+}
+</script>
+
+<style>
+.ai-panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.panel-header {
+  background: #ecf5ff;
+  padding: 12px 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  font-weight: bold;
+  color: #409eff;
+}
+
+.toggle-container {
+  display: flex;
+  align-items: center;
+}
+
+.status-on {
+  margin-left: 8px;
+  color: #409eff;
+  font-size: 14px;
+}
+
+.status-off {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 14px;
+}
+
+.ai-disabled {
+  padding: 20px;
+  text-align: center;
+  color: #909399;
+}
+
+.enable-btn {
+  margin-top: 10px;
+  background-color: #409eff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.ai-content {
+  padding: 15px;
+}
+
+.info-section {
+  margin-bottom: 20px;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.info-label {
+  flex: 0 0 100px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.risk-selector {
+  display: flex;
+  gap: 10px;
+}
+
+.risk-option {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.risk-option.selected {
+  background-color: #409eff;
+  color: white;
+  border-color: #409eff;
+}
+
+.slider-container {
+  flex: 1;
+  padding: 0 10px;
+}
+
+.section-title {
+  border-bottom: 1px solid #eaeaea;
+  padding-bottom: 10px;
+  margin-bottom: 15px;
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.update-time {
+  font-size: 12px;
+  color: #909399;
+  font-weight: normal;
+}
+
+.recommendation-section {
+  margin-bottom: 20px;
+}
+
+.recommendation-content {
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  padding: 15px;
+}
+
+.recommendation-header {
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.recommendation-buy {
+  background-color: #f0f9eb;
+  color: #67c23a;
+}
+
+.recommendation-sell {
+  background-color: #fef0f0;
+  color: #f56c6c;
+}
+
+.recommendation-hold {
+  background-color: #f4f4f5;
+  color: #909399;
+  padding: 20px;
+  text-align: center;
+}
+
+.recommendation-action {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.recommendation-details {
+  margin-bottom: 15px;
+}
+
+.detail-row {
+  display: flex;
+  margin-bottom: 8px;
+}
+
+.detail-label {
+  flex: 0 0 80px;
+  font-size: 14px;
+  color: #606266;
+}
+
+.detail-value {
+  flex: 1;
+  font-size: 14px;
+  color: #303133;
+}
+
+.confidence {
+  font-weight: bold;
+}
+
+.confidence.high {
+  color: #67c23a;
+}
+
+.confidence.medium {
+  color: #e6a23c;
+}
+
+.confidence.low {
+  color: #f56c6c;
+}
+
+.reason {
+  color: #606266;
+}
+
+.recommendation-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.btn {
+  padding: 8px 15px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn:hover {
+  opacity: 0.8;
+}
+
+.execute-btn {
+  background-color: #409eff;
+  color: white;
+}
+
+.refresh-btn {
+  background-color: #67c23a;
+  color: white;
+}
+
+.loading-section, .no-recommendation {
+  padding: 20px;
+  text-align: center;
+  color: #909399;
+}
+
+.no-recommendation .refresh-btn {
+  margin-top: 10px;
+}
+
+.training-section {
+  margin-top: 20px;
+}
+
+.training-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.training-info {
+  font-size: 14px;
+  color: #606266;
+  text-align: center;
+}
+
+.train-btn {
+  background-color: #909399;
+  color: white;
+}
+
+.train-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style> 

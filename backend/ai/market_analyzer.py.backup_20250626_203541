@@ -1,0 +1,599 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy import stats
+import traceback
+
+logger = logging.getLogger("MarketAnalyzer")
+
+class MarketAnalyzer:
+    """
+    市场分析器 - 负责分析市场状态、识别趋势、检测异常
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化市场分析器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 市场状态分类阈值
+        self.volatility_thresholds = {
+            "low": 0.008,     # 低波动率阈值
+            "high": 0.020     # 高波动率阈值
+        }
+        
+        self.trend_thresholds = {
+            "weak": 0.3,      # 弱趋势阈值
+            "strong": 0.6     # 强趋势阈值
+        }
+        
+        self.anomaly_thresholds = {
+            "warning": 2.0,   # 异常警告阈值 (z-score)
+            "severe": 3.0     # 严重异常阈值 (z-score)
+        }
+        
+        # 初始化状态缓存
+        self.market_state_cache = {}
+        self.regime_history = []
+        
+        # 市场状态标签
+        self.market_regimes = [
+            "bull_trending", "bull_volatile", "bear_trending", 
+            "bear_volatile", "neutral_low_vol", "neutral_high_vol",
+            "transition_bullish", "transition_bearish"
+        ]
+        
+        logger.info("Market Analyzer initialized")
+    
+    async def analyze_market(self, data: Dict[str, Any], context: Dict = None) -> Dict[str, Any]:
+        """
+        分析市场状态
+        
+        Args:
+            data: 市场数据，包含OHLCV和其他指标
+            context: 分析上下文
+            
+        Returns:
+            市场分析结果
+        """
+        try:
+            logger.info("Analyzing market state...")
+            
+            # 确保数据格式正确
+            if not self._validate_data(data):
+                return {"error": "Invalid market data format"}
+            
+            # 提取主要指标
+            ohlcv_data = self._extract_ohlcv(data)
+            
+            # 计算市场状态指标
+            market_indicators = self._calculate_market_indicators(ohlcv_data)
+            
+            # 识别市场状态
+            market_regime = self._identify_market_regime(market_indicators)
+            
+            # 趋势分析
+            trend_analysis = self._analyze_trends(ohlcv_data, market_indicators)
+            
+            # 异常检测
+            anomaly_detection = self._detect_anomalies(ohlcv_data, market_indicators)
+            
+            # 情绪分析
+            sentiment_analysis = self._analyze_sentiment(data, context)
+            
+            # 流动性分析
+            liquidity_analysis = self._analyze_liquidity(data)
+            
+            # 构建完整分析结果
+            analysis_result = {
+                "timestamp": datetime.now().isoformat(),
+                "market_regime": market_regime,
+                "trend": trend_analysis,
+                "volatility": market_indicators["volatility"],
+                "anomalies": anomaly_detection,
+                "sentiment": sentiment_analysis,
+                "liquidity": liquidity_analysis,
+                "indicators": market_indicators,
+                "forecast": self._generate_forecast(market_regime, trend_analysis, market_indicators)
+            }
+            
+            # 更新缓存
+            self._update_cache(analysis_result)
+            
+            logger.info(f"Market analysis completed: regime={market_regime}")
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Error in market analysis: {str(e)}")
+            traceback.print_exc()
+            return {"error": f"Analysis failed: {str(e)}"}
+    
+    def _validate_data(self, data: Dict[str, Any]) -> bool:
+        """验证输入数据格式是否正确"""
+        required_fields = ["prices", "time_period"]
+        
+        if not all(field in data for field in required_fields):
+            return False
+            
+        prices = data.get("prices", {})
+        required_price_data = ["close", "open", "high", "low"]
+        
+        if not all(field in prices for field in required_price_data):
+            return False
+            
+        return True
+    
+    def _extract_ohlcv(self, data: Dict[str, Any]) -> Dict[str, np.ndarray]:
+        """提取OHLCV数据"""
+        prices = data.get("prices", {})
+        
+        ohlcv = {
+            "open": np.array(prices.get("open", [])),
+            "high": np.array(prices.get("high", [])),
+            "low": np.array(prices.get("low", [])),
+            "close": np.array(prices.get("close", [])),
+            "volume": np.array(prices.get("volume", []))
+        }
+        
+        return ohlcv
+    
+    def _calculate_market_indicators(self, ohlcv: Dict[str, np.ndarray]) -> Dict[str, Any]:
+        """计算市场状态指标"""
+        close_prices = ohlcv["close"]
+        high_prices = ohlcv["high"]
+        low_prices = ohlcv["low"]
+        volumes = ohlcv.get("volume", np.ones_like(close_prices))
+        
+        # 确保数据长度足够
+        if len(close_prices) < 2:
+            return {
+                "returns": np.array([0.0]),
+                "volatility": 0.0,
+                "trend_strength": 0.0,
+                "volume_change": 0.0
+            }
+        
+        # 计算收益率
+        returns = np.diff(close_prices) / close_prices[:-1]
+        
+        # 波动率 (使用过去20日标准差，年化)
+        volatility_window = min(20, len(returns))
+        volatility = np.std(returns[-volatility_window:]) * np.sqrt(252)
+        
+        # 趋势强度 (基于价格和移动平均线)
+        ma_short = self._simple_moving_average(close_prices, 10)
+        ma_long = self._simple_moving_average(close_prices, 30)
+        
+        if len(ma_short) > 0 and len(ma_long) > 0:
+            # 计算短期MA相对于长期MA的位置
+            ma_ratio = ma_short[-1] / ma_long[-1] if ma_long[-1] != 0 else 1.0
+            
+            # 计算价格相对于短期MA的位置
+            price_ma_ratio = close_prices[-1] / ma_short[-1] if ma_short[-1] != 0 else 1.0
+            
+            # 组合指标，范围约为[-1, 1]
+            trend_direction = 1 if ma_ratio > 1.0 else -1
+            trend_strength = min(abs(ma_ratio - 1.0) * 10, 1.0) * trend_direction
+        else:
+            trend_strength = 0.0
+        
+        # 交易量变化
+        if len(volumes) > 1:
+            volume_ma = self._simple_moving_average(volumes, 5)
+            volume_change = volumes[-1] / volume_ma[-1] if len(volume_ma) > 0 and volume_ma[-1] > 0 else 1.0
+        else:
+            volume_change = 1.0
+        
+        # 相对强弱指标 (RSI)
+        rsi = self._calculate_rsi(close_prices)
+        
+        # 资金流向指标
+        money_flow = self._calculate_money_flow_index(ohlcv)
+        
+        # 价格振幅
+        price_range = np.mean((high_prices / low_prices - 1.0)[-5:]) if len(high_prices) >= 5 else 0
+        
+        return {
+            "returns": returns,
+            "volatility": volatility,
+            "trend_strength": trend_strength,
+            "volume_change": volume_change,
+            "rsi": rsi,
+            "money_flow_index": money_flow,
+            "price_range": price_range
+        }
+    
+    def _identify_market_regime(self, indicators: Dict[str, Any]) -> str:
+        """识别市场状态/体制"""
+        volatility = indicators["volatility"]
+        trend_strength = indicators["trend_strength"]
+        rsi = indicators.get("rsi", 50)
+        
+        # 确定波动率状态
+        if volatility < self.volatility_thresholds["low"]:
+            volatility_state = "low"
+        elif volatility > self.volatility_thresholds["high"]:
+            volatility_state = "high"
+        else:
+            volatility_state = "medium"
+        
+        # 确定趋势状态
+        if abs(trend_strength) < self.trend_thresholds["weak"]:
+            trend_state = "neutral"
+        elif abs(trend_strength) > self.trend_thresholds["strong"]:
+            trend_state = "strong"
+        else:
+            trend_state = "weak"
+        
+        # 确定方向
+        direction = "bullish" if trend_strength > 0 else "bearish"
+        
+        # 组合确定市场状态
+        if trend_state == "neutral":
+            if volatility_state == "low":
+                regime = "neutral_low_vol"
+            else:
+                regime = "neutral_high_vol"
+        elif trend_state == "weak":
+            regime = f"transition_{direction}"
+        else:  # strong trend
+            if direction == "bullish":
+                regime = "bull_trending" if volatility_state != "high" else "bull_volatile"
+            else:
+                regime = "bear_trending" if volatility_state != "high" else "bear_volatile"
+        
+        return regime
+    
+    def _analyze_trends(self, ohlcv: Dict[str, np.ndarray], indicators: Dict[str, Any]) -> Dict[str, Any]:
+        """分析市场趋势"""
+        close_prices = ohlcv["close"]
+        
+        # 提取已计算的趋势强度
+        trend_strength = indicators["trend_strength"]
+        
+        # 计算趋势持续时间
+        ma_short = self._simple_moving_average(close_prices, 10)
+        ma_long = self._simple_moving_average(close_prices, 30)
+        
+        trend_duration = 0
+        current_direction = trend_strength > 0
+        
+        if len(ma_short) > 10 and len(ma_long) > 10:
+            for i in range(min(20, len(ma_short) - 1)):
+                idx = -(i + 1)
+                day_direction = ma_short[idx] > ma_long[idx]
+                if day_direction == current_direction:
+                    trend_duration += 1
+                else:
+                    break
+        
+        # 趋势分类
+        if abs(trend_strength) < 0.3:
+            trend_type = "sideways"
+        elif trend_strength > 0:
+            trend_type = "uptrend"
+        else:
+            trend_type = "downtrend"
+        
+        # 趋势成熟度
+        if trend_duration < 5:
+            maturity = "emerging"
+        elif trend_duration < 15:
+            maturity = "established"
+        else:
+            maturity = "mature"
+        
+        return {
+            "direction": "up" if trend_strength > 0 else "down",
+            "strength": abs(trend_strength),
+            "type": trend_type,
+            "duration": trend_duration,
+            "maturity": maturity
+        }
+    
+    def _detect_anomalies(self, ohlcv: Dict[str, np.ndarray], indicators: Dict[str, Any]) -> Dict[str, Any]:
+        """检测市场异常"""
+        returns = indicators["returns"]
+        volatility = indicators["volatility"]
+        
+        if len(returns) < 5:
+            return {"detected": False}
+        
+        # 计算收益率的Z-score
+        mean_return = np.mean(returns)
+        std_return = np.std(returns)
+        
+        if std_return > 0:
+            latest_return = returns[-1]
+            z_score = (latest_return - mean_return) / std_return
+        else:
+            z_score = 0
+        
+        # 价格跳跃检测
+        close_prices = ohlcv["close"]
+        price_gaps = np.abs(np.diff(close_prices) / close_prices[:-1])
+        
+        if len(price_gaps) > 0:
+            max_gap = np.max(price_gaps[-5:]) if len(price_gaps) >= 5 else price_gaps[-1]
+            gap_threshold = volatility / np.sqrt(252) * 3  # 3倍日波动率
+            has_gap = max_gap > gap_threshold
+        else:
+            has_gap = False
+            max_gap = 0
+        
+        # 交易量异常
+        volume = ohlcv.get("volume", np.ones_like(close_prices))
+        if len(volume) > 5:
+            avg_volume = np.mean(volume[-6:-1])
+            volume_ratio = volume[-1] / avg_volume if avg_volume > 0 else 1.0
+            volume_anomaly = volume_ratio > 2.0
+        else:
+            volume_ratio = 1.0
+            volume_anomaly = False
+        
+        # 判断异常级别
+        anomaly_level = "none"
+        if abs(z_score) > self.anomaly_thresholds["severe"] or max_gap > gap_threshold * 2:
+            anomaly_level = "severe"
+        elif abs(z_score) > self.anomaly_thresholds["warning"] or has_gap or volume_anomaly:
+            anomaly_level = "warning"
+        
+        return {
+            "detected": anomaly_level != "none",
+            "level": anomaly_level,
+            "z_score": z_score,
+            "price_gap": has_gap,
+            "volume_anomaly": volume_anomaly,
+            "details": {
+                "return_z_score": z_score,
+                "max_gap": max_gap,
+                "volume_ratio": volume_ratio
+            }
+        }
+    
+    def _analyze_sentiment(self, data: Dict[str, Any], context: Dict = None) -> Dict[str, Any]:
+        """分析市场情绪"""
+        # 从数据中提取情绪指标
+        sentiment_data = data.get("sentiment", {})
+        
+        # 默认值
+        sentiment = {
+            "overall": "neutral",
+            "score": 0.0,
+            "source": "default"
+        }
+        
+        # 如果有情绪数据，更新默认值
+        if sentiment_data:
+            score = sentiment_data.get("score", 0)
+            
+            if score > 0.3:
+                overall = "bullish"
+            elif score < -0.3:
+                overall = "bearish"
+            else:
+                overall = "neutral"
+            
+            sentiment.update({
+                "overall": overall,
+                "score": score,
+                "source": sentiment_data.get("source", "data")
+            })
+        
+        # 如果上下文中有技术指标，结合技术指标分析情绪
+        if context and "technical_indicators" in context:
+            tech_indicators = context["technical_indicators"]
+            rsi = tech_indicators.get("rsi", 50)
+            
+            # 极端RSI值表明情绪过热或过冷
+            if rsi > 70:
+                tech_sentiment = "overbought"
+            elif rsi < 30:
+                tech_sentiment = "oversold"
+            else:
+                tech_sentiment = "neutral"
+            
+            sentiment["technical"] = tech_sentiment
+        
+        return sentiment
+    
+    def _analyze_liquidity(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """分析市场流动性"""
+        # 从数据中提取流动性相关信息
+        prices = data.get("prices", {})
+        spreads = data.get("spreads", [])
+        
+        # 默认返回正常流动性
+        liquidity = {
+            "status": "normal",
+            "score": 0.5
+        }
+        
+        # 如果有交易量数据，分析流动性
+        if "volume" in prices and len(prices["volume"]) > 0:
+            volumes = np.array(prices["volume"])
+            
+            # 计算最近交易量与历史平均的比值
+            if len(volumes) > 10:
+                recent_vol = np.mean(volumes[-5:])
+                historical_vol = np.mean(volumes[-30:-5])
+                
+                if historical_vol > 0:
+                    vol_ratio = recent_vol / historical_vol
+                    
+                    if vol_ratio < 0.5:
+                        liquidity["status"] = "low"
+                        liquidity["score"] = 0.3
+                    elif vol_ratio > 1.5:
+                        liquidity["status"] = "high"
+                        liquidity["score"] = 0.8
+                    
+                    liquidity["volume_ratio"] = vol_ratio
+        
+        # 如果有点差数据，纳入分析
+        if spreads and len(spreads) > 0:
+            avg_spread = np.mean(spreads)
+            
+            # 根据点差调整流动性评估
+            if avg_spread > 0.003:  # 0.3%以上的点差被视为较宽
+                liquidity["status"] = "low" if liquidity["status"] == "normal" else liquidity["status"]
+                liquidity["score"] = max(0.1, liquidity["score"] - 0.2)
+            
+            liquidity["avg_spread"] = avg_spread
+        
+        return liquidity
+    
+    def _generate_forecast(self, regime: str, trend: Dict[str, Any], indicators: Dict[str, Any]) -> Dict[str, Any]:
+        """生成市场预测"""
+        # 基于当前市场状态，生成简单预测
+        
+        # 不同市场状态的默认预测
+        forecast_map = {
+            "bull_trending": {"direction": "up", "confidence": 0.7},
+            "bull_volatile": {"direction": "up", "confidence": 0.5},
+            "bear_trending": {"direction": "down", "confidence": 0.7},
+            "bear_volatile": {"direction": "down", "confidence": 0.5},
+            "neutral_low_vol": {"direction": "sideways", "confidence": 0.6},
+            "neutral_high_vol": {"direction": "unknown", "confidence": 0.3},
+            "transition_bullish": {"direction": "up", "confidence": 0.6},
+            "transition_bearish": {"direction": "down", "confidence": 0.6}
+        }
+        
+        # 获取基础预测
+        base_forecast = forecast_map.get(regime, {"direction": "unknown", "confidence": 0.3})
+        
+        # 根据趋势强度调整信心度
+        trend_strength = trend["strength"]
+        if trend_strength > 0.8:
+            confidence_adj = 0.1
+        elif trend_strength > 0.5:
+            confidence_adj = 0.05
+        else:
+            confidence_adj = 0
+        
+        # 如果方向一致，增加信心度；否则降低
+        if (base_forecast["direction"] == "up" and trend["direction"] == "up") or \
+           (base_forecast["direction"] == "down" and trend["direction"] == "down"):
+            base_forecast["confidence"] = min(0.9, base_forecast["confidence"] + confidence_adj)
+        elif base_forecast["direction"] != "sideways" and base_forecast["direction"] != "unknown" and \
+             base_forecast["direction"] != trend["direction"]:
+            base_forecast["confidence"] = max(0.1, base_forecast["confidence"] - confidence_adj)
+        
+        # 生成预测时间范围
+        forecast = {
+            "short_term": {
+                "direction": base_forecast["direction"],
+                "confidence": base_forecast["confidence"],
+                "horizon": "1-3 days"
+            },
+            "medium_term": {
+                "direction": base_forecast["direction"] if trend_strength > 0.4 else "unknown",
+                "confidence": max(0.1, base_forecast["confidence"] - 0.2),
+                "horizon": "1-2 weeks"
+            }
+        }
+        
+        return forecast
+    
+    def _update_cache(self, analysis_result: Dict[str, Any]):
+        """更新分析缓存"""
+        # 保存最新分析结果
+        self.market_state_cache = analysis_result
+        
+        # 记录市场状态历史
+        self.regime_history.append({
+            "timestamp": analysis_result["timestamp"],
+            "regime": analysis_result["market_regime"]
+        })
+        
+        # 限制历史记录长度
+        max_history = 100
+        if len(self.regime_history) > max_history:
+            self.regime_history = self.regime_history[-max_history:]
+    
+    # 辅助计算方法
+    def _simple_moving_average(self, data: np.ndarray, window: int) -> np.ndarray:
+        """计算简单移动平均线"""
+        if len(data) < window:
+            return np.array([])
+        
+        sma = np.zeros(len(data) - window + 1)
+        
+        for i in range(len(sma)):
+            sma[i] = np.mean(data[i:i+window])
+            
+        return sma
+    
+    def _calculate_rsi(self, prices: np.ndarray, period: int = 14) -> float:
+        """计算相对强弱指标 (RSI)"""
+        if len(prices) < period + 1:
+            return 50.0  # 默认中性值
+        
+        # 计算价格变化
+        deltas = np.diff(prices)
+        
+        # 分离上涨和下跌
+        gain = np.where(deltas > 0, deltas, 0)
+        loss = np.where(deltas < 0, -deltas, 0)
+        
+        # 计算平均增益和损失
+        avg_gain = np.mean(gain[-period:])
+        avg_loss = np.mean(loss[-period:])
+        
+        if avg_loss == 0:
+            return 100.0  # 全是上涨，RSI为100
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+    
+    def _calculate_money_flow_index(self, ohlcv: Dict[str, np.ndarray], period: int = 14) -> float:
+        """计算资金流指标 (Money Flow Index)"""
+        high = ohlcv["high"]
+        low = ohlcv["low"]
+        close = ohlcv["close"]
+        volume = ohlcv.get("volume", np.ones_like(close))
+        
+        if len(close) < 2:
+            return 50.0  # 默认中性值
+        
+        # 计算典型价格
+        tp = (high + low + close) / 3
+        
+        # 计算资金流
+        money_flow = tp * volume
+        
+        # 计算正向和负向资金流
+        positive_flow = np.zeros_like(money_flow)
+        negative_flow = np.zeros_like(money_flow)
+        
+        for i in range(1, len(tp)):
+            if tp[i] > tp[i-1]:
+                positive_flow[i] = money_flow[i]
+            else:
+                negative_flow[i] = money_flow[i]
+        
+        # 计算MFI
+        if len(positive_flow) < period + 1:
+            return 50.0
+        
+        positive_mf_sum = np.sum(positive_flow[-period:])
+        negative_mf_sum = np.sum(negative_flow[-period:])
+        
+        if negative_mf_sum == 0:
+            return 100.0
+        
+        mfr = positive_mf_sum / negative_mf_sum
+        mfi = 100 - (100 / (1 + mfr))
+        
+        return mfi 

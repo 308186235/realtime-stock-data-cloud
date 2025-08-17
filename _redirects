@@ -1,0 +1,3 @@
+# Cloudflare Pages重定向
+/api/* https://api.aigupiao.me/api/:splat 200
+/* /index.html 200

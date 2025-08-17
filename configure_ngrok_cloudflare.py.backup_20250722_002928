@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""
+配置ngrok + Cloudflare混合方案
+获取ngrok地址并配置Cloudflare DNS
+"""
+
+import requests
+import json
+import time
+import subprocess
+from datetime import datetime
+
+class NgrokCloudflareConfigurator:
+    def __init__(self):
+        self.ngrok_api_url = "http://localhost:4040/api/tunnels"
+        self.tunnels = {}
+        
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    def get_ngrok_tunnels(self):
+        """获取ngrok隧道信息"""
+        self.log("🔍 获取ngrok隧道信息...")
+        
+        try:
+            response = requests.get(self.ngrok_api_url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                tunnels = data.get('tunnels', [])
+                
+                for tunnel in tunnels:
+                    name = tunnel.get('name', 'unknown')
+                    public_url = tunnel.get('public_url', '')
+                    local_addr = tunnel.get('config', {}).get('addr', '')
+                    proto = tunnel.get('proto', '')
+                    
+                    if public_url.startswith('https://'):
+                        self.tunnels[name] = {
+                            'public_url': public_url,
+                            'local_addr': local_addr,
+                            'proto': proto,
+                            'domain': public_url.replace('https://', '').replace('http://', '')
+                        }
+                        
+                        self.log(f"✅ 发现隧道: {name}", "SUCCESS")
+                        self.log(f"   公网地址: {public_url}", "INFO")
+                        self.log(f"   本地地址: {local_addr}", "INFO")
+                
+                if not self.tunnels:
+                    self.log("⚠️ 未发现HTTPS隧道", "WARNING")
+                    return False
+                
+                return True
+                
+            else:
+                self.log(f"❌ ngrok API响应错误: {response.status_code}", "ERROR")
+                return False
+                
+        except requests.exceptions.ConnectionError:
+            self.log("❌ 无法连接到ngrok API (端口4040)", "ERROR")
+            self.log("💡 请确保ngrok正在运行", "INFO")
+            return False
+        except Exception as e:
+            self.log(f"❌ 获取ngrok信息失败: {e}", "ERROR")
+            return False
+    
+    def test_ngrok_performance(self):
+        """测试ngrok隧道性能"""
+        self.log("⚡ 测试ngrok隧道性能...")
+        
+        performance_results = {}
+        
+        for name, tunnel in self.tunnels.items():
+            try:
+                self.log(f"🧪 测试隧道: {name}")
+                
+                start_time = time.time()
+                response = requests.get(f"{tunnel['public_url']}/health", timeout=15)
+                latency = round((time.time() - start_time) * 1000)
+                
+                performance_results[name] = {
+                    'latency': latency,
+                    'status_code': response.status_code,
+                    'success': response.status_code == 200,
+                    'url': tunnel['public_url']
+                }
+                
+                if response.status_code == 200:
+                    self.log(f"✅ {name}: {latency}ms", "SUCCESS")
+                else:
+                    self.log(f"⚠️ {name}: {latency}ms (状态码: {response.status_code})", "WARNING")
+                    
+            except Exception as e:
+                performance_results[name] = {
+                    'latency': 9999,
+                    'success': False,
+                    'error': str(e),
+                    'url': tunnel['public_url']
+                }
+                self.log(f"❌ {name}: 失败 - {e}", "ERROR")
+            
+            time.sleep(1)
+        
+        return performance_results
+    
+    def generate_cloudflare_dns_config(self):
+        """生成Cloudflare DNS配置建议"""
+        self.log("📋 生成Cloudflare DNS配置...")
+        
+        if not self.tunnels:
+            self.log("❌ 没有可用的ngrok隧道", "ERROR")
+            return None
+        
+        # 选择最佳隧道（通常是端口8000的API服务）
+        best_tunnel = None
+        for name, tunnel in self.tunnels.items():
+            if '8000' in tunnel['local_addr'] or 'api' in name.lower():
+                best_tunnel = tunnel
+                break
+        
+        if not best_tunnel:
+            # 如果没找到API隧道，使用第一个
+            best_tunnel = list(self.tunnels.values())[0]
+        
+        dns_config = {
+            'domain': 'aigupiao.me',
+            'records': [
+                {
+                    'type': 'CNAME',
+                    'name': 'api',
+                    'content': best_tunnel['domain'],
+                    'ttl': 300,
+                    'comment': f'ngrok隧道 - {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+                }
+            ],
+            'ngrok_url': best_tunnel['public_url'],
+            'local_addr': best_tunnel['local_addr']
+        }
+        
+        self.log("📄 DNS配置建议:", "SUCCESS")
+        self.log(f"   域名: api.aigupiao.me", "INFO")
+        self.log(f"   类型: CNAME", "INFO")
+        self.log(f"   目标: {best_tunnel['domain']}", "INFO")
+        self.log(f"   TTL: 300秒", "INFO")
+        
+        return dns_config
+    
+    def create_test_script(self, dns_config):
+        """创建测试脚本"""
+        self.log("📝 创建测试脚本...")
+        
+        test_script = f"""#!/usr/bin/env python3
+'''
+ngrok + Cloudflare混合方案测试脚本
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+'''
+
+import requests
+import time
+from datetime import datetime
+
+def test_hybrid_solution():
+    print("🚀 测试ngrok + Cloudflare混合方案")
+    print("=" * 60)
+    
+    # 测试目标
+    test_urls = [
+        {{"name": "ngrok直连", "url": "{dns_config['ngrok_url']}/health"}},
+        {{"name": "Cloudflare代理", "url": "https://api.aigupiao.me/health"}},
+        {{"name": "本地服务", "url": "http://localhost:8000/api/health"}}
+    ]
+    
+    results = {{}}
+    
+    for test in test_urls:
+        try:
+            print(f"\\n🧪 测试: {{test['name']}}")
+            start_time = time.time()
+            
+            response = requests.get(test['url'], timeout=15)
+            latency = round((time.time() - start_time) * 1000)
+            
+            results[test['name']] = {{
+                'latency': latency,
+                'success': response.status_code == 200,
+                'status_code': response.status_code
+            }}
+            
+            if response.status_code == 200:
+                print(f"✅ {{test['name']}}: {{latency}}ms")
+            else:
+                print(f"⚠️ {{test['name']}}: {{latency}}ms (状态码: {{response.status_code}})")
+                
+        except Exception as e:
+            results[test['name']] = {{
+                'latency': 9999,
+                'success': False,
+                'error': str(e)
+            }}
+            print(f"❌ {{test['name']}}: 失败 - {{e}}")
+        
+        time.sleep(1)
+    
+    # 分析结果
+    print("\\n📊 性能对比:")
+    print("-" * 40)
+    
+    for name, result in results.items():
+        if result['success']:
+            print(f"{{name.ljust(15)}}: {{result['latency']}}ms")
+        else:
+            print(f"{{name.ljust(15)}}: 失败")
+    
+    # 计算改善
+    if results.get('ngrok直连', {{}}).get('success') and results.get('Cloudflare代理', {{}}).get('success'):
+        ngrok_latency = results['ngrok直连']['latency']
+        cf_latency = results['Cloudflare代理']['latency']
+        
+        if ngrok_latency < cf_latency:
+            improvement = round(((cf_latency - ngrok_latency) / cf_latency) * 100)
+            print(f"\\n🚀 ngrok比Cloudflare快 {{improvement}}%")
+        else:
+            print(f"\\n⚠️ Cloudflare仍然更快")
+    
+    print(f"\\n🎯 测试完成时间: {{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}}")
+
+if __name__ == "__main__":
+    test_hybrid_solution()
+"""
+        
+        with open('test_ngrok_cloudflare_hybrid.py', 'w', encoding='utf-8') as f:
+            f.write(test_script)
+        
+        self.log("📄 测试脚本已生成: test_ngrok_cloudflare_hybrid.py", "SUCCESS")
+    
+    def create_dns_instructions(self, dns_config):
+        """创建DNS配置说明"""
+        self.log("📋 创建DNS配置说明...")
+        
+        instructions = f"""# ngrok + Cloudflare混合方案配置说明
+
+## 🎯 配置目标
+将api.aigupiao.me指向ngrok隧道，保留Cloudflare的SSL和CDN功能
+
+## 📋 Cloudflare DNS配置步骤
+
+### 1. 登录Cloudflare控制台
+- 访问: https://dash.cloudflare.com
+- 选择域名: aigupiao.me
+
+### 2. 添加/修改DNS记录
+```
+类型: CNAME
+名称: api
+目标: {dns_config['records'][0]['content']}
+TTL: 300秒 (5分钟)
+代理状态: 已代理 (橙色云朵)
+```
+
+### 3. 验证配置
+运行测试脚本验证配置是否生效:
+```bash
+python test_ngrok_cloudflare_hybrid.py
+```
+
+## 🔄 架构说明
+```
+移动端 → Cloudflare DNS → Cloudflare CDN/SSL → ngrok隧道 → 本地服务器
+```
+
+## 💡 优势
+- ✅ 保留Cloudflare的SSL证书
+- ✅ 保留Cloudflare的DDoS防护
+- ✅ 保留Cloudflare的CDN加速
+- ✅ 使用更快的ngrok隧道
+- ✅ 降低API延迟
+
+## 📊 预期性能
+- ngrok直连: 200-800ms
+- Cloudflare代理: 可能增加100-300ms开销
+- 总体延迟: 300-1100ms (比纯Cloudflare隧道快50-80%)
+
+## 🔧 故障排除
+1. 如果DNS不生效，等待5-10分钟
+2. 如果ngrok隧道断开，重新运行配置脚本
+3. 如果延迟仍然很高，检查网络连接
+
+## 📱 移动端配置
+更新移动端API地址为:
+- API地址: https://api.aigupiao.me
+- WebSocket: wss://api.aigupiao.me/ws
+
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+ngrok隧道: {dns_config['ngrok_url']}
+本地服务: {dns_config['local_addr']}
+"""
+        
+        with open('ngrok_cloudflare_setup_instructions.md', 'w', encoding='utf-8') as f:
+            f.write(instructions)
+        
+        self.log("📄 配置说明已生成: ngrok_cloudflare_setup_instructions.md", "SUCCESS")
+    
+    def run_configuration(self):
+        """运行完整配置"""
+        self.log("🚀 开始配置ngrok + Cloudflare混合方案", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 1. 获取ngrok隧道信息
+        if not self.get_ngrok_tunnels():
+            self.log("❌ 无法获取ngrok隧道信息，请检查ngrok是否正在运行", "ERROR")
+            return False
+        
+        print()
+        
+        # 2. 测试ngrok性能
+        performance_results = self.test_ngrok_performance()
+        print()
+        
+        # 3. 生成DNS配置
+        dns_config = self.generate_cloudflare_dns_config()
+        if not dns_config:
+            return False
+        
+        print()
+        
+        # 4. 创建测试脚本和说明文档
+        self.create_test_script(dns_config)
+        self.create_dns_instructions(dns_config)
+        
+        print()
+        
+        # 5. 显示总结
+        self.display_summary(dns_config, performance_results)
+        
+        return True
+    
+    def display_summary(self, dns_config, performance_results):
+        """显示配置总结"""
+        self.log("📊 配置总结", "SUCCESS")
+        self.log("=" * 60, "SUCCESS")
+        
+        self.log("🎯 混合方案配置:", "SUCCESS")
+        self.log(f"   ngrok隧道: {dns_config['ngrok_url']}", "INFO")
+        self.log(f"   本地服务: {dns_config['local_addr']}", "INFO")
+        self.log(f"   DNS目标: {dns_config['records'][0]['content']}", "INFO")
+        
+        print()
+        self.log("⚡ 性能测试结果:", "SUCCESS")
+        for name, result in performance_results.items():
+            if result['success']:
+                self.log(f"   {name}: {result['latency']}ms", "SUCCESS")
+            else:
+                self.log(f"   {name}: 失败", "ERROR")
+        
+        print()
+        self.log("📋 下一步操作:", "SUCCESS")
+        steps = [
+            "1. 在Cloudflare控制台配置DNS记录",
+            "2. 等待DNS生效 (5-10分钟)",
+            "3. 运行 python test_ngrok_cloudflare_hybrid.py 测试",
+            "4. 更新移动端API地址为 https://api.aigupiao.me"
+        ]
+        
+        for step in steps:
+            self.log(f"   {step}", "INFO")
+        
+        print()
+        self.log("📄 生成的文件:", "SUCCESS")
+        files = [
+            "test_ngrok_cloudflare_hybrid.py - 性能测试脚本",
+            "ngrok_cloudflare_setup_instructions.md - 详细配置说明"
+        ]
+        
+        for file in files:
+            self.log(f"   📄 {file}", "INFO")
+
+if __name__ == "__main__":
+    configurator = NgrokCloudflareConfigurator()
+    configurator.run_configuration()

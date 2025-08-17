@@ -1,0 +1,246 @@
+import pandas as pd
+import numpy as np
+import sys
+import os
+
+# 添加项目根目录到路径以导入所需模块
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+from backend.backtesting.strategy_base import StrategyBase
+
+class RedThreeSoldiersBacktest(StrategyBase):
+    """
+    红三兵策略的回测适配器
+    将红三兵策略适配到回测引擎
+    """
+    
+    def __init__(self, params=None):
+        """
+        初始化红三兵回测策略
+        
+        参数:
+        - params: 字典,包含策略参数
+        """
+        # 初始化基类
+        super().__init__(params or {})
+        self.name = "红三兵策略(回测)"
+        
+        # 默认参数
+        self.default_params = {
+            'body_size_similarity': 0.8,         # 实体大小相似度(0.8意味着后续实体至少为前一根的80%)
+            'max_upper_shadow_ratio': 0.3,       # 上影线最大比例(相对于实体)
+            'min_total_increase': 0.04,          # 三根K线的最小总涨幅
+            'volume_increase_threshold': 0.1,    # 成交量增长阈值
+            'high_position_threshold': 0.8,      # 高位判断阈值
+            'low_position_threshold': 0.2,       # 低位判断阈值
+            'high_volume_warning_threshold': 2.0, # 高位警示成交量阈值
+            'high_position_position': 0.2,       # 高位试探仓位(20%)
+            'mid_position_position': 0.5,        # 中位加仓仓位(50%)
+            'low_position_position': 0.7         # 低位买入仓位(70%)
+        }
+        
+        # 合并默认参数和用户参数
+        self.params = {**self.default_params, **self.params}
+        
+    def generate_signals(self, data):
+        """
+        根据数据生成交易信号
+        
+        参数:
+        - data: DataFrame,包含OHLCV数据
+        
+        返回:
+        - 字典,包含股票代码和对应的交易信号
+        """
+        # 初始化信号字典
+        signals = {}
+        
+        # 检查数据是否包含必要的列
+        required_columns = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col not in data.columns:
+                raise ValueError(f"数据缺少必要的列: {col}")
+        
+        # 按股票代码分组处理数据
+        for symbol, group in data.groupby('symbol'):
+            # 对每个股票的数据按日期排序
+            symbol_data = group.sort_values('date')
+            
+            # 需要至少4根K线数据才能检测红三兵形态
+            if len(symbol_data) < 4:
+                continue
+                
+            # 检测红三兵形态
+            signal = self._detect_red_three_soldiers(symbol_data)
+            
+            # 只有当有明确信号时才添加到结果中
+            if signal != 0:
+                # 获取当前收盘价
+                current_price = symbol_data['close'].iloc[-1]
+                
+                if signal > 0:  # 买入信号
+                    # 根据位置确定买入仓位比例
+                    position_type = self._determine_position_type(symbol_data)
+                    
+                    if position_type == 'low':
+                        position_size = self.params.get('low_position_position', 0.7)  # 低位买入70%仓位
+                    elif position_type == 'middle':
+                        position_size = self.params.get('mid_position_position', 0.5)  # 中位加仓50%仓位
+                    else:  # 高位
+                        position_size = self.params.get('high_position_position', 0.2)  # 高位试探买入20%仓位
+                    
+                    signals[symbol] = {
+                        'action': 'BUY',
+                        'price': current_price,
+                        'size': position_size
+                    }
+                    
+                elif signal < 0:  # 卖出信号(仅在高位过度放量时)
+                    signals[symbol] = {
+                        'action': 'SELL',
+                        'price': current_price,
+                        'size': 0.5  # 减仓50%
+                    }
+        
+        return signals
+    
+    def _detect_red_three_soldiers(self, data):
+        """
+        检测红三兵形态
+        
+        参数:
+        - data: DataFrame,包含单个股票的OHLCV数据
+        
+        返回:
+        - int: 信号 (1:买入, -1:卖出, 0:观望)
+        """
+        # 最后n根K线
+        n = min(10, len(data))
+        recent_data = data.tail(n).copy()
+        
+        # 初始化信号
+        signal = 0
+        
+        # 在最后4根K线中查找红三兵形态 (3根形成, 1根确认)
+        if len(recent_data) >= 4:
+            # 获取最近4根K线
+            window = recent_data.tail(4)
+            
+            # 计算实体大小
+            window['body_size'] = abs(window['close'] - window['open'])
+            
+            # 计算上影线大小
+            window['upper_shadow'] = window.apply(
+                lambda x: max(0, x['high'] - max(x['open'], x['close'])), 
+                axis=1
+            )
+            
+            # 计算上影线与实体比例
+            window['upper_shadow_ratio'] = window.apply(
+                lambda x: x['upper_shadow'] / x['body_size'] if x['body_size'] > 0 else float('inf'), 
+                axis=1
+            )
+            
+            # 检查最后3根K线是否都是阳线
+            last_3 = window.iloc[-4:-1]
+            is_bullish = (last_3['close'] > last_3['open']).all()
+            
+            if is_bullish:
+                # 检查实体大小相似度
+                bodies = last_3['body_size'].values
+                similar_bodies = True
+                for i in range(1, 3):
+                    if bodies[i] < bodies[i-1] * self.params['body_size_similarity']:
+                        similar_bodies = False
+                        break
+                
+                # 检查上影线是否较短
+                short_upper_shadows = (last_3['upper_shadow_ratio'] <= self.params['max_upper_shadow_ratio']).all()
+                
+                # 检查收盘价是否连续走高
+                increasing_closes = True
+                for i in range(1, 3):
+                    if last_3['close'].iloc[i] <= last_3['close'].iloc[i-1]:
+                        increasing_closes = False
+                        break
+                
+                # 计算总涨幅
+                total_increase = (last_3['close'].iloc[2] / last_3['open'].iloc[0]) - 1
+                significant_increase = total_increase >= self.params['min_total_increase']
+                
+                # 检查成交量是否逐步增加或稳定
+                volumes = last_3['volume'].values
+                increasing_volume = True
+                for i in range(1, 3):
+                    if volumes[i] < volumes[i-1] * (1 - self.params['volume_increase_threshold']):
+                        increasing_volume = False
+                        break
+                
+                # 如果满足所有条件,检查位置并生成信号
+                if similar_bodies and short_upper_shadows and increasing_closes and significant_increase:
+                    # 判断位置
+                    position_type = self._determine_position_type(data)
+                    
+                    # 检查确认K线
+                    confirm_candle = window.iloc[-1]
+                    confirmation = confirm_candle['close'] > last_3['close'].iloc[-1]
+                    
+                    # 检查是否高位过度放量
+                    high_volume_warning = False
+                    if position_type == 'high':
+                        avg_volume = last_3['volume'].iloc[:-1].mean()
+                        current_volume = last_3['volume'].iloc[-1]
+                        high_volume_warning = current_volume > avg_volume * self.params['high_volume_warning_threshold']
+                    
+                    # 生成信号
+                    if position_type == 'low' and confirmation:
+                        signal = 1  # 低位买入信号
+                    elif position_type == 'middle' and confirmation:
+                        signal = 1  # 中位买入信号
+                    elif position_type == 'high' and high_volume_warning:
+                        signal = -1  # 高位过度放量时的卖出警告信号
+                    elif position_type == 'high' and confirmation:
+                        signal = 0  # 高位正常确认时观望
+        
+        return signal
+    
+    def _determine_position_type(self, data):
+        """
+        判断当前价格位置
+        
+        参数:
+        - data: DataFrame,包含OHLCV数据
+        
+        返回:
+        - str: 位置类型 ('high', 'middle', 'low')
+        """
+        if len(data) < 60:  # 至少需要60个数据点
+            return 'middle'
+        
+        # 获取最近60个交易日的数据
+        recent_data = data.tail(60)
+        
+        # 计算历史最高最低价
+        hist_high = recent_data['high'].max()
+        hist_low = recent_data['low'].min()
+        price_range = hist_high - hist_low
+        
+        if price_range == 0:
+            return 'middle'
+        
+        # 获取当前收盘价
+        current_price = data['close'].iloc[-1]
+        
+        # 计算当前价格在价格区间中的相对位置
+        relative_position = (current_price - hist_low) / price_range
+        
+        # 定义高位阈值和低位阈值
+        high_threshold = self.params.get('high_position_threshold', 0.8)
+        low_threshold = self.params.get('low_position_threshold', 0.2)
+        
+        # 判断位置类型
+        if relative_position >= high_threshold:
+            return 'high'
+        elif relative_position <= low_threshold:
+            return 'low'
+        else:
+            return 'middle' 

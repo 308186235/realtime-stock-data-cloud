@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+简化的智能Agent测试
+避开编码问题,直接测试核心功能
+"""
+
+import asyncio
+import sys
+import os
+import json
+from datetime import datetime
+
+# 添加项目路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'stock-trading-backend'))
+
+class SimpleAgentTester:
+    def __init__(self):
+        pass
+        
+    async def test_intelligent_functions(self):
+        """测试智能功能"""
+        print("🤖 简化智能Agent功能测试")
+        print("=" * 60)
+        print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
+        
+        results = {}
+        
+        # 1. 测试自动交易服务
+        print("🚀 测试1: 自动交易服务")
+        print("-" * 40)
+        results["auto_trading_service"] = await self.test_auto_trading_service()
+        
+        # 2. 测试AI T交易服务
+        print("\n🧠 测试2: AI T交易服务")
+        print("-" * 40)
+        results["ai_t_trading"] = await self.test_ai_t_trading_service()
+        
+        # 3. 测试智能自动交易器
+        print("\n⚡ 测试3: 智能自动交易器")
+        print("-" * 40)
+        results["intelligent_trader"] = await self.test_intelligent_trader()
+        
+        # 4. 生成测试报告
+        print("\n📋 简化测试报告")
+        print("-" * 40)
+        self.generate_simple_report(results)
+        
+        return results
+    
+    async def test_auto_trading_service(self):
+        """测试自动交易服务"""
+        try:
+            from backend.services.auto_trader_service import AutoTraderService
+            
+            service = AutoTraderService()
+            
+            # 检查关键方法是否存在
+            methods_to_check = [
+                '_run_service_loop',
+                '_is_trading_hours', 
+                '_get_real_time_market_data',
+                '_scan_trading_opportunities'
+            ]
+            
+            missing_methods = []
+            implemented_methods = []
+            
+            for method_name in methods_to_check:
+                if hasattr(service, method_name):
+                    # 检查方法是否有实际实现
+                    import inspect
+                    try:
+                        source = inspect.getsource(getattr(service, method_name))
+                        if "pass" in source and source.count('\n') < 5:
+                            missing_methods.append(f"{method_name} (空实现)")
+                        else:
+                            implemented_methods.append(method_name)
+                    except:
+                        implemented_methods.append(method_name)
+                else:
+                    missing_methods.append(method_name)
+            
+            print(f"   ✅ 已实现方法: {len(implemented_methods)}/{len(methods_to_check)}")
+            for method in implemented_methods:
+                print(f"      ✓ {method}")
+            
+            if missing_methods:
+                print(f"   ❌ 缺失方法: {len(missing_methods)}")
+                for method in missing_methods:
+                    print(f"      ✗ {method}")
+            
+            success_rate = len(implemented_methods) / len(methods_to_check)
+            
+            return {
+                "success": success_rate >= 0.75,
+                "implemented_methods": implemented_methods,
+                "missing_methods": missing_methods,
+                "success_rate": success_rate
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_ai_t_trading_service(self):
+        """测试AI T交易服务"""
+        try:
+            from backend.services.ai_t_trading_service import AITTradingService
+            
+            service = AITTradingService()
+            
+            # 测试市场情绪分析是否使用真实数据
+            print("   🔍 测试市场情绪分析...")
+            
+            # 模拟市场数据
+            test_market_data = {
+                "000001": {"change_percent": 2.5, "volume": 1500000},
+                "000002": {"change_percent": -1.2, "volume": 800000},
+                "600519": {"change_percent": 3.1, "volume": 2000000}
+            }
+            
+            sentiment_result = service._analyze_market_sentiment(test_market_data)
+            
+            # 检查是否还在使用随机数
+            has_real_analysis = (
+                "indicators" in sentiment_result and
+                isinstance(sentiment_result.get("score"), (int, float)) and
+                0 <= sentiment_result.get("score", -1) <= 100
+            )
+            
+            if has_real_analysis:
+                print(f"      ✅ 使用真实数据分析")
+                print(f"      情绪评分: {sentiment_result.get('score', 0)}")
+                print(f"      情绪状态: {sentiment_result.get('sentiment', 'N/A')}")
+            else:
+                print(f"      ❌ 仍使用假数据或随机数")
+            
+            # 检查新增的分析方法
+            new_methods = [
+                '_extract_market_sentiment_indicators',
+                '_calculate_real_sentiment_score'
+            ]
+            
+            has_new_methods = all(hasattr(service, method) for method in new_methods)
+            
+            print(f"   📊 新增分析方法: {'✅' if has_new_methods else '❌'}")
+            
+            return {
+                "success": has_real_analysis and has_new_methods,
+                "has_real_analysis": has_real_analysis,
+                "has_new_methods": has_new_methods,
+                "sentiment_score": sentiment_result.get("score"),
+                "sentiment_state": sentiment_result.get("sentiment")
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def test_intelligent_trader(self):
+        """测试智能自动交易器"""
+        try:
+            # 检查文件是否存在
+            trader_file = "stock-trading-backend/backend/ai/intelligent_auto_trader.py"
+            if not os.path.exists(trader_file):
+                print(f"   ❌ 智能交易器文件不存在: {trader_file}")
+                return {"success": False, "error": "文件不存在"}
+            
+            from backend.ai.intelligent_auto_trader import IntelligentAutoTrader
+            
+            trader = IntelligentAutoTrader()
+            
+            # 检查关键方法
+            key_methods = [
+                'start_intelligent_trading',
+                'stop_intelligent_trading',
+                '_run_intelligent_trading_loop',
+                '_make_intelligent_decision',
+                '_find_best_trading_opportunity'
+            ]
+            
+            implemented_methods = []
+            for method_name in key_methods:
+                if hasattr(trader, method_name):
+                    implemented_methods.append(method_name)
+            
+            print(f"   ✅ 智能交易器方法: {len(implemented_methods)}/{len(key_methods)}")
+            
+            # 测试启动和停止
+            print("   🚀 测试启动/停止功能...")
+            
+            start_result = await trader.start_intelligent_trading()
+            start_success = start_result.get("success", False)
+            
+            if start_success:
+                print("      ✅ 启动成功")
+                
+                # 等待一小段时间
+                await asyncio.sleep(1)
+                
+                stop_result = await trader.stop_intelligent_trading()
+                stop_success = stop_result.get("success", False)
+                
+                if stop_success:
+                    print("      ✅ 停止成功")
+                else:
+                    print("      ⚠️ 停止异常")
+            else:
+                print("      ❌ 启动失败")
+                stop_success = False
+            
+            success_rate = len(implemented_methods) / len(key_methods)
+            overall_success = success_rate >= 0.8 and start_success
+            
+            return {
+                "success": overall_success,
+                "implemented_methods": implemented_methods,
+                "method_success_rate": success_rate,
+                "start_success": start_success,
+                "stop_success": stop_success
+            }
+            
+        except Exception as e:
+            print(f"   ❌ 测试异常: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def generate_simple_report(self, results):
+        """生成简化测试报告"""
+        print("📊 智能Agent功能测试总结")
+        print("=" * 60)
+        
+        # 统计成功率
+        total_tests = len(results)
+        successful_tests = sum(1 for result in results.values() if result.get("success", False))
+        success_rate = (successful_tests / total_tests * 100) if total_tests > 0 else 0
+        
+        print(f"\n📈 测试成功率: {success_rate:.1f}% ({successful_tests}/{total_tests})")
+        
+        # 详细结果
+        print(f"\n📋 详细测试结果:")
+        test_names = {
+            "auto_trading_service": "自动交易服务",
+            "ai_t_trading": "AI T交易服务",
+            "intelligent_trader": "智能自动交易器"
+        }
+        
+        for test_key, result in results.items():
+            test_name = test_names.get(test_key, test_key)
+            status = "✅" if result.get("success") else "❌"
+            print(f"   {status} {test_name}")
+            
+            if not result.get("success") and "error" in result:
+                print(f"      错误: {result['error']}")
+        
+        # 关键改进验证
+        print(f"\n🔍 关键改进验证:")
+        
+        auto_service = results.get("auto_trading_service", {})
+        ai_service = results.get("ai_t_trading", {})
+        intelligent_trader = results.get("intelligent_trader", {})
+        
+        print(f"   🔄 自动交易循环: {'✅ 已实现' if auto_service.get('success') else '❌ 仍为空'}")
+        print(f"   🧠 真实数据分析: {'✅ 已实现' if ai_service.get('has_real_analysis') else '❌ 仍用假数据'}")
+        print(f"   🤖 智能交易器: {'✅ 已实现' if intelligent_trader.get('success') else '❌ 功能不完整'}")
+        
+        # 功能完整性评估
+        print(f"\n🎯 功能完整性评估:")
+        if success_rate >= 80:
+            grade = "A 优秀"
+            status = "🎉 智能功能基本实现,告别假数据时代"
+        elif success_rate >= 60:
+            grade = "B 良好"
+            status = "✅ 大部分功能已实现,需要继续优化"
+        else:
+            grade = "C 需要改进"
+            status = "❌ 功能实现不完整,需要大量工作"
+        
+        print(f"   等级: {grade}")
+        print(f"   状态: {status}")
+        
+        # 对比之前的问题
+        print(f"\n📈 改进对比:")
+        print(f"   ❌ 之前: 自动交易循环只有 pass")
+        print(f"   ✅ 现在: {'实现了智能交易逻辑' if auto_service.get('success') else '仍需改进'}")
+        print(f"   ❌ 之前: 市场情绪用 random.randint()")
+        print(f"   ✅ 现在: {'使用真实市场数据分析' if ai_service.get('has_real_analysis') else '仍需改进'}")
+        print(f"   ❌ 之前: 没有真正的智能决策")
+        print(f"   ✅ 现在: {'实现了智能自动交易器' if intelligent_trader.get('success') else '仍需改进'}")
+        
+        # 保存测试结果
+        self.save_simple_results(results)
+    
+    def save_simple_results(self, results):
+        """保存简化测试结果"""
+        try:
+            test_report = {
+                "test_time": datetime.now().isoformat(),
+                "test_type": "simplified_intelligent_agent_test",
+                "results": results,
+                "summary": {
+                    "total_tests": len(results),
+                    "successful_tests": sum(1 for r in results.values() if r.get("success")),
+                    "success_rate": sum(1 for r in results.values() if r.get("success")) / len(results) * 100
+                }
+            }
+            
+            with open("simple_agent_test_report.json", "w", encoding="utf-8") as f:
+                json.dump(test_report, f, ensure_ascii=False, indent=2)
+            
+            print(f"\n💾 测试报告已保存: simple_agent_test_report.json")
+            
+        except Exception as e:
+            print(f"\n❌ 保存测试报告失败: {e}")
+
+async def main():
+    """主函数"""
+    tester = SimpleAgentTester()
+    await tester.test_intelligent_functions()
+
+if __name__ == "__main__":
+    asyncio.run(main())

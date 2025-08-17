@@ -1,0 +1,134 @@
+import pandas as pd
+import numpy as np
+from .base_strategy import BaseStrategy
+
+class BollingerBandsStrategy(BaseStrategy):
+    """
+    Bollinger Bands Strategy.
+    Generates buy signals when price touches the lower band,
+    and sell signals when price touches the upper band.
+    """
+    
+    def __init__(self, parameters=None):
+        """
+        Initialize Bollinger Bands strategy with parameters.
+        
+        Args:
+            parameters (dict): Strategy parameters
+        """
+        super().__init__(parameters)
+        self.name = "布林带策略"
+        self.description = "布林带策略利用价格波动的统计特性，当价格触及下轨产生买入信号，触及上轨产生卖出信号。该策略同样适合震荡市场，在趋势市场中需要结合其他指标使用。"
+        
+        # Set parameters
+        default_params = self.get_default_parameters()
+        self.parameters = parameters or default_params
+        
+    def get_default_parameters(self):
+        """
+        Get default parameters for Bollinger Bands strategy.
+        
+        Returns:
+            dict: Default parameters
+        """
+        return {
+            'bb_period': 20,
+            'bb_std': 2.0,
+            'stop_loss': 0.035,     # 3.5% stop loss
+            'profit_take': 0.07      # 7% take profit
+        }
+    
+    def get_parameter_ranges(self):
+        """
+        Get valid ranges for strategy parameters.
+        
+        Returns:
+            dict: Parameter ranges with min, max, and step values
+        """
+        return {
+            'bb_period': {'min': 10, 'max': 50, 'step': 2},
+            'bb_std': {'min': 1.0, 'max': 3.0, 'step': 0.1},
+            'stop_loss': {'min': 0.01, 'max': 0.1, 'step': 0.005},
+            'profit_take': {'min': 0.02, 'max': 0.2, 'step': 0.01}
+        }
+    
+    def generate_signals(self, data):
+        """
+        Generate trading signals based on Bollinger Bands.
+        
+        Args:
+            data (pd.DataFrame): Historical market data with OHLCV
+            
+        Returns:
+            pd.Series: Series of trading signals (1 for buy, -1 for sell, 0 for hold)
+        """
+        # Make a copy of data to avoid modifying the original
+        df = data.copy()
+        
+        # Get parameters
+        bb_period = self.parameters['bb_period']
+        bb_std = self.parameters['bb_std']
+        
+        # Calculate Bollinger Bands
+        df['middle_band'] = df['close'].rolling(window=bb_period).mean()
+        df['std_dev'] = df['close'].rolling(window=bb_period).std()
+        df['upper_band'] = df['middle_band'] + (df['std_dev'] * bb_std)
+        df['lower_band'] = df['middle_band'] - (df['std_dev'] * bb_std)
+        
+        # Initialize signals
+        df['signal'] = 0
+        
+        # Generate signals based on band touches
+        df.loc[df['close'] <= df['lower_band'], 'signal'] = 1  # Buy signal when price touches lower band
+        df.loc[df['close'] >= df['upper_band'], 'signal'] = -1  # Sell signal when price touches upper band
+        
+        # Apply stop loss and take profit
+        self._apply_stop_loss_take_profit(df)
+        
+        return df['signal']
+    
+    def _apply_stop_loss_take_profit(self, df):
+        """
+        Apply stop loss and take profit rules to the signals.
+        
+        Args:
+            df (pd.DataFrame): DataFrame with signals
+        """
+        stop_loss = self.parameters['stop_loss']
+        profit_take = self.parameters['profit_take']
+        
+        # Track entry prices and positions
+        position = 0
+        entry_price = 0
+        
+        for i in range(1, len(df)):
+            prev_signal = df['signal'].iloc[i-1]
+            curr_signal = df['signal'].iloc[i]
+            curr_price = df['close'].iloc[i]
+            
+            # Check if we need to open a position
+            if position == 0 and curr_signal == 1:
+                position = 1
+                entry_price = curr_price
+            
+            # Check if we need to close a position
+            elif position == 1:
+                # Calculate current profit/loss
+                pnl = (curr_price - entry_price) / entry_price
+                
+                # Apply stop loss
+                if pnl <= -stop_loss:
+                    df.loc[df.index[i], 'signal'] = -1
+                    position = 0
+                    entry_price = 0
+                
+                # Apply take profit
+                elif pnl >= profit_take:
+                    df.loc[df.index[i], 'signal'] = -1
+                    position = 0
+                    entry_price = 0
+                
+                # Check for sell signal
+                elif curr_signal == -1:
+                    position = 0
+                    entry_price = 0 

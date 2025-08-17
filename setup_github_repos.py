@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""
+设置GitHub仓库并推送代码
+"""
+
+import os
+import subprocess
+import json
+from datetime import datetime
+
+class GitHubRepoSetup:
+    """GitHub仓库设置器"""
+    
+    def __init__(self):
+        self.frontend_repo = "stock-trading-frontend"
+        self.backend_repo = "stock-trading-backend"
+        self.github_username = "308186235"
+        
+    def setup_repositories(self):
+        """设置GitHub仓库"""
+        print("🚀 开始设置GitHub仓库...")
+        print("=" * 60)
+        
+        # 1. 初始化前端仓库
+        self._setup_frontend_repo()
+        
+        # 2. 初始化后端仓库
+        self._setup_backend_repo()
+        
+        # 3. 创建.gitignore文件
+        self._create_gitignore_files()
+        
+        # 4. 显示下一步操作指南
+        self._show_next_steps()
+        
+        print("\n✅ GitHub仓库设置完成!")
+    
+    def _setup_frontend_repo(self):
+        """设置前端仓库"""
+        print(f"\n📱 设置前端仓库: {self.frontend_repo}")
+        
+        if os.path.exists(self.frontend_repo):
+            os.chdir(self.frontend_repo)
+            
+            # 初始化Git仓库
+            self._run_command("git init")
+            
+            # 添加所有文件
+            self._run_command("git add .")
+            
+            # 提交
+            self._run_command('git commit -m "Initial commit: 股票交易系统前端"')
+            
+            # 设置主分支
+            self._run_command("git branch -M main")
+            
+            print(f"  ✅ 前端仓库初始化完成")
+            
+            os.chdir("..")
+    
+    def _setup_backend_repo(self):
+        """设置后端仓库"""
+        print(f"\n🔧 设置后端仓库: {self.backend_repo}")
+        
+        if os.path.exists(self.backend_repo):
+            os.chdir(self.backend_repo)
+            
+            # 初始化Git仓库
+            self._run_command("git init")
+            
+            # 添加所有文件
+            self._run_command("git add .")
+            
+            # 提交
+            self._run_command('git commit -m "Initial commit: 股票交易系统后端"')
+            
+            # 设置主分支
+            self._run_command("git branch -M main")
+            
+            print(f"  ✅ 后端仓库初始化完成")
+            
+            os.chdir("..")
+    
+    def _create_gitignore_files(self):
+        """创建.gitignore文件"""
+        print("\n📝 创建.gitignore文件...")
+        
+        # 前端.gitignore
+        frontend_gitignore = """# 依赖包
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建输出
+dist/
+build/
+unpackage/
+
+# 环境变量
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.temp
+
+# uni-app特定
+.hbuilderx/
+"""
+        
+        with open(os.path.join(self.frontend_repo, ".gitignore"), 'w', encoding='utf-8') as f:
+            f.write(frontend_gitignore)
+        
+        # 后端.gitignore
+        backend_gitignore = """# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 环境变量
+.env
+.env.local
+.env.development
+.env.production
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# 日志文件
+*.log
+logs/
+
+# 缓存
+.cache/
+.pytest_cache/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 数据文件
+data/
+downloads/
+exports/
+backups/
+
+# 配置文件(包含敏感信息)
+config.ini
+secrets.json
+
+# 测试覆盖率
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 临时文件
+*.tmp
+*.temp
+"""
+        
+        with open(os.path.join(self.backend_repo, ".gitignore"), 'w', encoding='utf-8') as f:
+            f.write(backend_gitignore)
+        
+        print("  ✅ .gitignore文件创建完成")
+    
+    def _run_command(self, command):
+        """运行命令"""
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"    ⚠️  命令执行警告: {command}")
+                print(f"    错误: {result.stderr}")
+            return result.returncode == 0
+        except Exception as e:
+            print(f"    ❌ 命令执行失败: {command}")
+            print(f"    错误: {str(e)}")
+            return False
+    
+    def _show_next_steps(self):
+        """显示下一步操作指南"""
+        print("\n📋 下一步操作指南:")
+        print("=" * 60)
+        
+        print("\n1. 在GitHub上创建仓库:")
+        print(f"   - 前端仓库: https://github.com/new")
+        print(f"     仓库名: {self.frontend_repo}")
+        print(f"     描述: 股票交易系统移动端应用")
+        print(f"   - 后端仓库: https://github.com/new") 
+        print(f"     仓库名: {self.backend_repo}")
+        print(f"     描述: 股票交易系统后端API服务")
+        
+        print("\n2. 推送前端代码:")
+        print(f"   cd {self.frontend_repo}")
+        print(f"   git remote add origin https://github.com/{self.github_username}/{self.frontend_repo}.git")
+        print("   git push -u origin main")
+        
+        print("\n3. 推送后端代码:")
+        print(f"   cd {self.backend_repo}")
+        print(f"   git remote add origin https://github.com/{self.github_username}/{self.backend_repo}.git")
+        print("   git push -u origin main")
+        
+        print("\n4. 设置仓库描述和标签:")
+        print("   前端标签: uni-app, vue, mobile, stock-trading")
+        print("   后端标签: fastapi, python, api, stock-trading")
+        
+        print("\n5. 配置GitHub Pages (可选):")
+        print("   - 前端仓库可以配置GitHub Pages来展示H5版本")
+        print("   - 后端仓库可以配置自动部署到云服务器")
+
+if __name__ == "__main__":
+    setup = GitHubRepoSetup()
+    setup.setup_repositories()

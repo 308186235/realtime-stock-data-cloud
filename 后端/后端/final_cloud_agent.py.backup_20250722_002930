@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+最终版云端Agent接口
+核心功能：记住调用时间，根据时间找文件，支持重试，不影响交易
+"""
+
+from simple_cloud_caller import SimpleCloudCaller
+from datetime import datetime
+import json
+
+class FinalCloudAgent:
+    def __init__(self):
+        self.caller = SimpleCloudCaller()
+        self.version = "1.0.0"
+    
+    def get_account_balance(self):
+        """
+        获取账户余额
+        云端Agent调用此接口获取实时余额
+        """
+        print("🌐 云端Agent请求: 获取账户余额")
+        
+        result = self.caller.call_with_time_tracking('balance')
+        
+        if result['success']:
+            # 获取详细余额数据
+            try:
+                from fixed_balance_reader import FixedBalanceReader
+                balance_reader = FixedBalanceReader()
+                balance_data = balance_reader.get_account_balance()
+                
+                return {
+                    "success": True,
+                    "data": balance_data,
+                    "timestamp": datetime.now().isoformat(),
+                    "message": "余额获取成功"
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "data": None,
+                    "timestamp": datetime.now().isoformat(),
+                    "message": f"余额获取异常: {e}"
+                }
+        else:
+            return {
+                "success": False,
+                "data": None,
+                "timestamp": datetime.now().isoformat(),
+                "message": result.get('message', '余额获取失败')
+            }
+    
+    def export_holdings_data(self):
+        """
+        导出持仓数据
+        云端Agent调用此接口获取持仓文件
+        """
+        print("🌐 云端Agent请求: 导出持仓数据")
+        
+        result = self.caller.call_with_time_tracking('holdings')
+        
+        return {
+            "success": result['success'],
+            "filename": result.get('filename'),
+            "local_path": result.get('local_path'),
+            "timestamp": datetime.now().isoformat(),
+            "message": result.get('message'),
+            "retry_used": result.get('retry', False)
+        }
+    
+    def export_orders_data(self):
+        """
+        导出委托数据
+        云端Agent调用此接口获取委托文件
+        """
+        print("🌐 云端Agent请求: 导出委托数据")
+        
+        result = self.caller.call_with_time_tracking('orders')
+        
+        return {
+            "success": result['success'],
+            "filename": result.get('filename'),
+            "local_path": result.get('local_path'),
+            "timestamp": datetime.now().isoformat(),
+            "message": result.get('message'),
+            "retry_used": result.get('retry', False)
+        }
+    
+    def export_transactions_data(self):
+        """
+        导出成交数据
+        云端Agent调用此接口获取成交文件
+        """
+        print("🌐 云端Agent请求: 导出成交数据")
+        
+        result = self.caller.call_with_time_tracking('transactions')
+        
+        return {
+            "success": result['success'],
+            "filename": result.get('filename'),
+            "local_path": result.get('local_path'),
+            "timestamp": datetime.now().isoformat(),
+            "message": result.get('message'),
+            "retry_used": result.get('retry', False)
+        }
+    
+    def export_all_trading_data(self):
+        """
+        导出所有交易数据
+        云端Agent调用此接口获取所有文件
+        """
+        print("🌐 云端Agent请求: 导出所有交易数据")
+        
+        results = {}
+        
+        # 导出持仓
+        print("📊 1/3 导出持仓数据...")
+        results['holdings'] = self.export_holdings_data()
+        
+        # 导出委托
+        print("📊 2/3 导出委托数据...")
+        results['orders'] = self.export_orders_data()
+        
+        # 导出成交
+        print("📊 3/3 导出成交数据...")
+        results['transactions'] = self.export_transactions_data()
+        
+        # 统计结果
+        successful = sum(1 for r in results.values() if r['success'])
+        total = len(results)
+        success_rate = successful / total * 100
+        
+        return {
+            "success": success_rate >= 66.7,  # 至少2/3成功
+            "data": results,
+            "summary": {
+                "total": total,
+                "successful": successful,
+                "failed": total - successful,
+                "success_rate": f"{success_rate:.1f}%"
+            },
+            "timestamp": datetime.now().isoformat(),
+            "message": f"批量导出完成，成功率: {success_rate:.1f}%"
+        }
+    
+    def get_agent_status(self):
+        """
+        获取Agent状态
+        云端Agent调用此接口检查系统状态
+        """
+        return {
+            "version": self.version,
+            "status": "active",
+            "timestamp": datetime.now().isoformat(),
+            "supported_operations": [
+                "get_account_balance",
+                "export_holdings_data",
+                "export_orders_data", 
+                "export_transactions_data",
+                "export_all_trading_data"
+            ],
+            "features": [
+                "时间跟踪调用",
+                "智能文件查找",
+                "自动重试机制",
+                "交易时间避让",
+                "OneDrive同步"
+            ]
+        }
+
+def demo_cloud_agent():
+    """演示云端Agent接口"""
+    print("🌐 最终版云端Agent接口演示")
+    print("=" * 60)
+    
+    agent = FinalCloudAgent()
+    
+    # 1. 获取Agent状态
+    print("📋 1. 获取Agent状态:")
+    status = agent.get_agent_status()
+    print(json.dumps(status, ensure_ascii=False, indent=2))
+    
+    # 2. 获取账户余额
+    print("\n💰 2. 获取账户余额:")
+    balance = agent.get_account_balance()
+    print(json.dumps(balance, ensure_ascii=False, indent=2))
+    
+    # 3. 导出持仓数据
+    print("\n📊 3. 导出持仓数据:")
+    holdings = agent.export_holdings_data()
+    print(json.dumps(holdings, ensure_ascii=False, indent=2))
+    
+    print("\n🎉 演示完成！")
+
+def cloud_agent_api_server():
+    """
+    云端Agent API服务器模拟
+    实际部署时可以用Flask/FastAPI包装这些接口
+    """
+    print("🚀 云端Agent API服务器启动")
+    print("=" * 60)
+    
+    agent = FinalCloudAgent()
+    
+    # 模拟云端调用
+    api_calls = [
+        ("GET", "/api/status", "获取系统状态"),
+        ("GET", "/api/balance", "获取账户余额"),
+        ("POST", "/api/export/holdings", "导出持仓数据"),
+        ("POST", "/api/export/orders", "导出委托数据"),
+        ("POST", "/api/export/transactions", "导出成交数据"),
+        ("POST", "/api/export/all", "导出所有数据")
+    ]
+    
+    print("📋 支持的API接口:")
+    for method, endpoint, description in api_calls:
+        print(f"   {method:4} {endpoint:25} - {description}")
+    
+    print(f"\n✅ API服务器就绪，版本: {agent.version}")
+    print("💡 云端Agent现在可以通过这些接口调用本地交易功能")
+    
+    # 演示一个完整的调用流程
+    print(f"\n🌐 模拟云端Agent调用流程:")
+    print("=" * 40)
+    
+    # Step 1: 检查状态
+    print("1️⃣ 云端Agent检查系统状态...")
+    status = agent.get_agent_status()
+    if status['status'] == 'active':
+        print("   ✅ 系统状态正常")
+    
+    # Step 2: 获取余额
+    print("2️⃣ 云端Agent请求账户余额...")
+    balance = agent.get_account_balance()
+    if balance['success']:
+        cash = balance['data']['available_cash']
+        print(f"   ✅ 余额获取成功: {cash:,.2f}元")
+    
+    # Step 3: 导出数据
+    print("3️⃣ 云端Agent请求导出持仓...")
+    holdings = agent.export_holdings_data()
+    if holdings['success']:
+        filename = holdings['filename']
+        print(f"   ✅ 持仓导出成功: {filename}")
+    
+    print("\n🎉 云端Agent调用流程演示完成！")
+
+if __name__ == '__main__':
+    # 选择运行模式
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == 'server':
+        cloud_agent_api_server()
+    else:
+        demo_cloud_agent()

@@ -1,0 +1,194 @@
+/**
+ * Mock Trade Data
+ * Provides mock responses for trading-related API endpoints
+ */
+
+// Mock trade history data
+let MOCK_TRADES = [
+  {
+    id: 't-001',
+    stock_code: '600519',
+    stock_name: 'Kweichow Moutai',
+    mode: 'positive',
+    buy_price: 1680.50,
+    sell_price: 1695.20,
+    quantity: 100,
+    profit: 1470,
+    timestamp: new Date(Date.now() - 86400000).toISOString(),
+    status: 'completed'
+  },
+  {
+    id: 't-002',
+    stock_code: '000858',
+    stock_name: 'Wuliangye',
+    mode: 'negative',
+    buy_price: 152.30,
+    sell_price: 158.40,
+    quantity: 200,
+    profit: 1220,
+    timestamp: new Date(Date.now() - 172800000).toISOString(),
+    status: 'completed'
+  },
+  {
+    id: 't-003',
+    stock_code: '601318',
+    stock_name: 'Ping An Insurance',
+    mode: 'positive',
+    buy_price: 45.20,
+    sell_price: 0,
+    quantity: 500,
+    profit: 0,
+    timestamp: new Date().toISOString(),
+    status: 'pending'
+  }
+];
+
+// Generate a unique ID for new trades
+const generateTradeId = () => {
+  return 't-' + Math.floor(Math.random() * 10000).toString().padStart(3, '0');
+};
+
+// Calculate profit/loss
+const calculateProfit = (buyPrice, sellPrice, quantity) => {
+  return parseFloat(((sellPrice - buyPrice) * quantity).toFixed(2));
+};
+
+// Mock API handlers
+export default {
+  // Evaluate T trading opportunity
+  evaluateOpportunity: (data) => {
+    const { code, name, current_price, base_position, intraday_high, intraday_low } = data;
+    
+    // Calculate price change from open
+    const openPrice = intraday_low * 0.95 + intraday_high * 0.05;
+    const priceChange = (current_price - openPrice) / openPrice;
+    
+    // Decide if there's an opportunity based on price movement
+    const hasOpportunity = Math.abs(priceChange) > 0.015;
+    const mode = priceChange < 0 ? 'positive' : 'negative';
+    
+    // Calculate suggested quantity based on base position
+    const suggestedQuantity = Math.floor(base_position * 0.2);
+    
+    // Generate AI confidence between 60% and 95%
+    const aiConfidence = parseFloat((0.6 + Math.random() * 0.35).toFixed(2));
+    
+    // Mock the response
+    return {
+      code: 200,
+      message: 'success',
+      data: {
+        has_opportunity: hasOpportunity,
+        mode: hasOpportunity ? mode : null,
+        message: hasOpportunity 
+          ? `Detected a good ${mode === 'positive' ? 'buy' : 'sell'} opportunity for ${name}`
+          : 'No significant T trading opportunity detected at this time',
+        suggested_quantity: suggestedQuantity,
+        evaluation_method: 'ai',
+        ai_confidence: aiConfidence,
+        volatility: parseFloat((Math.random() * 0.03 + 0.01).toFixed(4)),
+        expected_cost_impact: hasOpportunity ? {
+          current_cost: parseFloat((current_price).toFixed(2)),
+          projected_cost: parseFloat((current_price * 0.98).toFixed(2)),
+          reduction_percentage: 2.0
+        } : null
+      }
+    };
+  },
+  
+  // Record a trade
+  recordTrade: (data) => {
+    const { stock_code, stock_name, price, quantity, trade_type, mode } = data;
+    
+    // Find if there's a matching pending trade to complete
+    const pendingTradeIndex = MOCK_TRADES.findIndex(t => 
+      t.stock_code === stock_code && 
+      t.status === 'pending' && 
+      ((trade_type === 'buy' && t.buy_price === 0) || 
+       (trade_type === 'sell' && t.sell_price === 0))
+    );
+    
+    let response;
+    
+    if (pendingTradeIndex >= 0) {
+      // Complete the existing trade
+      const trade = MOCK_TRADES[pendingTradeIndex];
+      
+      if (trade_type === 'buy') {
+        trade.buy_price = price;
+      } else {
+        trade.sell_price = price;
+      }
+      
+      // If both prices are set, calculate profit and mark as completed
+      if (trade.buy_price > 0 && trade.sell_price > 0) {
+        trade.profit = calculateProfit(trade.buy_price, trade.sell_price, trade.quantity);
+        trade.status = 'completed';
+      }
+      
+      response = {
+        code: 200,
+        message: 'Trade updated successfully',
+        data: {
+          trade_id: trade.id,
+          status: trade.status
+        }
+      };
+    } else {
+      // Create a new trade
+      const newTrade = {
+        id: generateTradeId(),
+        stock_code,
+        stock_name,
+        mode: mode || 'positive',
+        buy_price: trade_type === 'buy' ? price : 0,
+        sell_price: trade_type === 'sell' ? price : 0,
+        quantity,
+        profit: 0,
+        timestamp: new Date().toISOString(),
+        status: 'pending'
+      };
+      
+      MOCK_TRADES.push(newTrade);
+      
+      response = {
+        code: 200,
+        message: 'Trade recorded successfully',
+        data: {
+          trade_id: newTrade.id,
+          status: 'pending'
+        }
+      };
+    }
+    
+    return response;
+  },
+  
+  // Get trade history
+  getTradeHistory: (params) => {
+    const { days = 7, stock_code } = params;
+    
+    // Calculate the cutoff date
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    
+    // Filter trades by date and optionally by stock code
+    let filteredTrades = MOCK_TRADES.filter(trade => 
+      new Date(trade.timestamp) >= cutoffDate
+    );
+    
+    if (stock_code) {
+      filteredTrades = filteredTrades.filter(trade => trade.stock_code === stock_code);
+    }
+    
+    // Sort by timestamp (newest first)
+    filteredTrades.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    return {
+      code: 200,
+      message: 'success',
+      data: filteredTrades
+    };
+  }
+}; 
+ 

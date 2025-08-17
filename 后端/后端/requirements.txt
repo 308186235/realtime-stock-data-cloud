@@ -1,0 +1,55 @@
+# 智能交易系统 - 统一依赖包配置
+# 生成时间: 2025-07-02T20:58:21.794625
+
+# Web Framework
+fastapi0.104.1
+uvicorn0.24.0
+pydantic2.5.0
+
+# Database
+supabase2.3.0
+psycopg2-binary2.9.9
+sqlalchemy2.0.23
+
+# Http Client
+requests2.31.0
+httpx0.25.2
+aiohttp3.9.1
+
+# Data Processing
+pandas2.1.4
+numpy1.24.3
+redis5.0.1
+
+# Websocket
+websockets12.0
+
+# Utilities
+python-dotenv1.0.0
+schedule1.2.0
+
+# Development
+pytest7.4.3
+
+# 其他依赖
+APScheduler3.10.4
+aiofiles23.2.1
+aioredis2.0.1
+alembic1.13.1
+apscheduler3.10.4
+asyncio-mqtt0.16.1
+asyncpg0.29.0
+cryptography41.0.8
+gunicorn21.2.0
+passlib[bcrypt]1.7.4
+postgrest0.13.0
+prometheus-client0.19.0
+psutil5.9.6
+pytest-asyncio0.21.1
+python-cors4.3.1
+python-dateutil2.8.2
+python-jose[cryptography]3.3.0
+python-multipart0.0.6
+pytz2023.3
+structlog23.2.0
+uvicorn[standard]0.24.0

@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+"""
+Supabase生产环境配置脚本
+基于实际项目信息配置生产环境
+"""
+import os
+import json
+from datetime import datetime
+
+def configure_supabase_production():
+    """配置Supabase生产环境"""
+    print("🔧 配置Supabase生产环境...")
+    
+    # 实际项目信息
+    project_info = {
+        "project_id": "zzukfxwavknskqcepsjb",
+        "project_name": "ai-stock-trading-system",
+        "region": "ap-southeast-1",
+        "status": "ACTIVE_HEALTHY",
+        "database_host": "db.zzukfxwavknskqcepsjb.supabase.co",
+        "database_version": "17.4.1.048",
+        "supabase_url": "https://zzukfxwavknskqcepsjb.supabase.co",
+        "anon_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw",
+        "service_role_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTI5ODUwNiwiZXhwIjoyMDY2ODc0NTA2fQ.Ksy_A6qfaUn9qBethAw4o8Xpn0iSxluaBTCxbnd3u5g"
+    }
+    
+    # 生成生产环境配置
+    production_env = f"""# AI股票交易系统 - 生产环境配置
+# 配置时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+# Supabase项目: {project_info['project_name']} ({project_info['project_id']})
+
+# 数据库配置 (Supabase PostgreSQL)
+DATABASE_URL=postgresql://postgres:[YOUR_DB_PASSWORD]@{project_info['database_host']}:5432/postgres
+SUPABASE_URL={project_info['supabase_url']}
+SUPABASE_KEY={project_info['anon_key']}
+SUPABASE_SERVICE_KEY={project_info['service_role_key']}
+
+# API服务配置
+API_HOST=0.0.0.0
+API_PORT=8000
+JWT_SECRET_KEY=AI-Stock-Trading-System-Production-JWT-Key-{datetime.now().strftime('%Y%m%d')}
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# 交易配置
+TRADING_MODE=live
+MAX_POSITION_SIZE=50000
+STOP_LOSS_PERCENT=5
+TAKE_PROFIT_PERCENT=12
+CHAGUBANG_TOKEN=YOUR_STOCK_API_KEY
+
+# 日志和监控
+LOG_LEVEL=INFO
+LOG_DIR=./logs
+MONITORING_ENABLED=true
+ALERT_EMAIL=admin@yourdomain.com
+
+# Cloudflare配置
+CLOUDFLARE_API_TOKEN=YOUR_CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ZONE_ID=YOUR_ZONE_ID
+
+# 钉钉告警
+DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+
+# 安全配置
+CORS_ORIGINS=["https://yourdomain.com","https://www.yourdomain.com"]
+ALLOWED_HOSTS=["yourdomain.com","www.yourdomain.com"]
+"""
+    
+    # 保存生产环境配置
+    with open('.env.production', 'w', encoding='utf-8') as f:
+        f.write(production_env)
+    
+    print("✅ 生产环境配置已生成: .env.production")
+    
+    # 生成Supabase数据库初始化脚本
+    init_sql = """-- AI股票交易系统数据库初始化脚本
+-- 在Supabase SQL编辑器中执行
+
+-- 启用必要的扩展
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- 创建用户表
+CREATE TABLE IF NOT EXISTS users (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    is_verified BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 创建股票数据表
+CREATE TABLE IF NOT EXISTS stock_data (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    name VARCHAR(100),
+    price DECIMAL(10,2),
+    change_percent DECIMAL(5,2),
+    volume BIGINT,
+    market_cap BIGINT,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 创建交易记录表
+CREATE TABLE IF NOT EXISTS trades (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    symbol VARCHAR(20) NOT NULL,
+    trade_type VARCHAR(10) NOT NULL CHECK (trade_type IN ('buy', 'sell')),
+    quantity INTEGER NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    total_amount DECIMAL(12,2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'cancelled', 'failed')),
+    executed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 创建持仓表
+CREATE TABLE IF NOT EXISTS positions (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    symbol VARCHAR(20) NOT NULL,
+    quantity INTEGER NOT NULL,
+    avg_price DECIMAL(10,2) NOT NULL,
+    current_price DECIMAL(10,2),
+    unrealized_pnl DECIMAL(12,2),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, symbol)
+);
+
+-- 创建策略配置表
+CREATE TABLE IF NOT EXISTS strategies (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    config JSONB NOT NULL,
+    is_active BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 创建系统日志表
+CREATE TABLE IF NOT EXISTS system_logs (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    level VARCHAR(20) NOT NULL,
+    message TEXT NOT NULL,
+    module VARCHAR(100),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 创建索引
+CREATE INDEX IF NOT EXISTS idx_stock_data_symbol ON stock_data(symbol);
+CREATE INDEX IF NOT EXISTS idx_stock_data_timestamp ON stock_data(timestamp);
+CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id);
+CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+CREATE INDEX IF NOT EXISTS idx_trades_created_at ON trades(created_at);
+CREATE INDEX IF NOT EXISTS idx_positions_user_id ON positions(user_id);
+CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
+CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at);
+
+-- 创建更新时间触发器函数
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- 为需要的表添加更新时间触发器
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_positions_updated_at BEFORE UPDATE ON positions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_strategies_updated_at BEFORE UPDATE ON strategies
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 创建RLS策略(行级安全)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE strategies ENABLE ROW LEVEL SECURITY;
+
+-- 用户只能访问自己的数据
+CREATE POLICY "Users can view own profile" ON users
+    FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile" ON users
+    FOR UPDATE USING (auth.uid() = id);
+
+CREATE POLICY "Users can view own trades" ON trades
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own trades" ON trades
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view own positions" ON positions
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can manage own positions" ON positions
+    FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can manage own strategies" ON strategies
+    FOR ALL USING (auth.uid() = user_id);
+
+-- 股票数据表允许所有认证用户读取
+CREATE POLICY "Authenticated users can view stock data" ON stock_data
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+COMMENT ON TABLE users IS 'AI股票交易系统用户表';
+COMMENT ON TABLE stock_data IS '股票实时数据表';
+COMMENT ON TABLE trades IS '交易记录表';
+COMMENT ON TABLE positions IS '用户持仓表';
+COMMENT ON TABLE strategies IS '交易策略配置表';
+COMMENT ON TABLE system_logs IS '系统日志表';
+"""
+    
+    with open('supabase_init.sql', 'w', encoding='utf-8') as f:
+        f.write(init_sql)
+    
+    print("✅ Supabase数据库初始化脚本已生成: supabase_init.sql")
+    
+    # 生成配置说明文档
+    config_guide = f"""# Supabase生产环境配置指南
+
+## 项目信息
+- **项目名称**: {project_info['project_name']}
+- **项目ID**: {project_info['project_id']}
+- **区域**: {project_info['region']}
+- **状态**: {project_info['status']}
+- **数据库版本**: PostgreSQL {project_info['database_version']}
+
+## 配置步骤
+
+### 1. 数据库初始化
+1. 登录 [Supabase Dashboard](https://supabase.com/dashboard)
+2. 选择项目: {project_info['project_name']}
+3. 进入 SQL Editor
+4. 执行 `supabase_init.sql` 中的SQL脚本
+
+### 2. 环境变量配置
+1. 复制 `.env.production` 到生产服务器
+2. 修改以下配置项:
+   - `[YOUR_DB_PASSWORD]`: 替换为实际数据库密码
+   - `YOUR_STOCK_API_KEY`: 替换为实际股票API密钥
+   - `YOUR_CLOUDFLARE_API_TOKEN`: 替换为Cloudflare API令牌
+   - `YOUR_ZONE_ID`: 替换为Cloudflare Zone ID
+   - `YOUR_TOKEN`: 替换为钉钉机器人Token
+   - `yourdomain.com`: 替换为实际域名
+
+### 3. 数据库连接测试
+```python
+import os
+from supabase import create_client, Client
+
+url = "{project_info['supabase_url']}"
+key = "{project_info['anon_key'][:20]}..."
+supabase: Client = create_client(url, key)
+
+# 测试连接
+result = supabase.table('users').select("*").limit(1).execute()
+print("连接成功!" if result.data is not None else "连接失败!")
+```
+
+### 4. 安全配置
+- ✅ 已启用行级安全(RLS)
+- ✅ 已配置用户数据隔离策略
+- ✅ 已设置JWT密钥
+- ⚠️ 请在Supabase Dashboard中配置邮箱验证
+- ⚠️ 请配置OAuth提供商(可选)
+
+### 5. 性能优化
+- 已创建必要的数据库索引
+- 建议配置连接池
+- 建议启用数据库缓存
+
+## API密钥说明
+- **Anon Key**: 用于客户端应用,有RLS限制
+- **Service Role Key**: 用于服务端,绕过RLS,请妥善保管
+
+## 监控和维护
+- 定期检查数据库性能
+- 监控API使用量
+- 定期备份重要数据
+- 关注Supabase服务状态
+
+## 故障排除
+1. **连接失败**: 检查网络和密钥配置
+2. **权限错误**: 检查RLS策略配置
+3. **性能问题**: 检查索引和查询优化
+4. **数据同步**: 检查实时订阅配置
+
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+    
+    with open('SUPABASE_PRODUCTION_GUIDE.md', 'w', encoding='utf-8') as f:
+        f.write(config_guide)
+    
+    print("✅ Supabase配置指南已生成: SUPABASE_PRODUCTION_GUIDE.md")
+    
+    # 生成项目信息摘要
+    summary = {
+        "project_info": project_info,
+        "configuration_files": [
+            ".env.production",
+            "supabase_init.sql", 
+            "SUPABASE_PRODUCTION_GUIDE.md"
+        ],
+        "next_steps": [
+            "在Supabase Dashboard中执行数据库初始化脚本",
+            "修改.env.production中的占位符配置",
+            "测试数据库连接",
+            "配置域名和SSL证书",
+            "部署到生产环境"
+        ],
+        "generated_at": datetime.now().isoformat()
+    }
+    
+    with open('supabase_config_summary.json', 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+    
+    print("✅ 配置摘要已生成: supabase_config_summary.json")
+    
+    return True
+
+if __name__ == "__main__":
+    configure_supabase_production()
+    print("\n🎉 Supabase生产环境配置完成!")
+    print("\n📋 下一步操作:")
+    print("1. 查看 SUPABASE_PRODUCTION_GUIDE.md 了解详细配置步骤")
+    print("2. 在Supabase Dashboard中执行 supabase_init.sql")
+    print("3. 修改 .env.production 中的配置项")
+    print("4. 测试数据库连接")
+    print("5. 部署到生产环境")

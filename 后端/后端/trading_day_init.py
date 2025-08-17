@@ -1,0 +1,137 @@
+"""
+交易日初始化模块 - Agent每日开盘前先导出持仓获取账户信息
+""""""
+
+import pandas as pd
+import glob
+import os
+from datetime import datetime
+from trader_api_real import api
+import json
+
+class TradingDayInitializer:
+    def __init__(self):
+        self.holdings = []
+        self.available_cash = 0.0
+        self.total_market_value = 0.0
+        
+    def export_and_get_account_info(self):
+        """导出持仓数据并获取账户信息"""
+        print(" 交易日初始化 - 导出持仓数据...")
+        
+        # 导出持仓数据
+        result = api.export_positions()
+        if not result:
+            print(" 持仓数据导出失败")
+            return False
+            
+        # 读取最新的持仓文件
+        holdings_files = glob.glob("持仓数据_*.csv")
+        if not holdings_files:
+            print(" 未找到持仓数据文件")
+            return False
+            
+        latest_file = max(holdings_files, key=os.path.getctime)
+        print(f" 读取文件: {latest_file}")
+        
+        # 解析持仓数据
+        try:
+            df = pd.read_csv(latest_file, encoding='gbk')
+            self.parse_holdings_data(df)
+            return True
+        except Exception as e:
+            print(f" 解析持仓数据失败: {e}")
+            return False
+    
+    def parse_holdings_data(self, df):
+        """解析持仓数据"""
+        self.holdings = []
+        self.available_cash = 0.0
+        self.total_market_value = 0.0
+        
+        # 解析每一行持仓数据
+        for index, row in df.iterrows():
+            try:
+                stock_info = {
+                    'code': str(row.get('证券代码', '')).strip(),
+                    'name': str(row.get('证券名称', '')).strip(),
+                    'quantity': float(row.get('股票余额', 0)),
+                    'available_quantity': float(row.get('可用余额', 0)),
+                    'current_price': float(row.get('最新价', 0)),
+                    'market_value': float(row.get('最新市值', 0)),
+                    'profit_loss': float(row.get('浮动盈亏', 0))
+                }
+                
+                if stock_info['code'] and stock_info['quantity'] > 0:
+                    self.holdings.append(stock_info)
+                    self.total_market_value += stock_info['market_value']
+                    
+            except Exception as e:
+                continue
+        
+        # 提取可用资金
+        try:
+            for index, row in df.iterrows():
+                for col in df.columns:
+                    cell_value = str(row[col]).strip()
+                    if '可用资金' in cell_value or '资金余额' in cell_value:
+                        for next_col in df.columns:
+                            try:
+                                amount = float(row[next_col])
+                                if amount > 0:
+                                    self.available_cash = amount
+                                    break
+                            except:
+                                continue
+                        break
+        except:
+            pass
+        
+        self.display_account_summary()
+    
+    def display_account_summary(self):
+        """显示账户摘要"""
+        print(f"\n 账户摘要:")
+        print(f"   可用资金: {self.available_cash:,.2f}")
+        print(f"   持仓市值: {self.total_market_value:,.2f}")
+        print(f"   持仓股票: {len(self.holdings)} 只")
+        
+        if self.holdings:
+            print(f"\n 持仓明细:")
+            for i, stock in enumerate(self.holdings, 1):
+                print(f"   {i}. {stock['code']} {stock['name']} - {stock['quantity']:.0f}股")
+    
+    def get_account_data_for_agent(self):
+        """为Agent提供结构化的账户数据"""
+        return {
+            'available_cash': self.available_cash,
+            'total_market_value': self.total_market_value,
+            'holdings_count': len(self.holdings),
+            'holdings': self.holdings,
+            'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+    
+    def initialize_trading_day(self):
+        """完整的交易日初始化流程"""
+        print(" 开始交易日初始化...")
+        
+        if not self.export_and_get_account_info():
+            return False
+        
+        print("\n 交易日初始化完成!")
+        print(" Agent现在可以基于账户信息进行交易决策")
+        return True
+
+# 创建全局初始化器实例
+initializer = TradingDayInitializer()
+
+def quick_init():
+    """快速初始化接口"""
+    return initializer.initialize_trading_day()
+
+def get_account_info():
+    """获取账户信息接口"""
+    return initializer.get_account_data_for_agent()
+
+if __name__ == "__main__":
+    quick_init()

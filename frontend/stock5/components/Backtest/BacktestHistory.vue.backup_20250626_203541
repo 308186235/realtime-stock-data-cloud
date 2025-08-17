@@ -1,0 +1,217 @@
+<template>
+  <div class="history-container">
+    <h2>回测历史</h2>
+    
+    <div v-if="isLoading" class="loading">
+      <div class="spinner"></div>
+      <p>加载中...</p>
+    </div>
+    
+    <div v-else-if="error" class="error-message">
+      {{ error }}
+    </div>
+    
+    <div v-else-if="history.length === 0" class="no-records">
+      暂无回测记录
+    </div>
+    
+    <div v-else class="history-list">
+      <table>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>股票</th>
+            <th>日期范围</th>
+            <th>收益率</th>
+            <th>创建时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in history" :key="item.id">
+            <td>{{ item.name }}</td>
+            <td>{{ formatSymbols(item.symbols) }}</td>
+            <td>{{ item.start_date }} 至 {{ item.end_date }}</td>
+            <td :class="getReturnClass(item.total_return)">
+              {{ formatPercent(item.total_return) }}
+            </td>
+            <td>{{ formatDateTime(item.created_at) }}</td>
+            <td>
+              <button @click="viewDetails(item.id)" class="view-btn">查看</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</template>
+
+<script>
+import { backtestService } from '../../services/backtest-service.js';
+
+export default {
+  data() {
+    return {
+      history: [],
+      isLoading: false,
+      error: null
+    };
+  },
+  created() {
+    this.loadHistory();
+  },
+  methods: {
+    async loadHistory() {
+      this.isLoading = true;
+      this.error = null;
+      
+      try {
+        this.history = await backtestService.getBacktestHistory();
+      } catch (error) {
+        console.error('获取回测历史失败:', error);
+        this.error = `加载失败: ${error.message}`;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    
+    formatSymbols(symbols) {
+      if (!symbols || !Array.isArray(symbols)) return '-';
+      
+      if (symbols.length <= 3) {
+        return symbols.join(', ');
+      } else {
+        return `${symbols.slice(0, 3).join(', ')} 等${symbols.length}个`;
+      }
+    },
+    
+    formatPercent(value) {
+      return (value * 100).toFixed(2) + '%';
+    },
+    
+    formatDateTime(dateTimeStr) {
+      if (!dateTimeStr) return '-';
+      
+      try {
+        const date = new Date(dateTimeStr);
+        return date.toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (e) {
+        return dateTimeStr;
+      }
+    },
+    
+    getReturnClass(value) {
+      return value > 0 ? 'positive' : value < 0 ? 'negative' : '';
+    },
+    
+    viewDetails(backtest_id) {
+      this.$emit('view-details', backtest_id);
+    }
+  }
+};
+</script>
+
+<style scoped>
+.history-container {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.spinner {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border-left-color: #2196F3;
+  animation: spin 1s ease infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  background: #ffebee;
+  color: #c62828;
+  padding: 15px;
+  border-radius: 4px;
+  border-left: 4px solid #c62828;
+}
+
+.no-records {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 150px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  color: #666;
+}
+
+.history-list {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+th, td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #333;
+}
+
+.positive {
+  color: #4caf50;
+}
+
+.negative {
+  color: #f44336;
+}
+
+.view-btn {
+  background: #2196F3;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.view-btn:hover {
+  background: #1976D2;
+}
+</style> 

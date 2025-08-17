@@ -1,0 +1,455 @@
+/**
+ * Dynamic Stop Strategy
+ * Implements trading strategies with dynamic stop loss/profit calculations
+ */
+
+// Strategy types
+export const STRATEGY_TYPES = {
+  FIXED: 'fixed',            // Fixed percentage stop
+  TRAILING: 'trailing',      // Trailing stop that follows price
+  ATR: 'atr',                // Average True Range based stop
+  VOLATILITY: 'volatility',  // Volatility-based dynamic stop
+  SUPPORT_RESISTANCE: 'support_resistance', // Support/resistance levels
+  MARKET_CONTEXT: 'market_context' // Considers overall market conditions
+};
+
+// Default settings for each strategy
+const DEFAULT_SETTINGS = {
+  [STRATEGY_TYPES.FIXED]: {
+    stopLossPercent: 2,      // Stop loss percentage
+    takeProfitPercent: 5     // Take profit percentage
+  },
+  [STRATEGY_TYPES.TRAILING]: {
+    initialStopPercent: 2,   // Initial stop percentage
+    trailDistance: 1.5,      // How far the stop trails (percentage)
+    activationPercent: 1     // Profit percentage before trailing activates
+  },
+  [STRATEGY_TYPES.ATR]: {
+    atrPeriod: 14,           // Period for ATR calculation
+    atrMultiplier: 2.5,      // Multiplier for ATR value
+    minStopDistance: 1       // Minimum stop distance percentage
+  },
+  [STRATEGY_TYPES.VOLATILITY]: {
+    lookbackPeriod: 20,      // Lookback period for volatility calculation
+    volatilityMultiplier: 2, // Multiplier for volatility
+    minStopDistance: 1.5     // Minimum stop distance percentage
+  },
+  [STRATEGY_TYPES.SUPPORT_RESISTANCE]: {
+    lookbackPeriod: 30,      // Period to identify support/resistance levels
+    breakoutThreshold: 1,    // Threshold percentage for breakout confirmation
+    levelBuffer: 0.5         // Buffer percentage around levels
+  },
+  [STRATEGY_TYPES.MARKET_CONTEXT]: {
+    indexCorrelation: true,  // Consider correlation with market index
+    sectorInfluence: true,   // Consider sector performance
+    marketVolatilityFactor: 0.5 // Weight of market volatility
+  }
+};
+
+// Strategy implementation
+export class DynamicStopStrategy {
+  /**
+   * Create a new strategy instance
+   * @param {String} type - Strategy type
+   * @param {Object} settings - Strategy settings (will be merged with defaults)
+   */
+  constructor(type, settings = {}) {
+    this.type = STRATEGY_TYPES[type] ? type : STRATEGY_TYPES.FIXED;
+    this.settings = {
+      ...DEFAULT_SETTINGS[this.type],
+      ...settings
+    };
+    this.initialized = false;
+    this.entryPrice = null;
+    this.highestPrice = null;
+    this.lowestPrice = null;
+    this.currentStop = null;
+    this.currentTarget = null;
+    this.isLong = true; // Default to long position
+  }
+  
+  /**
+   * Initialize strategy with entry price and position direction
+   * @param {Number} entryPrice - Entry price for the position
+   * @param {Boolean} isLong - Whether position is long (true) or short (false)
+   * @param {Object} marketData - Additional market data for context
+   */
+  initialize(entryPrice, isLong = true, marketData = {}) {
+    this.entryPrice = entryPrice;
+    this.isLong = isLong;
+    this.highestPrice = entryPrice;
+    this.lowestPrice = entryPrice;
+    this.initialized = true;
+    
+    // Calculate initial stops based on strategy
+    this.calculateStopLevels(marketData);
+    
+    return {
+      entryPrice,
+      stopLevel: this.currentStop,
+      targetLevel: this.currentTarget
+    };
+  }
+  
+  /**
+   * Update strategy with new price and market data
+   * @param {Number} currentPrice - Current price
+   * @param {Object} marketData - Additional market data
+   * @returns {Object} Updated strategy state
+   */
+  update(currentPrice, marketData = {}) {
+    if (!this.initialized) {
+      throw new Error('Strategy not initialized');
+    }
+    
+    // Update price extremes
+    if (currentPrice > this.highestPrice) {
+      this.highestPrice = currentPrice;
+    }
+    
+    if (currentPrice < this.lowestPrice) {
+      this.lowestPrice = currentPrice;
+    }
+    
+    // Recalculate stop levels
+    this.calculateStopLevels(marketData);
+    
+    return {
+      entryPrice: this.entryPrice,
+      highestPrice: this.highestPrice,
+      lowestPrice: this.lowestPrice,
+      currentPrice,
+      stopLevel: this.currentStop,
+      targetLevel: this.currentTarget,
+      unrealizedProfit: this.calculateUnrealizedProfit(currentPrice),
+      hitStopLevel: this.hasHitStopLevel(currentPrice),
+      hitTargetLevel: this.hasHitTargetLevel(currentPrice)
+    };
+  }
+  
+  /**
+   * Calculate stop and target levels based on strategy type
+   * @param {Object} marketData - Market data for context
+   */
+  calculateStopLevels(marketData = {}) {
+    switch (this.type) {
+      case STRATEGY_TYPES.FIXED:
+        this.calculateFixedStops();
+        break;
+        
+      case STRATEGY_TYPES.TRAILING:
+        this.calculateTrailingStops();
+        break;
+        
+      case STRATEGY_TYPES.ATR:
+        this.calculateAtrStops(marketData);
+        break;
+        
+      case STRATEGY_TYPES.VOLATILITY:
+        this.calculateVolatilityStops(marketData);
+        break;
+        
+      case STRATEGY_TYPES.SUPPORT_RESISTANCE:
+        this.calculateSupportResistanceStops(marketData);
+        break;
+        
+      case STRATEGY_TYPES.MARKET_CONTEXT:
+        this.calculateMarketContextStops(marketData);
+        break;
+        
+      default:
+        this.calculateFixedStops();
+    }
+  }
+  
+  /**
+   * Calculate fixed percentage stops
+   */
+  calculateFixedStops() {
+    const { stopLossPercent, takeProfitPercent } = this.settings;
+    
+    if (this.isLong) {
+      // Long position
+      this.currentStop = this.entryPrice * (1 - stopLossPercent / 100);
+      this.currentTarget = this.entryPrice * (1 + takeProfitPercent / 100);
+    } else {
+      // Short position
+      this.currentStop = this.entryPrice * (1 + stopLossPercent / 100);
+      this.currentTarget = this.entryPrice * (1 - takeProfitPercent / 100);
+    }
+  }
+  
+  /**
+   * Calculate trailing stops
+   */
+  calculateTrailingStops() {
+    const { initialStopPercent, trailDistance, activationPercent } = this.settings;
+    
+    if (this.isLong) {
+      // Long position
+      
+      // Initial stop calculation if not set
+      if (!this.currentStop) {
+        this.currentStop = this.entryPrice * (1 - initialStopPercent / 100);
+      }
+      
+      // Initial target calculation if not set
+      if (!this.currentTarget) {
+        this.currentTarget = this.entryPrice * (1 + activationPercent / 100);
+      }
+      
+      // Check if price has moved enough to activate trailing
+      const percentMove = (this.highestPrice - this.entryPrice) / this.entryPrice * 100;
+      if (percentMove >= activationPercent) {
+        // Calculate new trailing stop
+        const trailingStop = this.highestPrice * (1 - trailDistance / 100);
+        
+        // Only move stop up, never down
+        if (trailingStop > this.currentStop) {
+          this.currentStop = trailingStop;
+        }
+      }
+    } else {
+      // Short position
+      
+      // Initial stop calculation if not set
+      if (!this.currentStop) {
+        this.currentStop = this.entryPrice * (1 + initialStopPercent / 100);
+      }
+      
+      // Initial target calculation if not set
+      if (!this.currentTarget) {
+        this.currentTarget = this.entryPrice * (1 - activationPercent / 100);
+      }
+      
+      // Check if price has moved enough to activate trailing
+      const percentMove = (this.entryPrice - this.lowestPrice) / this.entryPrice * 100;
+      if (percentMove >= activationPercent) {
+        // Calculate new trailing stop
+        const trailingStop = this.lowestPrice * (1 + trailDistance / 100);
+        
+        // Only move stop down, never up
+        if (trailingStop < this.currentStop) {
+          this.currentStop = trailingStop;
+        }
+      }
+    }
+  }
+  
+  /**
+   * Calculate ATR-based stops
+   * @param {Object} marketData - Market data with ATR value
+   */
+  calculateAtrStops(marketData) {
+    const { atrMultiplier, minStopDistance } = this.settings;
+    
+    // Use provided ATR or default to calculation based on min distance
+    const atr = marketData.atr || (this.entryPrice * minStopDistance / 100);
+    
+    if (this.isLong) {
+      // Long position
+      this.currentStop = this.entryPrice - (atr * atrMultiplier);
+      this.currentTarget = this.entryPrice + (atr * atrMultiplier * 1.5); // Risk:reward of 1:1.5
+    } else {
+      // Short position
+      this.currentStop = this.entryPrice + (atr * atrMultiplier);
+      this.currentTarget = this.entryPrice - (atr * atrMultiplier * 1.5); // Risk:reward of 1:1.5
+    }
+  }
+  
+  /**
+   * Calculate volatility-based stops
+   * @param {Object} marketData - Market data with volatility information
+   */
+  calculateVolatilityStops(marketData) {
+    const { volatilityMultiplier, minStopDistance } = this.settings;
+    
+    // Use provided volatility or default to minimum distance
+    const volatility = marketData.volatility || (minStopDistance / 100);
+    
+    // Calculate stop distance
+    const stopDistance = Math.max(
+      this.entryPrice * volatility * volatilityMultiplier,
+      this.entryPrice * minStopDistance / 100
+    );
+    
+    if (this.isLong) {
+      // Long position
+      this.currentStop = this.entryPrice - stopDistance;
+      this.currentTarget = this.entryPrice + (stopDistance * 1.5); // Risk:reward of 1:1.5
+    } else {
+      // Short position
+      this.currentStop = this.entryPrice + stopDistance;
+      this.currentTarget = this.entryPrice - (stopDistance * 1.5); // Risk:reward of 1:1.5
+    }
+  }
+  
+  /**
+   * Calculate stops based on support and resistance levels
+   * @param {Object} marketData - Market data with support/resistance levels
+   */
+  calculateSupportResistanceStops(marketData) {
+    const { levelBuffer } = this.settings;
+    
+    if (this.isLong) {
+      // Long position
+      if (marketData.supportLevels && marketData.supportLevels.length > 0) {
+        // Find closest support level below entry price
+        const supports = marketData.supportLevels.filter(level => level < this.entryPrice);
+        if (supports.length > 0) {
+          // Use highest support level as stop (with buffer)
+          const supportLevel = Math.max(...supports);
+          this.currentStop = supportLevel * (1 - levelBuffer / 100);
+        } else {
+          // Fallback to fixed percentage
+          this.calculateFixedStops();
+        }
+      } else {
+        // Fallback to fixed percentage
+        this.calculateFixedStops();
+      }
+      
+      if (marketData.resistanceLevels && marketData.resistanceLevels.length > 0) {
+        // Find closest resistance level above entry price
+        const resistances = marketData.resistanceLevels.filter(level => level > this.entryPrice);
+        if (resistances.length > 0) {
+          // Use lowest resistance level as target
+          this.currentTarget = Math.min(...resistances);
+        }
+      }
+    } else {
+      // Short position
+      if (marketData.resistanceLevels && marketData.resistanceLevels.length > 0) {
+        // Find closest resistance level above entry price
+        const resistances = marketData.resistanceLevels.filter(level => level > this.entryPrice);
+        if (resistances.length > 0) {
+          // Use lowest resistance level as stop (with buffer)
+          const resistanceLevel = Math.min(...resistances);
+          this.currentStop = resistanceLevel * (1 + levelBuffer / 100);
+        } else {
+          // Fallback to fixed percentage
+          this.calculateFixedStops();
+        }
+      } else {
+        // Fallback to fixed percentage
+        this.calculateFixedStops();
+      }
+      
+      if (marketData.supportLevels && marketData.supportLevels.length > 0) {
+        // Find closest support level below entry price
+        const supports = marketData.supportLevels.filter(level => level < this.entryPrice);
+        if (supports.length > 0) {
+          // Use highest support level as target
+          this.currentTarget = Math.max(...supports);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Calculate stops based on broader market context
+   * @param {Object} marketData - Market data with market context
+   */
+  calculateMarketContextStops(marketData) {
+    const { marketVolatilityFactor } = this.settings;
+    
+    // Start with regular volatility-based stops
+    this.calculateVolatilityStops(marketData);
+    
+    // Adjust based on market context
+    if (marketData.marketVolatility) {
+      // Wider stops in volatile markets
+      const marketAdjustment = 1 + (marketData.marketVolatility * marketVolatilityFactor);
+      
+      if (this.isLong) {
+        // Long position - widen stop
+        const stopDistance = this.entryPrice - this.currentStop;
+        this.currentStop = this.entryPrice - (stopDistance * marketAdjustment);
+        
+        // Adjust target proportionally
+        const targetDistance = this.currentTarget - this.entryPrice;
+        this.currentTarget = this.entryPrice + (targetDistance * marketAdjustment);
+      } else {
+        // Short position - widen stop
+        const stopDistance = this.currentStop - this.entryPrice;
+        this.currentStop = this.entryPrice + (stopDistance * marketAdjustment);
+        
+        // Adjust target proportionally
+        const targetDistance = this.entryPrice - this.currentTarget;
+        this.currentTarget = this.entryPrice - (targetDistance * marketAdjustment);
+      }
+    }
+  }
+  
+  /**
+   * Check if current price has hit stop level
+   * @param {Number} currentPrice - Current price
+   * @returns {Boolean} Whether stop level has been hit
+   */
+  hasHitStopLevel(currentPrice) {
+    if (this.isLong) {
+      return currentPrice <= this.currentStop;
+    } else {
+      return currentPrice >= this.currentStop;
+    }
+  }
+  
+  /**
+   * Check if current price has hit target level
+   * @param {Number} currentPrice - Current price
+   * @returns {Boolean} Whether target level has been hit
+   */
+  hasHitTargetLevel(currentPrice) {
+    if (this.isLong) {
+      return currentPrice >= this.currentTarget;
+    } else {
+      return currentPrice <= this.currentTarget;
+    }
+  }
+  
+  /**
+   * Calculate unrealized profit/loss as percentage
+   * @param {Number} currentPrice - Current price
+   * @returns {Number} Profit/loss percentage
+   */
+  calculateUnrealizedProfit(currentPrice) {
+    if (this.isLong) {
+      return (currentPrice - this.entryPrice) / this.entryPrice * 100;
+    } else {
+      return (this.entryPrice - currentPrice) / this.entryPrice * 100;
+    }
+  }
+  
+  /**
+   * Calculate risk:reward ratio
+   * @returns {Number} Risk:reward ratio
+   */
+  getRiskRewardRatio() {
+    const riskDistance = this.isLong
+      ? this.entryPrice - this.currentStop
+      : this.currentStop - this.entryPrice;
+    
+    const rewardDistance = this.isLong
+      ? this.currentTarget - this.entryPrice
+      : this.entryPrice - this.currentTarget;
+    
+    return rewardDistance / riskDistance;
+  }
+}
+
+/**
+ * Create a new strategy instance
+ * @param {String} type - Strategy type
+ * @param {Object} settings - Strategy settings
+ * @returns {DynamicStopStrategy} New strategy instance
+ */
+export const createStrategy = (type, settings = {}) => {
+  return new DynamicStopStrategy(type, settings);
+};
+
+export default {
+  STRATEGY_TYPES,
+  DynamicStopStrategy,
+  createStrategy
+}; 
+ 

@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+优化的交易客户端
+专门用于云端Agent到本地交易的高性能连接
+"""
+
+import requests
+import time
+import json
+from datetime import datetime
+
+class OptimizedTradingClient:
+    def __init__(self, base_url="http://localhost:8888"):
+        self.base_url = base_url
+        self.session = requests.Session()
+        
+        # 优化连接设置
+        self.session.headers.update({
+            'Connection': 'keep-alive',
+            'User-Agent': 'OptimizedTradingClient/1.0',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        })
+        
+        # 预热连接
+        self._warmup_connection()
+    
+    def _warmup_connection(self):
+        """预热连接"""
+        try:
+            self.session.get(f"{self.base_url}/health", timeout=5)
+            print("✅ 连接预热完成")
+        except:
+            print("⚠️ 连接预热失败")
+    
+    def fast_trade(self, action, stock_code, quantity, price=None):
+        """快速交易"""
+        trade_data = {
+            'action': action,
+            'stock_code': stock_code,
+            'quantity': quantity,
+            'fast_mode': True,
+            'skip_validation': True
+        }
+        
+        if price:
+            trade_data['price'] = price
+        
+        try:
+            start_time = time.perf_counter()
+            response = self.session.post(
+                f"{self.base_url}/trade",
+                json=trade_data,
+                timeout=5  # 短超时强制快速响应
+            )
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            return {
+                'success': response.status_code == 200,
+                'latency': round(latency),
+                'response': response.json() if response.status_code == 200 else None,
+                'status_code': response.status_code
+            }
+            
+        except requests.exceptions.Timeout:
+            return {
+                'success': False,
+                'latency': 5000,
+                'error': 'timeout',
+                'message': '交易超时，可能仍在处理中'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def batch_trade(self, trades):
+        """批量交易"""
+        try:
+            start_time = time.perf_counter()
+            response = self.session.post(
+                f"{self.base_url}/trade/batch",
+                json={'trades': trades, 'fast_mode': True},
+                timeout=10
+            )
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            return {
+                'success': response.status_code == 200,
+                'latency': round(latency),
+                'response': response.json() if response.status_code == 200 else None
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def validate_trade(self, action, stock_code, quantity):
+        """快速验证交易（不执行）"""
+        try:
+            start_time = time.perf_counter()
+            response = self.session.post(
+                f"{self.base_url}/trade/validate",
+                json={
+                    'action': action,
+                    'stock_code': stock_code,
+                    'quantity': quantity
+                },
+                timeout=2  # 极短超时
+            )
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            return {
+                'valid': response.status_code == 200,
+                'latency': round(latency),
+                'response': response.json() if response.status_code == 200 else None
+            }
+        except Exception as e:
+            return {'valid': False, 'error': str(e)}
+
+# 使用示例
+if __name__ == "__main__":
+    client = OptimizedTradingClient()
+    
+    # 快速交易测试
+    result = client.fast_trade('buy', '000001', 100, 10.50)
+    print(f"交易结果: {result}")
+    
+    # 验证测试
+    validation = client.validate_trade('buy', '000001', 100)
+    print(f"验证结果: {validation}")

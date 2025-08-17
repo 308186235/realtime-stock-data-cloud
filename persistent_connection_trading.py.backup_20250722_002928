@@ -1,0 +1,470 @@
+#!/usr/bin/env python3
+"""
+持久连接交易解决方案
+保持与交易软件的长连接，避免每次重新建立连接的开销
+"""
+
+import asyncio
+import websockets
+import requests
+import json
+import time
+from datetime import datetime
+import threading
+import queue
+import logging
+
+# 设置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class PersistentConnectionTrading:
+    def __init__(self):
+        self.config = {
+            'local_trading': 'http://localhost:8888',
+            'websocket_url': 'ws://localhost:8888/ws',
+            'ngrok_http': 'https://2346443b1406.ngrok-free.app',
+            'ngrok_ws': 'wss://2346443b1406.ngrok-free.app/ws'
+        }
+        
+        # 连接状态
+        self.http_session = None
+        self.websocket_connection = None
+        self.is_connected = False
+        self.connection_pool = []
+        
+        # 交易队列和结果
+        self.trade_queue = asyncio.Queue()
+        self.trade_results = {}
+        self.pending_trades = {}
+        
+        # 启动连接管理
+        self.setup_persistent_connections()
+    
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    def setup_persistent_connections(self):
+        """设置持久连接"""
+        self.log("🔗 设置持久连接...")
+        
+        # 创建持久HTTP会话
+        self.http_session = requests.Session()
+        self.http_session.headers.update({
+            'Connection': 'keep-alive',
+            'User-Agent': 'PersistentTradingClient/1.0',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        })
+        
+        # 设置连接池参数
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10,  # 连接池大小
+            pool_maxsize=20,      # 最大连接数
+            max_retries=3,        # 重试次数
+            pool_block=False      # 非阻塞
+        )
+        
+        self.http_session.mount('http://', adapter)
+        self.http_session.mount('https://', adapter)
+        
+        # 预热连接
+        self.warmup_connections()
+    
+    def warmup_connections(self):
+        """预热连接"""
+        self.log("🔥 预热连接...")
+        
+        try:
+            # 预热本地连接
+            start_time = time.perf_counter()
+            response = self.http_session.get(f"{self.config['local_trading']}/health", timeout=5)
+            warmup_latency = (time.perf_counter() - start_time) * 1000
+            
+            if response.status_code == 200:
+                self.log(f"✅ 本地连接预热成功: {round(warmup_latency, 2)}ms", "SUCCESS")
+                self.is_connected = True
+            else:
+                self.log(f"⚠️ 本地连接预热异常: 状态码{response.status_code}", "WARNING")
+                
+        except Exception as e:
+            self.log(f"❌ 连接预热失败: {e}", "ERROR")
+    
+    async def establish_websocket_connection(self):
+        """建立WebSocket持久连接"""
+        self.log("🌐 建立WebSocket持久连接...")
+        
+        max_retries = 5
+        retry_count = 0
+        
+        while retry_count < max_retries and not self.websocket_connection:
+            try:
+                # 尝试连接本地WebSocket
+                self.websocket_connection = await websockets.connect(
+                    self.config['websocket_url'],
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=5
+                )
+                
+                self.log("✅ WebSocket连接建立成功", "SUCCESS")
+                
+                # 发送连接确认
+                await self.websocket_connection.send(json.dumps({
+                    "type": "connect",
+                    "client": "persistent_trading_client",
+                    "timestamp": datetime.now().isoformat()
+                }))
+                
+                # 启动消息监听
+                asyncio.create_task(self.websocket_message_handler())
+                break
+                
+            except Exception as e:
+                retry_count += 1
+                self.log(f"❌ WebSocket连接失败 (第{retry_count}次): {e}", "ERROR")
+                
+                if retry_count < max_retries:
+                    await asyncio.sleep(2)
+                else:
+                    self.log("⚠️ WebSocket连接失败，将使用HTTP模式", "WARNING")
+    
+    async def websocket_message_handler(self):
+        """WebSocket消息处理器"""
+        try:
+            async for message in self.websocket_connection:
+                try:
+                    data = json.loads(message)
+                    await self.handle_websocket_message(data)
+                except json.JSONDecodeError:
+                    self.log(f"⚠️ 收到非JSON消息: {message}", "WARNING")
+                except Exception as e:
+                    self.log(f"❌ 处理WebSocket消息失败: {e}", "ERROR")
+                    
+        except websockets.exceptions.ConnectionClosed:
+            self.log("⚠️ WebSocket连接已关闭", "WARNING")
+            self.websocket_connection = None
+        except Exception as e:
+            self.log(f"❌ WebSocket消息处理异常: {e}", "ERROR")
+            self.websocket_connection = None
+    
+    async def handle_websocket_message(self, data):
+        """处理WebSocket消息"""
+        msg_type = data.get('type', '')
+        
+        if msg_type == 'trade_result':
+            # 处理交易结果
+            trade_id = data.get('trade_id')
+            if trade_id in self.pending_trades:
+                self.trade_results[trade_id] = data
+                self.log(f"📥 收到交易结果: {trade_id}", "SUCCESS")
+        
+        elif msg_type == 'ping':
+            # 响应心跳
+            await self.websocket_connection.send(json.dumps({
+                "type": "pong",
+                "timestamp": datetime.now().isoformat()
+            }))
+        
+        elif msg_type == 'status':
+            self.log(f"📊 状态更新: {data.get('message', '')}", "INFO")
+    
+    def persistent_http_trade(self, action, stock_code, quantity, price=None):
+        """使用持久HTTP连接进行交易"""
+        trade_id = f"http_trade_{int(time.time() * 1000)}"
+        
+        trade_data = {
+            'action': action,
+            'stock_code': stock_code,
+            'quantity': quantity,
+            'price': price,
+            'trade_id': trade_id,
+            'persistent': True,  # 标记为持久连接交易
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        try:
+            start_time = time.perf_counter()
+            
+            # 使用持久会话发送请求
+            response = self.http_session.post(
+                f"{self.config['local_trading']}/trade",
+                json=trade_data,
+                timeout=30,  # 给足够时间处理
+                stream=False  # 不使用流式传输
+            )
+            
+            latency = (time.perf_counter() - start_time) * 1000
+            
+            result = {
+                'trade_id': trade_id,
+                'success': response.status_code == 200,
+                'latency': round(latency, 2),
+                'status_code': response.status_code,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            if response.status_code == 200:
+                try:
+                    result['response'] = response.json()
+                except:
+                    result['response'] = response.text[:200]
+                
+                self.log(f"✅ 持久连接交易成功: {trade_id} ({round(latency, 2)}ms)", "SUCCESS")
+            else:
+                result['error'] = f"HTTP {response.status_code}"
+                self.log(f"⚠️ 持久连接交易异常: {trade_id} (状态码: {response.status_code})", "WARNING")
+            
+            return result
+            
+        except requests.exceptions.Timeout:
+            self.log(f"⏰ 持久连接交易超时: {trade_id}", "WARNING")
+            return {
+                'trade_id': trade_id,
+                'success': False,
+                'error': 'timeout',
+                'latency': 30000
+            }
+        except Exception as e:
+            self.log(f"❌ 持久连接交易失败: {trade_id} - {e}", "ERROR")
+            return {
+                'trade_id': trade_id,
+                'success': False,
+                'error': str(e),
+                'latency': 9999
+            }
+    
+    async def websocket_trade(self, action, stock_code, quantity, price=None):
+        """使用WebSocket持久连接进行交易"""
+        if not self.websocket_connection:
+            await self.establish_websocket_connection()
+        
+        if not self.websocket_connection:
+            self.log("❌ WebSocket连接不可用，回退到HTTP", "ERROR")
+            return self.persistent_http_trade(action, stock_code, quantity, price)
+        
+        trade_id = f"ws_trade_{int(time.time() * 1000)}"
+        
+        trade_message = {
+            'type': 'trade',
+            'trade_id': trade_id,
+            'data': {
+                'action': action,
+                'stock_code': stock_code,
+                'quantity': quantity,
+                'price': price
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        try:
+            start_time = time.perf_counter()
+            
+            # 记录待处理交易
+            self.pending_trades[trade_id] = trade_message
+            
+            # 发送交易请求
+            await self.websocket_connection.send(json.dumps(trade_message))
+            
+            # 等待结果（最多30秒）
+            timeout = 30
+            elapsed = 0
+            
+            while elapsed < timeout:
+                if trade_id in self.trade_results:
+                    latency = (time.perf_counter() - start_time) * 1000
+                    result = self.trade_results[trade_id]
+                    result['latency'] = round(latency, 2)
+                    
+                    # 清理
+                    del self.pending_trades[trade_id]
+                    del self.trade_results[trade_id]
+                    
+                    self.log(f"✅ WebSocket交易完成: {trade_id} ({round(latency, 2)}ms)", "SUCCESS")
+                    return result
+                
+                await asyncio.sleep(0.1)
+                elapsed += 0.1
+            
+            # 超时处理
+            self.log(f"⏰ WebSocket交易超时: {trade_id}", "WARNING")
+            if trade_id in self.pending_trades:
+                del self.pending_trades[trade_id]
+            
+            return {
+                'trade_id': trade_id,
+                'success': False,
+                'error': 'timeout',
+                'latency': 30000
+            }
+            
+        except Exception as e:
+            self.log(f"❌ WebSocket交易失败: {trade_id} - {e}", "ERROR")
+            if trade_id in self.pending_trades:
+                del self.pending_trades[trade_id]
+            
+            return {
+                'trade_id': trade_id,
+                'success': False,
+                'error': str(e),
+                'latency': 9999
+            }
+    
+    def test_persistent_performance(self):
+        """测试持久连接性能"""
+        self.log("⚡ 测试持久连接性能...")
+        
+        # 测试多次连续交易
+        test_trades = [
+            {'action': 'buy', 'stock_code': '000001', 'quantity': 100, 'price': 10.50},
+            {'action': 'sell', 'stock_code': '000002', 'quantity': 200, 'price': 15.80},
+            {'action': 'buy', 'stock_code': '000003', 'quantity': 150, 'price': 8.90},
+            {'action': 'sell', 'stock_code': '000001', 'quantity': 50, 'price': 10.60},
+            {'action': 'buy', 'stock_code': '000004', 'quantity': 300, 'price': 12.30}
+        ]
+        
+        results = []
+        total_start_time = time.perf_counter()
+        
+        for i, trade in enumerate(test_trades, 1):
+            self.log(f"🧪 执行第{i}次交易: {trade['action'].upper()} {trade['stock_code']}")
+            
+            result = self.persistent_http_trade(
+                trade['action'],
+                trade['stock_code'],
+                trade['quantity'],
+                trade['price']
+            )
+            
+            results.append(result)
+            
+            # 短暂间隔
+            time.sleep(0.1)
+        
+        total_time = (time.perf_counter() - total_start_time) * 1000
+        
+        # 分析结果
+        successful_trades = [r for r in results if r.get('success', False)]
+        latencies = [r['latency'] for r in successful_trades]
+        
+        if latencies:
+            avg_latency = sum(latencies) / len(latencies)
+            min_latency = min(latencies)
+            max_latency = max(latencies)
+            
+            self.log("📊 持久连接性能测试结果:", "SUCCESS")
+            self.log(f"   总交易数: {len(test_trades)}")
+            self.log(f"   成功交易: {len(successful_trades)}")
+            self.log(f"   成功率: {round(len(successful_trades)/len(test_trades)*100, 1)}%")
+            self.log(f"   平均延迟: {round(avg_latency, 2)}ms")
+            self.log(f"   最小延迟: {round(min_latency, 2)}ms")
+            self.log(f"   最大延迟: {round(max_latency, 2)}ms")
+            self.log(f"   总耗时: {round(total_time, 2)}ms")
+            self.log(f"   吞吐量: {round(len(successful_trades)/(total_time/1000), 2)} 交易/秒")
+            
+            return {
+                'avg_latency': round(avg_latency, 2),
+                'success_rate': round(len(successful_trades)/len(test_trades)*100, 1),
+                'throughput': round(len(successful_trades)/(total_time/1000), 2)
+            }
+        else:
+            self.log("❌ 所有交易都失败了", "ERROR")
+            return None
+    
+    def connection_health_check(self):
+        """连接健康检查"""
+        self.log("🔍 执行连接健康检查...")
+        
+        health_status = {
+            'http_session': False,
+            'websocket': False,
+            'overall': False
+        }
+        
+        # 检查HTTP会话
+        try:
+            response = self.http_session.get(f"{self.config['local_trading']}/health", timeout=5)
+            health_status['http_session'] = response.status_code == 200
+            self.log(f"✅ HTTP会话健康: {response.status_code}", "SUCCESS" if response.status_code == 200 else "WARNING")
+        except Exception as e:
+            self.log(f"❌ HTTP会话检查失败: {e}", "ERROR")
+        
+        # 检查WebSocket连接
+        if self.websocket_connection and not self.websocket_connection.closed:
+            health_status['websocket'] = True
+            self.log("✅ WebSocket连接健康", "SUCCESS")
+        else:
+            self.log("❌ WebSocket连接不健康", "ERROR")
+        
+        # 总体状态
+        health_status['overall'] = health_status['http_session'] or health_status['websocket']
+        
+        return health_status
+    
+    async def run_persistent_trading_test(self):
+        """运行持久连接交易测试"""
+        self.log("🚀 启动持久连接交易测试", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 1. 建立WebSocket连接
+        await self.establish_websocket_connection()
+        
+        # 2. 健康检查
+        health = self.connection_health_check()
+        print()
+        
+        # 3. 性能测试
+        performance = self.test_persistent_performance()
+        print()
+        
+        # 4. 显示总结
+        self.display_test_summary(health, performance)
+        
+        self.log("🎉 持久连接交易测试完成！", "SUCCESS")
+    
+    def display_test_summary(self, health, performance):
+        """显示测试总结"""
+        self.log("📊 持久连接交易测试总结", "SUCCESS")
+        self.log("=" * 50, "SUCCESS")
+        
+        # 连接状态
+        self.log("🔗 连接状态:", "SUCCESS")
+        self.log(f"   HTTP会话: {'✅ 健康' if health['http_session'] else '❌ 异常'}")
+        self.log(f"   WebSocket: {'✅ 健康' if health['websocket'] else '❌ 异常'}")
+        self.log(f"   总体状态: {'✅ 可用' if health['overall'] else '❌ 不可用'}")
+        
+        # 性能结果
+        if performance:
+            self.log("⚡ 性能表现:", "SUCCESS")
+            self.log(f"   平均延迟: {performance['avg_latency']}ms")
+            self.log(f"   成功率: {performance['success_rate']}%")
+            self.log(f"   吞吐量: {performance['throughput']} 交易/秒")
+            
+            # 与原始方案对比
+            if performance['avg_latency'] < 7643:
+                improvement = round(((7643 - performance['avg_latency']) / 7643) * 100, 1)
+                self.log(f"   性能提升: {improvement}%", "SUCCESS")
+                self.log(f"   延迟改善: 从7643ms → {performance['avg_latency']}ms", "SUCCESS")
+        
+        # 建议
+        self.log("💡 优化建议:", "INFO")
+        if health['http_session']:
+            self.log("   ✅ HTTP持久连接工作正常，建议作为主要方案", "SUCCESS")
+        if health['websocket']:
+            self.log("   ✅ WebSocket连接可用，建议用于实时通信", "SUCCESS")
+        if not health['overall']:
+            self.log("   ⚠️ 连接有问题，需要检查本地服务", "WARNING")
+
+if __name__ == "__main__":
+    trading = PersistentConnectionTrading()
+    asyncio.run(trading.run_persistent_trading_test())

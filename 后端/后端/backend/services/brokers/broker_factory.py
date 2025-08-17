@@ -1,0 +1,71 @@
+import logging
+from typing import Dict, List, Optional, Union, Any
+
+# Import THS broker implementation
+try:
+    from .ths_dongwu_broker import THSDongwuBroker
+except ImportError:
+    logging.warning("无法导入同花顺东吴秀才接口")
+    THSDongwuBroker = None
+
+logger = logging.getLogger(__name__)
+
+class BrokerFactory:
+    """
+    券商接口工厂类,用于创建不同券商的交易接口实例
+    """
+
+    @staticmethod
+    def create_broker(broker_type: str, **kwargs) -> Any:
+        """
+        创建券商接口实例
+        
+        Args:
+            broker_type: 券商接口类型,如 'THS_DONGWU' 等
+            **kwargs: 券商接口初始化参数,如账号,密码等
+        
+        Returns:
+            券商接口实例
+        
+        Raises:
+            ValueError: 当指定的券商接口类型不支持或相关模块未导入时
+        """
+        broker_type = broker_type.upper()
+        
+        # 同花顺东吴秀才
+        if broker_type == "THS_DONGWU":
+            if THSDongwuBroker is None:
+                raise ValueError("同花顺东吴秀才接口未成功导入,请检查环境配置")
+            return THSDongwuBroker(**kwargs)
+        
+        # 不支持的券商类型
+        else:
+            raise ValueError(f"不支持的券商接口类型: {broker_type}")
+    
+    @staticmethod
+    def get_supported_brokers() -> List[Dict]:
+        """
+        获取所有支持的券商接口类型
+        
+        Returns:
+            券商接口类型列表
+        """
+        brokers = []
+        
+        if THSDongwuBroker is not None:
+            brokers.append({
+                "id": "THS_DONGWU",
+                "name": "东吴证券同花顺",
+                "description": "东吴证券同花顺交易接口",
+                "available": True
+            })
+        else:
+            brokers.append({
+                "id": "THS_DONGWU",
+                "name": "东吴证券同花顺",
+                "description": "东吴证券同花顺交易接口",
+                "available": False,
+                "unavailable_reason": "同花顺API未正确安装或配置"
+            })
+        
+        return brokers 

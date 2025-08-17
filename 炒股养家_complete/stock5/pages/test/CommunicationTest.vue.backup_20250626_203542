@@ -1,0 +1,558 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">前后端通信测试</text>
+    </view>
+
+    <view class="section">
+      <view class="section-title">HTTP 请求测试</view>
+      <view class="card">
+        <view class="card-title">测试 API 端点</view>
+        <view class="input-group">
+          <view class="input-label">请求类型</view>
+          <picker @change="onMethodChange" :value="methodIndex" :range="methods">
+            <view class="picker">{{ methods[methodIndex] }}</view>
+          </picker>
+        </view>
+        <view class="input-group">
+          <view class="input-label">API 端点</view>
+          <picker @change="onApiChange" :value="apiIndex" :range="apis">
+            <view class="picker">{{ apis[apiIndex] }}</view>
+          </picker>
+        </view>
+        <view class="input-group" v-if="methods[methodIndex] !== 'GET'">
+          <view class="input-label">请求数据</view>
+          <textarea v-model="requestData" placeholder="输入 JSON 格式的请求数据"></textarea>
+        </view>
+        <button type="primary" @click="sendRequest" :loading="loading.request">发送请求</button>
+        
+        <view class="response-container" v-if="responses.request">
+          <view class="response-title">响应结果</view>
+          <view class="response-time">耗时: {{ responseTime.request }}ms</view>
+          <scroll-view class="response-content" scroll-y>
+            <text>{{ formatJson(responses.request) }}</text>
+          </scroll-view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">WebSocket 测试</view>
+      <view class="card">
+        <view class="connection-status" :class="{ connected: wsConnected }">
+          状态: {{ wsConnected ? '已连接' : '未连接' }}
+        </view>
+        <view class="ws-actions">
+          <button type="primary" @click="connectWebSocket" :disabled="wsConnected">连接</button>
+          <button type="default" @click="disconnectWebSocket" :disabled="!wsConnected">断开</button>
+        </view>
+        
+        <view class="ws-subscription" v-if="wsConnected">
+          <view class="input-label">订阅主题</view>
+          <view class="input-group">
+            <input type="text" v-model="subscription.channel" placeholder="频道名称，如：quote"/>
+          </view>
+          <view class="input-group">
+            <input type="text" v-model="subscription.code" placeholder="股票代码，如：sh600000"/>
+          </view>
+          <view class="ws-actions">
+            <button type="primary" @click="subscribe" :disabled="!subscription.channel">订阅</button>
+            <button type="default" @click="unsubscribe" :disabled="!subscription.channel">取消订阅</button>
+          </view>
+        </view>
+        
+        <view class="messages-container" v-if="wsMessages.length > 0">
+          <view class="response-title">接收的消息</view>
+          <scroll-view class="response-content" scroll-y>
+            <view v-for="(msg, index) in wsMessages" :key="index" class="message">
+              <text class="message-time">{{ msg.time }}</text>
+              <text class="message-content">{{ formatJson(msg.data) }}</text>
+            </view>
+          </scroll-view>
+          <button type="default" @click="clearMessages" size="mini">清除消息</button>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">Mock 数据测试</view>
+      <view class="card">
+        <view class="mock-status">
+          Mock 状态: {{ useMockData ? '已启用' : '已禁用' }}
+        </view>
+        <button type="primary" @click="toggleMock">{{ useMockData ? '禁用 Mock' : '启用 Mock' }}</button>
+        
+        <view class="input-group">
+          <view class="input-label">测试 Mock 接口</view>
+          <picker @change="onMockApiChange" :value="mockApiIndex" :range="mockApis">
+            <view class="picker">{{ mockApis[mockApiIndex] }}</view>
+          </picker>
+        </view>
+        <button type="primary" @click="testMockApi" :loading="loading.mock">测试 Mock 接口</button>
+        
+        <view class="response-container" v-if="responses.mock">
+          <view class="response-title">Mock 响应结果</view>
+          <scroll-view class="response-content" scroll-y>
+            <text>{{ formatJson(responses.mock) }}</text>
+          </scroll-view>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+import { get, post } from '../../utils/request';
+import WebSocketClient, { MSG_TYPES, EVENTS } from '../../utils/websocket';
+import env from '../../env';
+
+export default {
+  data() {
+    return {
+      // HTTP 请求相关
+      methods: ['GET', 'POST'],
+      methodIndex: 0,
+      apis: [
+        '/api/stock/quote',
+        '/api/t-trading/summary',
+        '/api/t-trading/evaluate-opportunity',
+        '/api/test/ping',
+        '/api/test/echo',
+        '/api/test/stock',
+        '/api/test/delay'
+      ],
+      apiIndex: 0,
+      requestData: JSON.stringify({
+        code: 'sh600000',
+        name: '浦发银行'
+      }, null, 2),
+      responses: {
+        request: null,
+        mock: null
+      },
+      responseTime: {
+        request: 0,
+        mock: 0
+      },
+      loading: {
+        request: false,
+        mock: false
+      },
+      
+      // WebSocket 相关
+      wsClient: null,
+      wsConnected: false,
+      subscription: {
+        channel: 'quote',
+        code: 'sh600000'
+      },
+      wsMessages: [],
+      
+      // Mock 数据相关
+      useMockData: env.current.useMockData,
+      mockApis: [
+        '/api/stock/quote',
+        '/api/t-trading/evaluate-opportunity',
+        '/api/t-trading/record-trade'
+      ],
+      mockApiIndex: 0
+    };
+  },
+  
+  onLoad() {
+    // 页面加载
+    uni.setNavigationBarTitle({
+      title: '前后端通信测试'
+    });
+  },
+  
+  onUnload() {
+    // 页面卸载时断开 WebSocket
+    this.disconnectWebSocket();
+  },
+  
+  methods: {
+    // ========== HTTP 请求测试 ==========
+    onMethodChange(e) {
+      this.methodIndex = e.detail.value;
+    },
+    
+    onApiChange(e) {
+      this.apiIndex = e.detail.value;
+    },
+    
+    async sendRequest() {
+      this.loading.request = true;
+      this.responses.request = null;
+      
+      try {
+        const method = this.methods[this.methodIndex];
+        const api = this.apis[this.apiIndex];
+        let data = {};
+        
+        if (method !== 'GET') {
+          try {
+            data = JSON.parse(this.requestData);
+          } catch (e) {
+            uni.showToast({
+              title: 'JSON格式错误',
+              icon: 'none'
+            });
+            this.loading.request = false;
+            return;
+          }
+        }
+        
+        const startTime = Date.now();
+        let response;
+        
+        if (method === 'GET') {
+          response = await get(api);
+        } else {
+          response = await post(api, data);
+        }
+        
+        const endTime = Date.now();
+        this.responseTime.request = endTime - startTime;
+        this.responses.request = response;
+      } catch (error) {
+        this.responses.request = {
+          error: error.message || '请求失败',
+          category: error.category || 'unknown'
+        };
+      } finally {
+        this.loading.request = false;
+      }
+    },
+    
+    // ========== WebSocket 测试 ==========
+    connectWebSocket() {
+      if (this.wsClient) {
+        this.disconnectWebSocket();
+      }
+      
+      this.wsClient = new WebSocketClient();
+      
+      // 设置事件监听
+      this.wsClient.on(EVENTS.OPEN, this.handleWsOpen);
+      this.wsClient.on(EVENTS.CLOSE, this.handleWsClose);
+      this.wsClient.on(EVENTS.ERROR, this.handleWsError);
+      this.wsClient.on(EVENTS.MESSAGE, this.handleWsMessage);
+      
+      // 连接
+      this.wsClient.connect().catch(error => {
+        console.error('WebSocket连接失败:', error);
+        uni.showToast({
+          title: '连接失败',
+          icon: 'none'
+        });
+      });
+    },
+    
+    disconnectWebSocket() {
+      if (this.wsClient) {
+        this.wsClient.disconnect();
+        this.wsClient = null;
+        this.wsConnected = false;
+      }
+    },
+    
+    handleWsOpen() {
+      this.wsConnected = true;
+      uni.showToast({
+        title: 'WebSocket已连接',
+        icon: 'success'
+      });
+    },
+    
+    handleWsClose() {
+      this.wsConnected = false;
+    },
+    
+    handleWsError(error) {
+      console.error('WebSocket错误:', error);
+      uni.showToast({
+        title: 'WebSocket错误',
+        icon: 'none'
+      });
+    },
+    
+    handleWsMessage(message) {
+      this.wsMessages.unshift({
+        time: new Date().toLocaleTimeString(),
+        data: message
+      });
+    },
+    
+    subscribe() {
+      if (!this.wsClient || !this.wsConnected) {
+        uni.showToast({
+          title: 'WebSocket未连接',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      const params = {};
+      if (this.subscription.code) {
+        params.code = this.subscription.code;
+      }
+      
+      this.wsClient.subscribe(this.subscription.channel, params);
+      uni.showToast({
+        title: '已订阅',
+        icon: 'success'
+      });
+    },
+    
+    unsubscribe() {
+      if (!this.wsClient || !this.wsConnected) {
+        return;
+      }
+      
+      const params = {};
+      if (this.subscription.code) {
+        params.code = this.subscription.code;
+      }
+      
+      this.wsClient.unsubscribe(this.subscription.channel, params);
+      uni.showToast({
+        title: '已取消订阅',
+        icon: 'success'
+      });
+    },
+    
+    clearMessages() {
+      this.wsMessages = [];
+    },
+    
+    // ========== Mock 数据测试 ==========
+    toggleMock() {
+      this.useMockData = !this.useMockData;
+      
+      // 更新环境配置
+      env.current.useMockData = this.useMockData;
+      
+      uni.showToast({
+        title: this.useMockData ? '已启用Mock数据' : '已禁用Mock数据',
+        icon: 'none'
+      });
+    },
+    
+    onMockApiChange(e) {
+      this.mockApiIndex = e.detail.value;
+    },
+    
+    async testMockApi() {
+      this.loading.mock = true;
+      this.responses.mock = null;
+      
+      // 确保启用Mock数据
+      const originalMockState = env.current.useMockData;
+      env.current.useMockData = true;
+      
+      try {
+        const api = this.mockApis[this.mockApiIndex];
+        const startTime = Date.now();
+        let response;
+        
+        if (api === '/api/stock/quote') {
+          response = await get(api, { code: 'sh600000' });
+        } else if (api === '/api/t-trading/evaluate-opportunity') {
+          response = await post(api, {
+            code: 'sh600000',
+            name: '浦发银行',
+            current_price: 10.5,
+            open_price: 10.2,
+            intraday_high: 10.8,
+            intraday_low: 10.1,
+            risk_tolerance: 'medium'
+          });
+        } else if (api === '/api/t-trading/record-trade') {
+          response = await post(api, {
+            stock_code: 'sh600000',
+            stock_name: '浦发银行',
+            price: 10.5,
+            quantity: 100,
+            trade_type: 'buy',
+            mode: 'positive'
+          });
+        }
+        
+        const endTime = Date.now();
+        this.responseTime.mock = endTime - startTime;
+        this.responses.mock = response;
+      } catch (error) {
+        this.responses.mock = {
+          error: error.message || '请求失败',
+          category: error.category || 'unknown'
+        };
+      } finally {
+        this.loading.mock = false;
+        // 恢复原始Mock状态
+        env.current.useMockData = originalMockState;
+      }
+    },
+    
+    // ========== 工具方法 ==========
+    formatJson(json) {
+      try {
+        return JSON.stringify(json, null, 2);
+      } catch (e) {
+        return String(json);
+      }
+    }
+  }
+};
+</script>
+
+<style>
+.container {
+  padding: 15px;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.card {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+.input-group {
+  margin-bottom: 15px;
+}
+
+.input-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+.picker {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px;
+  background-color: #f5f5f5;
+}
+
+textarea {
+  width: 100%;
+  height: 100px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.response-container {
+  margin-top: 15px;
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+.response-title {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.response-time {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 5px;
+}
+
+.response-content {
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  padding: 10px;
+  height: 200px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.connection-status {
+  padding: 8px;
+  border-radius: 4px;
+  text-align: center;
+  background-color: #ffcccc;
+  margin-bottom: 15px;
+}
+
+.connection-status.connected {
+  background-color: #ccffcc;
+}
+
+.ws-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.ws-subscription {
+  margin-top: 15px;
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+.messages-container {
+  margin-top: 15px;
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+.message {
+  margin-bottom: 10px;
+  border-bottom: 1px dashed #eee;
+  padding-bottom: 5px;
+}
+
+.message-time {
+  font-size: 12px;
+  color: #999;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.message-content {
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.mock-status {
+  padding: 8px;
+  text-align: center;
+  border-radius: 4px;
+  background-color: #f0f0f0;
+  margin-bottom: 15px;
+}
+</style> 
+ 

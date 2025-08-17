@@ -1,0 +1,538 @@
+<template>
+  <view class="container">
+    <view class="header">
+      <text class="title">API密钥设置</text>
+      <text class="subtitle">配置交易API访问权限</text>
+    </view>
+    
+    <!-- API密钥说明 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">API密钥说明</text>
+      </view>
+      
+      <view class="info-card">
+        <text class="info-text">API密钥是连接您的交易账户和自动交易系统的关键。通过API密钥，交易系统可以自动执行买入/卖出操作，但不能提取资金。</text>
+      </view>
+      
+      <view class="steps-list">
+        <view class="step-item">
+          <text class="step-number">1</text>
+          <text class="step-text">登录您的证券账户官方网站</text>
+        </view>
+        <view class="step-item">
+          <text class="step-number">2</text>
+          <text class="step-text">在账户安全或开发者选项中找到"API密钥管理"</text>
+        </view>
+        <view class="step-item">
+          <text class="step-number">3</text>
+          <text class="step-text">创建新的API密钥（可能需要手机/邮箱验证）</text>
+        </view>
+        <view class="step-item">
+          <text class="step-number">4</text>
+          <text class="step-text">设置API密钥权限（确保勾选"交易权限"，不勾选"提现权限"）</text>
+        </view>
+        <view class="step-item">
+          <text class="step-number">5</text>
+          <text class="step-text">复制API密钥和密钥密码，并填入下方表单</text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 支持的证券平台 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">支持的证券平台</text>
+      </view>
+      
+      <view class="platform-grid">
+        <view class="platform-item" v-for="(platform, index) in supportedPlatforms" :key="index" @tap="selectPlatform(index)">
+          <view class="platform-logo" :class="{ 'selected': selectedPlatform === index }">
+            <text class="platform-icon">{{ platform.icon }}</text>
+          </view>
+          <text class="platform-name">{{ platform.name }}</text>
+        </view>
+      </view>
+      
+      <view class="platform-note" v-if="selectedPlatform !== null">
+        <text class="note-title">{{ supportedPlatforms[selectedPlatform].name }}平台说明</text>
+        <text class="note-text">{{ supportedPlatforms[selectedPlatform].description }}</text>
+        <view class="platform-link" @tap="openPlatformHelp">
+          <text class="link-text">查看API申请教程</text>
+          <text class="link-icon">→</text>
+        </view>
+      </view>
+    </view>
+    
+    <!-- API密钥设置 -->
+    <view class="section">
+      <view class="section-header">
+        <text class="section-title">API密钥信息</text>
+      </view>
+      
+      <view class="form-group">
+        <view class="form-item">
+          <text class="form-label">API密钥</text>
+          <input 
+            type="text" 
+            v-model="apiForm.apiKey" 
+            placeholder="粘贴您的API密钥" 
+            class="form-input"
+          />
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">API密钥密码</text>
+          <view class="password-input-wrap">
+            <input 
+              :type="showPassword ? 'text' : 'password'" 
+              v-model="apiForm.apiSecret" 
+              placeholder="粘贴您的API密钥密码" 
+              class="form-input"
+            />
+            <text class="toggle-password" @tap="togglePasswordVisibility">
+              {{ showPassword ? '隐藏' : '显示' }}
+            </text>
+          </view>
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">API权限设置</text>
+          <view class="checkbox-group">
+            <view class="checkbox-item">
+              <checkbox :checked="apiForm.permissions.trade" @tap="togglePermission('trade')" />
+              <text class="checkbox-label">交易权限（必选）</text>
+            </view>
+            <view class="checkbox-item">
+              <checkbox :checked="apiForm.permissions.readOnly" @tap="togglePermission('readOnly')" />
+              <text class="checkbox-label">只读权限</text>
+            </view>
+            <view class="checkbox-item disabled">
+              <checkbox :checked="apiForm.permissions.withdraw" @tap="togglePermission('withdraw')" disabled="true" />
+              <text class="checkbox-label">提现权限（不建议）</text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="form-item">
+          <text class="form-label">IP白名单设置</text>
+          <input 
+            type="text" 
+            v-model="apiForm.ipWhitelist" 
+            placeholder="可选，留空表示允许任何IP访问" 
+            class="form-input"
+          />
+          <text class="input-tip">多个IP地址请用英文逗号分隔</text>
+        </view>
+      </view>
+      
+      <view class="warning-box">
+        <text class="warning-title">安全提示</text>
+        <text class="warning-text">请勿将您的API密钥泄露给任何人。本应用只在本地存储您的API密钥，不会上传至服务器。建议定期更换API密钥以提高安全性。</text>
+      </view>
+    </view>
+    
+    <!-- 操作按钮 -->
+    <view class="action-buttons">
+      <button class="btn-cancel" @tap="navigateBack">取消</button>
+      <button class="btn-submit" @tap="saveApiSettings" :disabled="!isFormValid">保存设置</button>
+    </view>
+  </view>
+</template>
+
+<script>
+export default {
+  data() {
+    return {
+      selectedPlatform: null,
+      showPassword: false,
+      supportedPlatforms: [
+        { 
+          name: '东方财富', 
+          icon: '东', 
+          description: '东方财富证券API需要在官网"账户管理-安全中心-API管理"中申请，审核通过后24小时内生效。' 
+        },
+        { 
+          name: '华泰证券', 
+          icon: '华', 
+          description: '华泰证券开放平台提供API接口，需要在"开放平台-应用管理"中创建应用并申请相应权限。' 
+        },
+        { 
+          name: '国泰君安', 
+          icon: '泰', 
+          description: '国泰君安证券API申请需要线下签署相关协议，并通过客户经理提交申请。' 
+        },
+        { 
+          name: '中信证券', 
+          icon: '中', 
+          description: '中信证券API需要在交易终端"系统设置-开发者选项"中开通并设置访问密钥。' 
+        },
+        { 
+          name: '招商证券', 
+          icon: '招', 
+          description: '招商证券API申请需要在官网"账户-API服务"中开通，并通过短信验证。' 
+        }
+      ],
+      apiForm: {
+        apiKey: '',
+        apiSecret: '',
+        permissions: {
+          trade: true,
+          readOnly: true,
+          withdraw: false
+        },
+        ipWhitelist: ''
+      }
+    }
+  },
+  computed: {
+    isFormValid() {
+      return this.selectedPlatform !== null && 
+             this.apiForm.apiKey && 
+             this.apiForm.apiSecret && 
+             this.apiForm.permissions.trade;
+    }
+  },
+  methods: {
+    selectPlatform(index) {
+      this.selectedPlatform = index;
+    },
+    togglePermission(permission) {
+      if (permission === 'trade') {
+        // 交易权限必须勾选
+        this.apiForm.permissions.trade = true;
+        return;
+      }
+      this.apiForm.permissions[permission] = !this.apiForm.permissions[permission];
+    },
+    togglePasswordVisibility() {
+      this.showPassword = !this.showPassword;
+    },
+    openPlatformHelp() {
+      if (this.selectedPlatform === null) return;
+      
+      uni.showModal({
+        title: '跳转提示',
+        content: `即将跳转至${this.supportedPlatforms[this.selectedPlatform].name}的API申请教程页面`,
+        success: (res) => {
+          if (res.confirm) {
+            // 实际应用中应该跳转到相应平台的帮助页面
+            uni.showToast({
+              title: '功能开发中',
+              icon: 'none'
+            });
+          }
+        }
+      });
+    },
+    saveApiSettings() {
+      if (!this.isFormValid) {
+        uni.showToast({
+          title: '请完成所有必填项',
+          icon: 'none'
+        });
+        return;
+      }
+      
+      uni.showLoading({
+        title: '保存中'
+      });
+      
+      // 模拟API调用
+      setTimeout(() => {
+        uni.hideLoading();
+        
+        uni.showModal({
+          title: 'API设置成功',
+          content: `已成功设置${this.supportedPlatforms[this.selectedPlatform].name}的API密钥，现在可以进行自动交易了`,
+          showCancel: false,
+          success: (res) => {
+            if (res.confirm) {
+              this.navigateBack();
+            }
+          }
+        });
+      }, 1500);
+    },
+    navigateBack() {
+      uni.navigateBack();
+    }
+  }
+}
+</script>
+
+<style>
+.container {
+  padding: 20px;
+  background-color: #f5f5f5;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #666;
+}
+
+.section {
+  background-color: #ffffff;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.section-header {
+  margin-bottom: 15px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #333;
+}
+
+.info-card {
+  background-color: #e8f5e9;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.info-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2e7d32;
+}
+
+.steps-list {
+  margin-top: 15px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.step-number {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background-color: #0066cc;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 14px;
+  margin-right: 10px;
+}
+
+.step-text {
+  font-size: 14px;
+  color: #333;
+}
+
+.platform-grid {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -10px;
+}
+
+.platform-item {
+  width: 20%;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.platform-logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 25px;
+  background-color: #f0f0f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.selected {
+  background-color: #0066cc;
+}
+
+.platform-icon {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.selected .platform-icon {
+  color: white;
+}
+
+.platform-name {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+}
+
+.platform-note {
+  margin-top: 15px;
+  background-color: #f0f0f0;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.note-title {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.note-text {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+.platform-link {
+  display: flex;
+  align-items: center;
+}
+
+.link-text {
+  font-size: 14px;
+  color: #0066cc;
+}
+
+.link-icon {
+  margin-left: 5px;
+  color: #0066cc;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-item {
+  margin-bottom: 15px;
+}
+
+.form-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  font-size: 16px;
+}
+
+.password-input-wrap {
+  position: relative;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: #0066cc;
+}
+
+.input-tip {
+  font-size: 12px;
+  color: #999;
+  margin-top: 5px;
+  display: block;
+}
+
+.checkbox-group {
+  margin-top: 10px;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.checkbox-label {
+  font-size: 14px;
+  color: #333;
+  margin-left: 8px;
+}
+
+.disabled .checkbox-label {
+  color: #999;
+}
+
+.warning-box {
+  background-color: #fff8e1;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.warning-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: #ff6f00;
+  margin-bottom: 5px;
+}
+
+.warning-text {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.btn-cancel, .btn-submit {
+  width: 48%;
+  height: 44px;
+  border-radius: 4px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-cancel {
+  background-color: #f0f0f0;
+  color: #666;
+}
+
+.btn-submit {
+  background-color: #0066cc;
+  color: white;
+}
+
+.btn-submit:disabled {
+  background-color: #cccccc;
+  color: #999;
+}
+</style> 

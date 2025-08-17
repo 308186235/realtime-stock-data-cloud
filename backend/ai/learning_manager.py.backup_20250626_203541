@@ -1,0 +1,697 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+import asyncio
+import os
+import pickle
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+import traceback
+from collections import deque
+import random
+
+# 设置日志
+logger = logging.getLogger("LearningManager")
+
+class LearningManager:
+    """
+    学习管理器 - 负责Agent的自主学习能力，通过分析交易结果和市场行为不断优化决策模型
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化学习管理器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 经验回放缓冲区
+        self.experience_buffer_size = self.config.get("experience_buffer_size", 10000)
+        self.experience_buffer = deque(maxlen=self.experience_buffer_size)
+        
+        # 学习参数
+        self.learning_rate = self.config.get("learning_rate", 0.01)
+        self.discount_factor = self.config.get("discount_factor", 0.95)  # 未来奖励折扣因子
+        self.exploration_rate = self.config.get("exploration_rate", 0.2)  # 探索率
+        self.min_exploration_rate = self.config.get("min_exploration_rate", 0.01)
+        self.exploration_decay = self.config.get("exploration_decay", 0.995)
+        
+        # 模型存储路径
+        self.models_dir = self.config.get("models_dir", "models")
+        os.makedirs(self.models_dir, exist_ok=True)
+        
+        # 学习状态
+        self.learning_state = {
+            "total_experiences": 0,
+            "total_updates": 0,
+            "last_update_time": None,
+            "current_performance": {},
+            "best_performance": {},
+            "exploration_rate": self.exploration_rate
+        }
+        
+        # 交易性能跟踪
+        self.performance_metrics = {
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "avg_profit": 0.0,
+            "avg_loss": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe_ratio": 0.0,
+            "total_trades": 0,
+            "profitable_trades": 0,
+            "losing_trades": 0
+        }
+        
+        # 策略权重历史
+        self.strategy_weight_history = []
+        
+        # 初始化强化学习模型
+        self._init_reinforcement_learning()
+        
+        logger.info("Learning Manager initialized")
+    
+    def _init_reinforcement_learning(self):
+        """初始化强化学习模型"""
+        # 简单的Q学习模型，使用字典存储状态-动作值
+        self.q_table = {}
+        
+        # 加载已有模型（如果存在）
+        model_path = os.path.join(self.models_dir, "q_model.pkl")
+        if os.path.exists(model_path):
+            try:
+                with open(model_path, 'rb') as f:
+                    self.q_table = pickle.load(f)
+                logger.info(f"Loaded Q-learning model with {len(self.q_table)} states")
+            except Exception as e:
+                logger.error(f"Error loading Q-learning model: {str(e)}")
+                self.q_table = {}
+    
+    async def add_experience(self, 
+                          state: Dict[str, Any], 
+                          action: Dict[str, Any], 
+                          reward: float, 
+                          next_state: Dict[str, Any], 
+                          done: bool) -> None:
+        """
+        添加交易经验到回放缓冲区
+        
+        Args:
+            state: 决策时的状态
+            action: 执行的动作
+            reward: 获得的奖励
+            next_state: 执行后的新状态
+            done: 是否完成一个交易周期
+        """
+        # 生成时间戳
+        timestamp = datetime.now().isoformat()
+        
+        # 创建经验记录
+        experience = {
+            "timestamp": timestamp,
+            "state": self._preprocess_state(state),
+            "action": self._preprocess_action(action),
+            "reward": float(reward),
+            "next_state": self._preprocess_state(next_state),
+            "done": bool(done)
+        }
+        
+        # 添加到经验缓冲区
+        self.experience_buffer.append(experience)
+        
+        # 更新学习状态
+        self.learning_state["total_experiences"] += 1
+        
+        # 记录日志
+        logger.debug(f"Added experience: action={action.get('action', 'unknown')}, reward={reward:.4f}")
+        
+        # 如果经验缓冲区足够大，且一段时间没有更新，则进行学习
+        if len(self.experience_buffer) >= 100 and (
+            self.learning_state["last_update_time"] is None or 
+            (datetime.now() - datetime.fromisoformat(self.learning_state["last_update_time"])).total_seconds() > 3600
+        ):
+            await self.learn_from_experiences()
+    
+    async def learn_from_experiences(self) -> Dict[str, Any]:
+        """
+        从经验中学习，更新模型
+        
+        Returns:
+            学习结果信息
+        """
+        try:
+            logger.info("Learning from experiences...")
+            
+            # 如果经验不足，返回
+            if len(self.experience_buffer) < 50:
+                return {"status": "skipped", "reason": "insufficient_experiences"}
+            
+            # 更新Q表
+            updates = self._update_q_table()
+            
+            # 更新学习状态
+            self.learning_state["last_update_time"] = datetime.now().isoformat()
+            self.learning_state["total_updates"] += 1
+            
+            # 衰减探索率
+            self.learning_state["exploration_rate"] = max(
+                self.min_exploration_rate, 
+                self.learning_state["exploration_rate"] * self.exploration_decay
+            )
+            self.exploration_rate = self.learning_state["exploration_rate"]
+            
+            # 更新性能指标
+            self._update_performance_metrics()
+            
+            # 保存模型
+            await self._save_model()
+            
+            # 返回学习结果
+            result = {
+                "status": "success",
+                "updates": updates,
+                "exploration_rate": self.exploration_rate,
+                "buffer_size": len(self.experience_buffer),
+                "performance": self.performance_metrics
+            }
+            
+            logger.info(f"Learning completed: {updates} Q-values updated")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error in learning process: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    def _update_q_table(self) -> int:
+        """
+        更新Q表
+        
+        Returns:
+            更新的Q值数量
+        """
+        # 计算批量大小，最多使用1000个经验
+        batch_size = min(1000, len(self.experience_buffer))
+        
+        # 随机抽样经验
+        batch = random.sample(list(self.experience_buffer), batch_size)
+        
+        # 更新计数
+        updates = 0
+        
+        # 遍历批次中的经验
+        for experience in batch:
+            state_key = self._state_to_key(experience["state"])
+            next_state_key = self._state_to_key(experience["next_state"])
+            action_key = experience["action"]["action"]
+            reward = experience["reward"]
+            done = experience["done"]
+            
+            # 如果状态不在Q表中，初始化
+            if state_key not in self.q_table:
+                self.q_table[state_key] = {"buy": 0.0, "sell": 0.0, "hold": 0.0}
+            
+            # 如果下一个状态不在Q表中，初始化
+            if next_state_key not in self.q_table and not done:
+                self.q_table[next_state_key] = {"buy": 0.0, "sell": 0.0, "hold": 0.0}
+            
+            # 当前Q值
+            current_q = self.q_table[state_key][action_key]
+            
+            # 如果交易完成，则没有下一个状态的奖励
+            if done:
+                max_future_q = 0
+            else:
+                # 下一个状态的最大Q值
+                max_future_q = max(self.q_table[next_state_key].values())
+            
+            # 计算新的Q值
+            new_q = (1 - self.learning_rate) * current_q + self.learning_rate * (reward + self.discount_factor * max_future_q)
+            
+            # 更新Q表
+            self.q_table[state_key][action_key] = new_q
+            updates += 1
+        
+        return updates
+    
+    def get_action(self, state: Dict[str, Any], available_actions: List[str] = None) -> Dict[str, Any]:
+        """
+        基于当前状态和学习模型获取动作
+        
+        Args:
+            state: 当前状态
+            available_actions: 可用动作列表
+            
+        Returns:
+            选择的动作
+        """
+        # 默认可用动作
+        if available_actions is None:
+            available_actions = ["buy", "sell", "hold"]
+        
+        # 预处理状态
+        processed_state = self._preprocess_state(state)
+        state_key = self._state_to_key(processed_state)
+        
+        # 探索：随机选择动作
+        if random.random() < self.exploration_rate:
+            action = random.choice(available_actions)
+            confidence = 0.5  # 探索时的默认置信度
+            reason = "exploration"
+        # 利用：选择Q值最高的动作
+        else:
+            # 如果状态不在Q表中，初始化
+            if state_key not in self.q_table:
+                self.q_table[state_key] = {action: 0.0 for action in available_actions}
+            
+            # 获取该状态下的Q值
+            q_values = self.q_table[state_key]
+            
+            # 仅考虑可用动作
+            filtered_q_values = {action: q_values.get(action, 0.0) for action in available_actions}
+            
+            # 找出最大Q值的动作
+            action = max(filtered_q_values, key=filtered_q_values.get)
+            
+            # 计算置信度（归一化Q值）
+            q_min = min(filtered_q_values.values())
+            q_max = max(filtered_q_values.values())
+            if q_max > q_min:
+                confidence = (filtered_q_values[action] - q_min) / (q_max - q_min)
+            else:
+                confidence = 0.5
+            
+            reason = "exploitation"
+        
+        # 构建动作对象
+        action_obj = {
+            "action": action,
+            "confidence": float(confidence),
+            "reason": reason,
+            "exploration_rate": float(self.exploration_rate)
+        }
+        
+        return action_obj
+    
+    async def analyze_trade_result(self, trade: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析交易结果，提取经验和教训
+        
+        Args:
+            trade: 交易结果
+            
+        Returns:
+            分析结果
+        """
+        try:
+            # 提取交易数据
+            entry_price = trade.get("entry_price", 0)
+            exit_price = trade.get("exit_price", 0)
+            position_size = trade.get("position_size", 0)
+            trade_type = trade.get("type", "unknown")  # buy or sell
+            duration = trade.get("duration", 0)  # 交易持续时间（天）
+            
+            # 计算收益
+            if trade_type == "buy":
+                profit = (exit_price - entry_price) * position_size
+                profit_pct = (exit_price / entry_price - 1) if entry_price > 0 else 0
+            elif trade_type == "sell":
+                profit = (entry_price - exit_price) * position_size
+                profit_pct = (1 - exit_price / entry_price) if entry_price > 0 else 0
+            else:
+                profit = 0
+                profit_pct = 0
+            
+            # 计算奖励（基于收益率和持续时间）
+            if profit_pct > 0:
+                # 盈利交易：收益率/持续时间的平方根（鼓励快速盈利）
+                reward = profit_pct / (duration ** 0.5) if duration > 0 else profit_pct
+            else:
+                # 亏损交易：直接使用收益率（惩罚亏损）
+                reward = profit_pct
+            
+            # 对奖励进行缩放，使其在合理范围内
+            reward = max(-1.0, min(1.0, reward * 10))
+            
+            # 创建分析结果
+            analysis = {
+                "trade_id": trade.get("id", ""),
+                "timestamp": datetime.now().isoformat(),
+                "profit": float(profit),
+                "profit_pct": float(profit_pct),
+                "reward": float(reward),
+                "duration": int(duration),
+                "success": profit > 0,
+                "reason": self._analyze_trade_reason(trade, profit > 0)
+            }
+            
+            # 记录分析结果
+            logger.info(f"Trade analysis: profit={profit:.2f} ({profit_pct:.2%}), reward={reward:.4f}")
+            
+            return analysis
+            
+        except Exception as e:
+            error_msg = f"Error in trade analysis: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"error": error_msg}
+    
+    def _analyze_trade_reason(self, trade: Dict[str, Any], success: bool) -> str:
+        """分析交易成功或失败的原因"""
+        # 提取决策因素
+        decision_factors = trade.get("decision_factors", {})
+        
+        # 市场状态
+        market_regime = decision_factors.get("market_regime", "unknown")
+        
+        # 根据成功与否提供不同的分析
+        if success:
+            if market_regime in ["bull_trending", "transition_bullish"] and trade.get("type") == "buy":
+                return "correctly_identified_bullish_trend"
+            elif market_regime in ["bear_trending", "transition_bearish"] and trade.get("type") == "sell":
+                return "correctly_identified_bearish_trend"
+            else:
+                return "favorable_price_movement"
+        else:
+            if market_regime in ["bull_trending", "transition_bullish"] and trade.get("type") == "sell":
+                return "incorrect_market_regime_assessment"
+            elif market_regime in ["bear_trending", "transition_bearish"] and trade.get("type") == "buy":
+                return "incorrect_market_regime_assessment"
+            elif "high_vol" in market_regime:
+                return "high_volatility_environment"
+            else:
+                return "unfavorable_price_movement"
+    
+    def _update_performance_metrics(self):
+        """更新性能指标"""
+        # 提取交易结果
+        trades = [exp for exp in self.experience_buffer if exp.get("done", False)]
+        
+        if not trades:
+            return
+        
+        # 计算交易次数
+        total_trades = len(trades)
+        
+        # 计算盈利和亏损交易
+        profitable_trades = sum(1 for t in trades if t.get("reward", 0) > 0)
+        losing_trades = total_trades - profitable_trades
+        
+        # 计算胜率
+        win_rate = profitable_trades / total_trades if total_trades > 0 else 0
+        
+        # 计算平均盈利和亏损
+        profits = [t.get("reward", 0) for t in trades if t.get("reward", 0) > 0]
+        losses = [abs(t.get("reward", 0)) for t in trades if t.get("reward", 0) < 0]
+        
+        avg_profit = sum(profits) / len(profits) if profits else 0
+        avg_loss = sum(losses) / len(losses) if losses else 0
+        
+        # 计算盈亏比
+        profit_factor = avg_profit / avg_loss if avg_loss > 0 else 0
+        
+        # 更新性能指标
+        self.performance_metrics = {
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "avg_profit": avg_profit,
+            "avg_loss": avg_loss,
+            "total_trades": total_trades,
+            "profitable_trades": profitable_trades,
+            "losing_trades": losing_trades
+        }
+        
+        # 更新学习状态
+        self.learning_state["current_performance"] = self.performance_metrics.copy()
+        
+        # 如果是最佳性能，更新记录
+        if (self.learning_state.get("best_performance", {}).get("profit_factor", 0) < profit_factor and 
+            win_rate >= 0.5):
+            self.learning_state["best_performance"] = self.performance_metrics.copy()
+    
+    async def optimize_strategy_weights(self, 
+                                     current_weights: Dict[str, float], 
+                                     performance_data: Dict[str, Any]) -> Dict[str, float]:
+        """
+        优化策略权重
+        
+        Args:
+            current_weights: 当前策略权重
+            performance_data: 策略性能数据
+            
+        Returns:
+            优化后的策略权重
+        """
+        try:
+            logger.info("Optimizing strategy weights...")
+            
+            # 复制当前权重
+            new_weights = current_weights.copy()
+            
+            # 提取策略性能
+            strategy_performance = performance_data.get("strategy_performance", {})
+            
+            if not strategy_performance:
+                return current_weights
+            
+            # 根据性能调整权重
+            # 方法：将性能指标（如夏普比率）归一化，然后调整权重
+            performance_scores = {}
+            total_score = 0
+            
+            for strategy, metrics in strategy_performance.items():
+                # 使用夏普比率或其他性能指标
+                sharpe = metrics.get("sharpe_ratio", 0)
+                win_rate = metrics.get("win_rate", 0)
+                
+                # 计算综合得分
+                score = sharpe * 0.7 + win_rate * 0.3
+                
+                # 确保得分为正
+                score = max(0.1, score)
+                
+                performance_scores[strategy] = score
+                total_score += score
+            
+            # 如果总分为0，返回原始权重
+            if total_score <= 0:
+                return current_weights
+            
+            # 计算目标权重
+            target_weights = {}
+            for strategy, score in performance_scores.items():
+                target_weights[strategy] = score / total_score
+            
+            # 渐进调整（避免权重突变）
+            adjustment_rate = 0.2  # 每次调整20%
+            
+            for strategy in current_weights:
+                if strategy in target_weights:
+                    # 渐进调整
+                    new_weights[strategy] = (
+                        current_weights[strategy] * (1 - adjustment_rate) + 
+                        target_weights[strategy] * adjustment_rate
+                    )
+            
+            # 标准化权重，确保总和为1
+            weight_sum = sum(new_weights.values())
+            if weight_sum > 0:
+                new_weights = {s: w / weight_sum for s, w in new_weights.items()}
+            
+            # 记录权重历史
+            self.strategy_weight_history.append({
+                "timestamp": datetime.now().isoformat(),
+                "weights": new_weights.copy()
+            })
+            
+            # 保留最近100条记录
+            if len(self.strategy_weight_history) > 100:
+                self.strategy_weight_history = self.strategy_weight_history[-100:]
+            
+            logger.info(f"Strategy weights optimized: {new_weights}")
+            return new_weights
+            
+        except Exception as e:
+            error_msg = f"Error optimizing strategy weights: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return current_weights
+    
+    async def _save_model(self):
+        """保存学习模型"""
+        try:
+            # 保存Q表
+            model_path = os.path.join(self.models_dir, "q_model.pkl")
+            with open(model_path, 'wb') as f:
+                pickle.dump(self.q_table, f)
+            
+            # 保存学习状态
+            state_path = os.path.join(self.models_dir, "learning_state.json")
+            with open(state_path, 'w') as f:
+                json.dump({
+                    "learning_state": self.learning_state,
+                    "performance_metrics": self.performance_metrics,
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+            
+            logger.info(f"Learning model saved: {len(self.q_table)} states")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving learning model: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    async def get_learning_status(self) -> Dict[str, Any]:
+        """
+        获取学习状态信息
+        
+        Returns:
+            学习状态信息
+        """
+        return {
+            "learning_state": self.learning_state,
+            "performance_metrics": self.performance_metrics,
+            "experience_buffer_size": len(self.experience_buffer),
+            "q_table_size": len(self.q_table),
+            "strategy_weight_history": self.strategy_weight_history[-10:],  # 最近10条记录
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    # 辅助方法
+    
+    def _preprocess_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """预处理状态数据，提取关键特征"""
+        # 提取市场状态
+        market_state = state.get("market_state", {})
+        market_regime = market_state.get("market_regime", "unknown")
+        
+        # 提取趋势信息
+        trend = market_state.get("trend", {})
+        trend_direction = trend.get("direction", "unknown")
+        trend_strength = trend.get("strength", 0)
+        
+        # 提取风险状态
+        risk_state = state.get("risk_state", {})
+        risk_level = risk_state.get("level", "medium")
+        
+        # 创建简化状态
+        simplified_state = {
+            "market_regime": market_regime,
+            "trend_direction": trend_direction,
+            "trend_strength": self._discretize_value(trend_strength, 5),  # 离散化为5个级别
+            "risk_level": risk_level
+        }
+        
+        return simplified_state
+    
+    def _preprocess_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """预处理动作数据"""
+        # 提取动作类型
+        action_type = action.get("action", "hold").lower()
+        
+        # 提取置信度
+        confidence = action.get("confidence", 0.5)
+        
+        # 创建简化动作
+        simplified_action = {
+            "action": action_type,
+            "confidence": self._discretize_value(confidence, 5)  # 离散化为5个级别
+        }
+        
+        return simplified_action
+    
+    def _state_to_key(self, state: Dict[str, Any]) -> str:
+        """将状态转换为字符串键"""
+        # 创建排序的状态项列表
+        state_items = []
+        for key in sorted(state.keys()):
+            state_items.append(f"{key}:{state[key]}")
+        
+        # 连接为字符串
+        return "|".join(state_items)
+    
+    def _discretize_value(self, value: float, levels: int) -> int:
+        """将连续值离散化为指定级别"""
+        return min(levels - 1, max(0, int(value * levels)))
+
+class ExperienceReplay:
+    """经验回放缓冲区，用于存储和抽样交易经验"""
+    
+    def __init__(self, capacity: int = 10000):
+        """
+        初始化经验回放缓冲区
+        
+        Args:
+            capacity: 缓冲区容量
+        """
+        self.capacity = capacity
+        self.buffer = deque(maxlen=capacity)
+    
+    def add(self, experience: Dict[str, Any]):
+        """添加经验"""
+        self.buffer.append(experience)
+    
+    def sample(self, batch_size: int) -> List[Dict[str, Any]]:
+        """随机抽样经验"""
+        # 确保批次大小不超过缓冲区大小
+        batch_size = min(batch_size, len(self.buffer))
+        
+        # 随机抽样
+        return random.sample(list(self.buffer), batch_size)
+    
+    def __len__(self) -> int:
+        """获取缓冲区大小"""
+        return len(self.buffer)
+
+# 主函数（用于测试）
+async def main():
+    """测试LearningManager功能"""
+    # 创建学习管理器
+    config = {
+        "learning_rate": 0.05,
+        "experience_buffer_size": 1000,
+        "models_dir": "models"
+    }
+    learning_manager = LearningManager(config)
+    
+    # 生成模拟状态
+    state = {
+        "market_state": {
+            "market_regime": "bull_trending",
+            "trend": {"direction": "up", "strength": 0.8}
+        },
+        "risk_state": {"level": "low"}
+    }
+    
+    # 获取动作
+    action = learning_manager.get_action(state)
+    print(f"Action: {action}")
+    
+    # 添加经验
+    next_state = {
+        "market_state": {
+            "market_regime": "bull_trending",
+            "trend": {"direction": "up", "strength": 0.85}
+        },
+        "risk_state": {"level": "low"}
+    }
+    
+    # 添加一些模拟经验
+    for i in range(100):
+        reward = 0.05 if i % 3 == 0 else -0.02
+        await learning_manager.add_experience(state, action, reward, next_state, i % 10 == 0)
+    
+    # 学习
+    result = await learning_manager.learn_from_experiences()
+    print(f"Learning result: {result}")
+    
+    # 获取学习状态
+    status = await learning_manager.get_learning_status()
+    print(f"Learning status: {status}")
+
+if __name__ == "__main__":
+    asyncio.run(main()) 

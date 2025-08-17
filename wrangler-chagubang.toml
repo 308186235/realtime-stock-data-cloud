@@ -1,0 +1,80 @@
+# 茶股帮数据源 - Cloudflare Workers配置
+name = "chagubang-stock-api"
+main = "cloudflare-chagubang-worker.js"
+compatibility_date = "2024-01-01"
+
+# Worker类型
+type = "javascript"
+
+# 生产环境配置
+[env.production]
+name = "chagubang-stock-api"
+
+# 路由配置 - 绑定到您的域名
+routes = [
+    { pattern = "api.aigupiao.me/api/chagubang/*", zone_name = "aigupiao.me" }
+]
+
+# 环境变量
+[env.production.vars]
+ENVIRONMENT = "production"
+API_VERSION = "1.0.0"
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw"
+CHAGUBANG_HOST = "l1.chagubang.com"
+CHAGUBANG_PORT = "6380"
+
+# KV命名空间绑定
+[[env.production.kv_namespaces]]
+binding = "STOCK_CACHE"
+id = "your-stock-cache-namespace-id"
+
+[[env.production.kv_namespaces]]
+binding = "MARKET_DATA"
+id = "your-market-data-namespace-id"
+
+[[env.production.kv_namespaces]]
+binding = "USER_SESSIONS"
+id = "your-user-sessions-namespace-id"
+
+# 开发环境配置
+[env.development]
+name = "chagubang-stock-api-dev"
+
+[env.development.vars]
+ENVIRONMENT = "development"
+API_VERSION = "1.0.0-dev"
+SUPABASE_URL = "https://zzukfxwavknskqcepsjb.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dWtmeHdhdmtuc2txY2Vwc2piIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyOTg1MDYsImV4cCI6MjA2Njg3NDUwNn0.AMGkJSre3QtRBQK_Lh2Iga4dUzSPvuO1G9s6fF2QPaw"
+
+[[env.development.kv_namespaces]]
+binding = "STOCK_CACHE"
+id = "your-dev-stock-cache-namespace-id"
+
+[[env.development.kv_namespaces]]
+binding = "MARKET_DATA"
+id = "your-dev-market-data-namespace-id"
+
+[[env.development.kv_namespaces]]
+binding = "USER_SESSIONS"
+id = "your-dev-user-sessions-namespace-id"
+
+# 定时任务配置
+[triggers]
+crons = [
+    "*/5 * * * *"  # 每5分钟执行一次数据同步
+]
+
+# 兼容性标志
+[compatibility_flags]
+nodejs_compat = true
+
+# 构建配置
+[build]
+command = ""
+cwd = "."
+watch_dir = "."
+
+# 限制配置
+[limits]
+cpu_ms = 50

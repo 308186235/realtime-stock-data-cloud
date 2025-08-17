@@ -1,0 +1,767 @@
+import os
+import logging
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+import joblib
+import mlflow
+import mlflow.tensorflow
+from datetime import datetime, timedelta
+import asyncio
+import json
+from typing import Dict, List, Any, Optional, Tuple
+import uuid
+
+from config import settings
+from ai.strategy_optimizer import StrategyOptimizer
+from ai.external_strategy_finder import ExternalStrategyFinder
+from strategies import StrategyFactory
+
+logger = logging.getLogger(__name__)
+
+class AIService:
+    """
+    Service for AI model training, prediction, and management.
+    Provides capabilities for stock price prediction, trading strategy optimization,
+    and trend analysis through machine learning models.
+    """
+    
+    def __init__(self):
+        """Initialize the AI service."""
+        self.models = {}
+        self.scalers = {}
+        self.model_path = settings.MODEL_PATH
+        self.training_data_path = settings.TRAINING_DATA_PATH
+        
+        # Create directories if they don't exist
+        os.makedirs(self.model_path, exist_ok=True)
+        os.makedirs(self.training_data_path, exist_ok=True)
+        
+        # Initialize strategy optimizer
+        self.strategy_optimizer = StrategyOptimizer(model_path=os.path.join(self.model_path, 'strategy_optimizer'))
+        
+        # Initialize external strategy finder
+        self.strategy_finder = ExternalStrategyFinder()
+        
+        # Initialize MLflow for experiment tracking
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
+        mlflow.set_experiment("stock_trading_models")
+        
+        # 训练任务状态管理
+        self.training_tasks = {
+            'price_prediction': {
+                'status': 'idle',  # idle, training, complete, failed
+                'progress': 0,
+                'start_time': None,
+                'estimated_completion': None,
+                'current_epoch': 0,
+                'total_epochs': 50,
+                'task': None  # asyncio task
+            },
+            'strategy_optimizer': {
+                'status': 'idle',
+                'progress': 0,
+                'start_time': None,
+                'estimated_completion': None,
+                'current_epoch': 0,
+                'total_epochs': 50,
+                'task': None
+            },
+            'risk_assessment': {
+                'status': 'idle',
+                'progress': 0,
+                'start_time': None,
+                'estimated_completion': None,
+                'current_epoch': 0,
+                'total_epochs': 40,
+                'task': None
+            }
+        }
+        
+        # 模型性能指标缓存
+        self.performance_cache = {}
+        
+        # External strategy database
+        self.external_strategies = []
+        
+        # Learning progress
+        self.learning_progress = {
+            'strategies_found': 0,
+            'strategies_analyzed': 0,
+            'strategies_incorporated': 0,
+            'last_search_time': None
+        }
+        
+        logger.info("AI Service initialized")
+    
+    # 新增模型版本管理功能
+    def register_model(self, model_name: str, model_path: str):
+        """
+        注册新模型版本到模型仓库
+        :param model_name: 模型名称
+        :param model_path: 模型文件路径
+        """
+        version = datetime.now().strftime('%Y%m%d%H%M%S')
+        self.models[f'{model_name}_{version}'] = load_model(model_path)
+        mlflow.register_model(f'file://{model_path}', f'{model_name}-{version}')
+    
+    def get_model_versions(self, model_name: str):
+        """
+        获取指定模型的所有版本信息
+        """
+        return mlflow.search_registered_models(filter_string=f'name="{model_name}"')
+
+    # 在训练方法中添加版本记录
+    async def train_models(self):
+        """
+        Train or update AI models with the latest market data.
+        This is scheduled to run after market close.
+        """
+        try:
+        with mlflow.start_run():
+            mlflow.log_param('train_date', datetime.now().isoformat())
+            logger.info("Starting model training process")
+            
+                # 1. Load historical data
+                historical_data = self._load_historical_data()
+                
+                # 2. Train价格预测模型
+                await self._train_price_prediction_model(historical_data)
+                
+                # 3. Train策略优化模型
+                await self._train_strategy_optimization_model(historical_data)
+                
+                # 4. Train风险评估模型
+                await self._train_risk_assessment_model(historical_data)
+                
+                # 5. 策略权重学习模块
+                await self._train_strategy_weight_learning_model(historical_data)
+                
+                logger.info("Model training completed successfully")
+            except Exception as e:
+                logger.error(f"Error during model training: {e}")
+                mlflow.log_metric('training_status', 0)
+    
+    async def _train_strategy_weight_learning_model(self, historical_data):
+        """
+        策略权重自学习模型训练
+        """
+        # 实现将在后续开发中完成
+        logger.info("Strategy weight learning model training placeholder")
+        await asyncio.sleep(1)  # 模拟训练过程
+    
+    async def _train_price_prediction_model(self, data):
+        """
+        Train LSTM model for stock price prediction.
+        
+        Args:
+            data (pd.DataFrame): Historical stock data
+        """
+        logger.info("Training price prediction model placeholder")
+        await asyncio.sleep(1)  # 模拟训练过程
+    
+    async def _train_strategy_optimization_model(self, data):
+        """
+        Train AI model for strategy parameter optimization.
+        
+        Args:
+            data (pd.DataFrame): Historical data with strategy performance
+        """
+        logger.info("Training strategy optimization model placeholder")
+        await asyncio.sleep(1)  # 模拟训练过程
+    
+    async def _train_risk_assessment_model(self, data):
+        """
+        Train AI model for portfolio risk assessment.
+        
+        Args:
+            data (pd.DataFrame): Historical data for risk modeling
+        """
+        logger.info("Training risk assessment model placeholder")
+        await asyncio.sleep(1)  # 模拟训练过程
+    
+    async def predict_stock_price(self, stock_code, time_steps=10):
+        """
+        Predict future stock prices for a given stock.
+        
+        Args:
+            stock_code (str): The stock code to predict
+            time_steps (int): Number of future time steps to predict
+            
+        Returns:
+            dict: Predicted prices with confidence intervals
+        """
+        # 模拟预测结果
+        last_price = 50.0 + hash(stock_code) % 50
+            
+            predictions = []
+            for i in range(time_steps):
+            change = np.random.normal(0, 0.02)
+            pred_price = last_price * (1 + change)
+            last_price = pred_price
+            
+            std_dev = 0.02 * pred_price
+            margin_of_error = 1.96 * std_dev * np.sqrt(i + 1)
+                
+                predictions.append({
+                    'time_step': i + 1,
+                    'predicted_price': float(pred_price),
+                    'lower_bound': float(max(0, pred_price - margin_of_error)),
+                    'upper_bound': float(pred_price + margin_of_error),
+                'confidence': 0.95
+                })
+            
+            return {
+                'stock_code': stock_code,
+            'current_price': float(50.0 + hash(stock_code) % 50),
+                'predictions': predictions
+        }
+
+    async def optimize_strategy_parameters(self, strategy_id, stock_code, include_charts=False):
+        """
+        Optimize trading strategy parameters using AI.
+        
+        Args:
+            strategy_id (str): Strategy identifier
+            stock_code (str): Target stock code
+            include_charts (bool): Whether to include performance charts
+            
+        Returns:
+            dict: Optimized parameters with expected performance metrics
+        """
+        # 模拟优化结果
+        return {
+            'strategy_id': strategy_id,
+            'stock_code': stock_code,
+            'optimized_parameters': {
+                'window_size': 20,
+                'threshold': 0.15,
+                'smoothing_factor': 0.3
+            },
+            'expected_performance': {
+                'sharpe_ratio': 1.8,
+                'max_drawdown': 0.15,
+                'win_rate': 0.65,
+                'profit_factor': 2.1
+            }
+        }
+    
+    async def assess_risk(self, portfolio_data):
+        """
+        Assess investment risk using AI models.
+        
+        Args:
+            portfolio_data (dict): Current portfolio holdings
+            
+        Returns:
+            dict: Risk assessment with metrics
+        """
+        # 模拟风险评估结果
+            return {
+                "overall_risk_score": 65,  # 0-100 scale
+                "risk_category": "Moderate",
+                "volatility": 0.15,
+                "var_95": 0.025,  # Value at Risk (95% confidence)
+                "max_drawdown": 0.18,
+                "diversification_score": 60,
+                "market_correlation": 0.75,
+                "recommendations": [
+                    "Consider increasing position in defensive sectors",
+                    "Portfolio has high correlation with market index, consider diversification"
+                ]
+            }
+            
+    # 以下是新增方法，用于支持AI可视化界面
+    
+    async def get_training_progress(self) -> List[Dict[str, Any]]:
+        """
+        获取所有AI模型的训练进度
+            
+        Returns:
+            各模型训练进度信息列表
+        """
+        result = []
+        
+        for model_name, task_info in self.training_tasks.items():
+            display_name = {
+                'price_prediction': '价格预测模型',
+                'strategy_optimizer': '策略优化模型',
+                'risk_assessment': '风险评估模型'
+            }.get(model_name, model_name)
+            
+            # 更新估计完成时间
+            if task_info['status'] == 'training' and task_info['progress'] > 0:
+                elapsed_time = (datetime.now() - task_info['start_time']).total_seconds()
+                progress_per_second = task_info['progress'] / elapsed_time if elapsed_time > 0 else 0
+                remaining_seconds = (100 - task_info['progress']) / progress_per_second if progress_per_second > 0 else 0
+                
+                task_info['estimated_completion'] = datetime.now() + timedelta(seconds=remaining_seconds)
+            
+            result.append({
+                'name': model_name,
+                'displayName': display_name,
+                'status': task_info['status'],
+                'progress': task_info['progress'],
+                'startTime': task_info['start_time'].isoformat() if task_info['start_time'] else None,
+                'estimatedCompletion': task_info['estimated_completion'].isoformat() if task_info['estimated_completion'] else None,
+                'currentEpoch': task_info['current_epoch'],
+                'totalEpochs': task_info['total_epochs']
+            })
+            
+            return result
+            
+    async def get_model_performance(self, model_type: str) -> Dict[str, Any]:
+        """
+        获取指定类型模型的性能指标
+        
+        Args:
+            model_type: 模型类型 (price_prediction, strategy_optimizer, risk_assessment)
+            
+        Returns:
+            模型性能指标和训练历史
+        """
+        try:
+            # 检查缓存是否存在
+            if model_type in self.performance_cache:
+                last_update = self.performance_cache[model_type].get('last_update')
+                # 如果缓存不超过5分钟，直接返回缓存数据
+                if last_update and (datetime.now() - last_update).total_seconds() < 300:
+                    return self.performance_cache[model_type]['data']
+            
+            # 查询MLflow获取最新实验
+            runs = mlflow.search_runs(
+                filter_string=f"params.model_type = '{model_type}'",
+                order_by=["start_time DESC"],
+                max_results=1
+            )
+            
+            if len(runs) == 0:
+                # 如果没有找到实验记录，返回模拟数据
+                return self._get_mock_performance_data(model_type)
+            
+            run_id = runs.iloc[0]['run_id']
+            metrics = []
+            history = {}
+            
+            # 获取指标
+            client = mlflow.tracking.MlflowClient()
+            metric_history = client.get_metric_history(run_id, 'val_loss')
+            
+            # 构建性能指标
+            if model_type == 'price_prediction':
+                metrics = [
+                    {'name': 'mse', 'displayName': '均方误差', 'value': str(runs.iloc[0]['metrics.val_mse']), 
+                     'trend': 'down', 'changePercent': '2.5'},
+                    {'name': 'mae', 'displayName': '平均绝对误差', 'value': str(runs.iloc[0]['metrics.val_mae']), 
+                     'trend': 'down', 'changePercent': '1.8'},
+                ]
+            elif model_type == 'strategy_optimizer':
+                metrics = [
+                    {'name': 'sharpe', 'displayName': '夏普比率', 'value': str(runs.iloc[0]['metrics.sharpe_ratio']), 
+                     'trend': 'up', 'changePercent': '3.2'},
+                    {'name': 'max_drawdown', 'displayName': '最大回撤', 'value': str(runs.iloc[0]['metrics.max_drawdown']), 
+                     'trend': 'down', 'changePercent': '4.1'},
+                ]
+            elif model_type == 'risk_assessment':
+                metrics = [
+                    {'name': 'accuracy', 'displayName': '准确率', 'value': str(runs.iloc[0]['metrics.accuracy']), 
+                     'trend': 'up', 'changePercent': '1.5'},
+                    {'name': 'precision', 'displayName': '精确率', 'value': str(runs.iloc[0]['metrics.precision']), 
+                     'trend': 'up', 'changePercent': '2.3'},
+                ]
+            
+            # 获取训练历史
+            artifacts_path = client.download_artifacts(run_id, "history.json")
+            if os.path.exists(artifacts_path):
+                with open(artifacts_path, 'r') as f:
+                    history = json.load(f)
+            
+            # 返回性能数据
+            performance_data = {
+                'metrics': metrics,
+                'history': history
+            }
+            
+            # 更新缓存
+            self.performance_cache[model_type] = {
+                'data': performance_data,
+                'last_update': datetime.now()
+            }
+            
+            return performance_data
+            
+        except Exception as e:
+            logger.error(f"获取模型性能数据出错: {e}")
+            # 如果出错返回模拟数据
+            return self._get_mock_performance_data(model_type)
+    
+    def _get_mock_performance_data(self, model_type: str) -> Dict[str, Any]:
+        """生成模拟性能数据用于演示"""
+        # 生成模拟指标
+        metrics = []
+        history = {}
+        
+        if model_type == 'price_prediction':
+            metrics = [
+                {'name': 'mse', 'displayName': '均方误差', 'value': '0.0324', 'trend': 'down', 'changePercent': '5.2'},
+                {'name': 'mae', 'displayName': '平均绝对误差', 'value': '0.1253', 'trend': 'down', 'changePercent': '3.7'},
+                {'name': 'accuracy', 'displayName': '准确率', 'value': '87.6%', 'trend': 'up', 'changePercent': '2.1'},
+                {'name': 'r2', 'displayName': 'R²值', 'value': '0.793', 'trend': 'up', 'changePercent': '1.5'}
+            ]
+            
+            # 生成训练历史数据
+            epochs = list(range(1, 51))
+            history = {
+                'epochs': epochs,
+                'train_loss': [0.5 - i*0.008 + np.random.random()*0.02 for i in range(50)],
+                'val_loss': [0.6 - i*0.007 + np.random.random()*0.03 for i in range(50)],
+                'train_accuracy': [0.5 + i*0.008 + np.random.random()*0.02 for i in range(50)],
+                'val_accuracy': [0.45 + i*0.007 + np.random.random()*0.03 for i in range(50)]
+            }
+            
+        elif model_type == 'strategy_optimizer':
+            metrics = [
+                {'name': 'sharpe', 'displayName': '夏普比率', 'value': '1.86', 'trend': 'up', 'changePercent': '4.2'},
+                {'name': 'max_drawdown', 'displayName': '最大回撤', 'value': '15.3%', 'trend': 'down', 'changePercent': '7.8'},
+                {'name': 'win_rate', 'displayName': '胜率', 'value': '68.2%', 'trend': 'up', 'changePercent': '3.1'},
+                {'name': 'profit_factor', 'displayName': '盈亏比', 'value': '2.34', 'trend': 'up', 'changePercent': '5.6'}
+            ]
+            
+            # 生成训练历史数据
+            epochs = list(range(1, 51))
+            history = {
+                'epochs': epochs,
+                'train_loss': [2.0 - i*0.03 + np.random.random()*0.1 for i in range(50)],
+                'val_loss': [2.2 - i*0.025 + np.random.random()*0.15 for i in range(50)],
+                'train_accuracy': [0.4 + i*0.01 + np.random.random()*0.02 for i in range(50)],
+                'val_accuracy': [0.35 + i*0.009 + np.random.random()*0.025 for i in range(50)]
+            }
+            
+        elif model_type == 'risk_assessment':
+            metrics = [
+                {'name': 'accuracy', 'displayName': '准确率', 'value': '91.2%', 'trend': 'up', 'changePercent': '2.8'},
+                {'name': 'precision', 'displayName': '精确率', 'value': '88.7%', 'trend': 'up', 'changePercent': '3.5'},
+                {'name': 'recall', 'displayName': '召回率', 'value': '85.3%', 'trend': 'up', 'changePercent': '1.9'},
+                {'name': 'f1', 'displayName': 'F1分数', 'value': '0.865', 'trend': 'up', 'changePercent': '2.4'}
+            ]
+            
+            # 生成训练历史数据
+            epochs = list(range(1, 41))
+            history = {
+                'epochs': epochs,
+                'train_loss': [0.7 - i*0.015 + np.random.random()*0.02 for i in range(40)],
+                'val_loss': [0.8 - i*0.012 + np.random.random()*0.03 for i in range(40)],
+                'train_accuracy': [0.6 + i*0.008 + np.random.random()*0.015 for i in range(40)],
+                'val_accuracy': [0.55 + i*0.007 + np.random.random()*0.02 for i in range(40)]
+            }
+        
+        return {
+            'metrics': metrics,
+            'history': history
+        }
+    
+    async def start_model_training(self, model_type: str, parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        手动启动AI模型训练
+        
+        Args:
+            model_type: 模型类型 (price_prediction, strategy_optimizer, risk_assessment)
+            parameters: 训练参数
+            
+        Returns:
+            训练任务状态
+        """
+        if model_type not in self.training_tasks:
+            raise ValueError(f"不支持的模型类型: {model_type}")
+        
+        # 如果已经在训练中，返回当前状态
+        task_info = self.training_tasks[model_type]
+        if task_info['status'] == 'training':
+            return {
+                'status': 'already_running',
+                'message': f"{model_type} 模型已经在训练中",
+                'progress': task_info['progress']
+            }
+        
+        # 更新训练状态
+        task_info['status'] = 'training'
+        task_info['progress'] = 0
+        task_info['start_time'] = datetime.now()
+        task_info['current_epoch'] = 0
+        
+        # 启动训练任务
+        if parameters is None:
+            parameters = {}
+        
+        task = asyncio.create_task(self._run_training_task(model_type, parameters))
+        task_info['task'] = task
+        
+        return {
+            'status': 'started',
+            'message': f"{model_type} 模型训练已启动",
+            'start_time': task_info['start_time'].isoformat()
+        }
+
+    async def _run_training_task(self, model_type: str, parameters: Dict[str, Any]):
+        """模型训练任务"""
+        task_info = self.training_tasks[model_type]
+        
+        try:
+            # 设置MLflow跟踪
+            with mlflow.start_run(run_name=f"{model_type}_training"):
+                mlflow.log_param('model_type', model_type)
+                mlflow.log_params(parameters)
+                
+                # 加载训练数据
+                logger.info(f"加载 {model_type} 模型的训练数据")
+                historical_data = self._load_historical_data()
+                
+                # 根据模型类型选择训练方法
+                if model_type == 'price_prediction':
+                    await self._simulate_training(task_info, async_func=self._train_price_prediction_model, 
+                                                 async_args=[historical_data])
+                elif model_type == 'strategy_optimizer':
+                    await self._simulate_training(task_info, async_func=self._train_strategy_optimization_model, 
+                                                 async_args=[historical_data])
+                elif model_type == 'risk_assessment':
+                    await self._simulate_training(task_info, async_func=self._train_risk_assessment_model, 
+                                                 async_args=[historical_data])
+                
+                # 训练完成
+                task_info['status'] = 'complete'
+                task_info['progress'] = 100
+                
+                # 记录训练完成
+                mlflow.log_metric('training_status', 1)
+                
+                # 清除缓存，强制下次获取最新性能数据
+                if model_type in self.performance_cache:
+                    del self.performance_cache[model_type]
+                
+                logger.info(f"{model_type} 模型训练完成")
+            
+        except Exception as e:
+            task_info['status'] = 'failed'
+            logger.error(f"{model_type} 模型训练失败: {e}")
+            mlflow.log_metric('training_status', 0)
+            
+    async def _simulate_training(self, task_info, async_func, async_args=None, async_kwargs=None):
+        """模拟训练过程，更新进度信息并执行实际训练函数"""
+        if async_args is None:
+            async_args = []
+        if async_kwargs is None:
+            async_kwargs = {}
+            
+        total_epochs = task_info['total_epochs']
+        
+        for epoch in range(1, total_epochs + 1):
+            # 更新当前纪元和进度
+            task_info['current_epoch'] = epoch
+            task_info['progress'] = int(epoch / total_epochs * 100)
+            
+            # 模拟每个纪元的训练时间
+            await asyncio.sleep(0.5)  # 在实际应用中，这里是真实训练时间
+        
+        # 执行实际训练函数
+        # 注意：在实际应用中，训练函数会在每个纪元更新进度
+        await async_func(*async_args, **async_kwargs)
+    
+    def _load_historical_data(self):
+        """
+        Load historical market data for training
+            
+        Returns:
+            pd.DataFrame: Historical market data
+        """
+        # In a real implementation, this would load actual data
+        # For example, from a database or CSV files
+            
+        # For demonstration, return a mock DataFrame
+        dates = pd.date_range(end=datetime.now(), periods=252, freq='B')
+        stocks = ['000001', '600000', '601398']
+        
+            data = []
+        for stock in stocks:
+            price = 10 + np.random.random() * 90  # Random start price
+            for date in dates:
+                # Generate some random price movements
+                change = np.random.normal(0, 0.015)  # Normal distribution
+                price *= (1 + change)
+                
+                volume = int(np.random.gamma(2, 50000))  # Random volume
+                
+                data.append({
+                    'date': date,
+                    'stock_code': stock,
+                    'open': price * (1 - np.random.random() * 0.01),
+                    'high': price * (1 + np.random.random() * 0.02),
+                    'low': price * (1 - np.random.random() * 0.02),
+                    'close': price,
+                    'volume': volume,
+                    'index_close': 3000 + np.random.normal(0, 30)  # Simulated index
+                })
+        
+        return pd.DataFrame(data)
+
+    async def research_external_strategies(self, query: str, language: str = 'en', max_results: int = 5) -> Dict[str, Any]:
+        """
+        Search for and analyze external trading strategies from the internet.
+        
+        Args:
+            query (str): Search query for trading strategies
+            language (str): Language of search ('en' for English, 'cn' for Chinese)
+            max_results (int): Maximum number of results to return
+            
+        Returns:
+            Dict[str, Any]: Found strategies and analysis results
+        """
+        logger.info(f"Researching external strategies with query: {query}")
+        
+        try:
+            # Search for strategies
+            strategies = await self.strategy_finder.search_for_strategies(query, language, max_results)
+            
+            self.learning_progress['strategies_found'] += len(strategies)
+            self.learning_progress['last_search_time'] = datetime.now()
+            
+            # If no strategies found, return empty result
+            if not strategies:
+                return {
+                    'success': False,
+                    'message': 'No relevant strategies found',
+                    'strategies': []
+                }
+                
+            # For each strategy, extract detailed information
+            detailed_strategies = []
+            
+            for strategy in strategies:
+                try:
+                    # Extract strategy details
+                    details = await self.strategy_finder.extract_strategy_details(strategy['url'])
+                    
+                    # Adapt the strategy to our system
+                    adapted_strategy = await self.strategy_finder.adapt_strategy_to_system(details)
+                    
+                    # Load historical data for backtesting
+                    historical_data = self._load_historical_data()
+                    
+                    # Backtest the strategy
+                    backtest_results = await self.strategy_finder.backtest_external_strategy(
+                        adapted_strategy, historical_data
+                    )
+            
+                    # Learn from the strategy
+                    learning_results = await self.strategy_finder.learn_from_external_strategy(
+                        adapted_strategy, backtest_results
+                    )
+            
+                    # Add to detailed strategies
+                    detailed_strategies.append({
+                        'original': strategy,
+                        'details': details,
+                        'adapted': adapted_strategy,
+                        'backtest': backtest_results,
+                        'learning': learning_results
+                    })
+            
+                    # If the strategy should be incorporated, add to our database
+                    if learning_results['incorporate']:
+                        self.external_strategies.append({
+                            'id': str(uuid.uuid4()),
+                            'date_added': datetime.now().isoformat(),
+                            'query': query,
+                            'strategy': adapted_strategy,
+                            'learning': learning_results
+                        })
+                        self.learning_progress['strategies_incorporated'] += 1
+                        
+                    self.learning_progress['strategies_analyzed'] += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error processing strategy: {e}")
+                    continue
+            
+            return {
+                'success': True,
+                'message': f'Found {len(strategies)} strategies, incorporated {sum(1 for s in detailed_strategies if s["learning"]["incorporate"])}',
+                'strategies': detailed_strategies,
+                'learning_progress': self.learning_progress
+            }
+            
+        except Exception as e:
+            logger.error(f"Error researching external strategies: {e}")
+            return {
+                'success': False,
+                'message': f'Error researching strategies: {str(e)}',
+                'strategies': []
+            }
+    
+    async def get_top_trader_strategies(self, market: str = 'global', trader_count: int = 5) -> Dict[str, Any]:
+        """
+        Get strategies from top performing traders in a specific market.
+        
+        Args:
+            market (str): Target market ('global', 'us', 'china', etc.)
+            trader_count (int): Number of top traders to analyze
+            
+        Returns:
+            Dict[str, Any]: Top traders strategies
+        """
+        try:
+            strategies = await self.strategy_finder.collect_top_trader_strategies(market, trader_count)
+            
+            return {
+                'success': True,
+                'message': f'Found {len(strategies)} top trader strategies',
+                'strategies': strategies
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting top trader strategies: {e}")
+            return {
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'strategies': []
+            }
+    
+    async def get_external_learning_status(self) -> Dict[str, Any]:
+        """
+        Get the status of external strategy learning.
+        
+        Returns:
+            Dict[str, Any]: Learning status
+        """
+        return {
+            'success': True,
+            'learning_progress': self.learning_progress,
+            'incorporated_strategies': len(self.external_strategies),
+            'last_search_time': self.learning_progress['last_search_time'].isoformat() 
+                if self.learning_progress['last_search_time'] else None,
+            'recent_strategies': self.external_strategies[-5:] if self.external_strategies else []
+        }
+                
+    async def schedule_automatic_research(self, enabled: bool = True, interval_hours: int = 24) -> Dict[str, Any]:
+        """
+        Schedule automatic research of external strategies.
+        
+        Args:
+            enabled (bool): Whether to enable automatic research
+            interval_hours (int): Interval between research runs in hours
+            
+        Returns:
+            Dict[str, Any]: Schedule status
+        """
+        # Implementation would schedule periodic tasks
+        # For demonstration, we'll just return status
+        
+        return {
+            'success': True,
+            'message': f'Automatic research {"enabled" if enabled else "disabled"}',
+            'interval_hours': interval_hours,
+            'next_run': datetime.now().isoformat() if enabled else None
+        }

@@ -1,0 +1,711 @@
+<template>
+	<view :class="['container', isDarkMode ? 'dark-theme' : 'light-theme']">
+		<view class="header">
+			<view class="title">选股策略</view>
+			<view class="subtitle">多维度智能选股系统</view>
+		</view>
+		
+		<!-- 策略选择 -->
+		<view class="strategy-selector">
+			<view class="card-title">
+				<text class="title-text">选择策略</text>
+			</view>
+			<view class="strategy-tabs">
+				<view class="strategy-tab" :class="{ active: currentStrategy === 'smart' }" @click="changeStrategy('smart')">
+					<text class="tab-text">智能选股</text>
+				</view>
+				<view class="strategy-tab" :class="{ active: currentStrategy === 'technical' }" @click="changeStrategy('technical')">
+					<text class="tab-text">技术选股</text>
+				</view>
+				<view class="strategy-tab" :class="{ active: currentStrategy === 'fundamental' }" @click="changeStrategy('fundamental')">
+					<text class="tab-text">基本面选股</text>
+				</view>
+				<view class="strategy-tab" :class="{ active: currentStrategy === 'theme' }" @click="changeStrategy('theme')">
+					<text class="tab-text">主题选股</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 智能选股 -->
+		<view class="strategy-content" v-if="currentStrategy === 'smart'">
+			<view class="filter-section">
+				<view class="filter-title">
+					<text class="filter-text">智能模型</text>
+				</view>
+				<view class="filter-options">
+					<view class="filter-option" :class="{ selected: selectedModel === 'comprehensive' }" @click="selectModel('comprehensive')">
+						<text class="option-text">综合模型</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedModel === 'momentum' }" @click="selectModel('momentum')">
+						<text class="option-text">动量模型</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedModel === 'value' }" @click="selectModel('value')">
+						<text class="option-text">价值模型</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedModel === 'growth' }" @click="selectModel('growth')">
+						<text class="option-text">成长模型</text>
+					</view>
+				</view>
+			</view>
+			
+			<view class="filter-section">
+				<view class="filter-title">
+					<text class="filter-text">选股风格</text>
+				</view>
+				<view class="filter-options">
+					<view class="filter-option" :class="{ selected: selectedStyle === 'aggressive' }" @click="selectStyle('aggressive')">
+						<text class="option-text">进取型</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedStyle === 'balanced' }" @click="selectStyle('balanced')">
+						<text class="option-text">平衡型</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedStyle === 'conservative' }" @click="selectStyle('conservative')">
+						<text class="option-text">稳健型</text>
+					</view>
+				</view>
+			</view>
+			
+			<view class="filter-section">
+				<view class="filter-title">
+					<text class="filter-text">市场范围</text>
+				</view>
+				<view class="filter-options">
+					<view class="filter-option" :class="{ selected: selectedMarket === 'all' }" @click="selectMarket('all')">
+						<text class="option-text">全市场</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedMarket === 'main' }" @click="selectMarket('main')">
+						<text class="option-text">主板</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedMarket === 'sme' }" @click="selectMarket('sme')">
+						<text class="option-text">中小板</text>
+					</view>
+					<view class="filter-option" :class="{ selected: selectedMarket === 'gem' }" @click="selectMarket('gem')">
+						<text class="option-text">创业板</text>
+					</view>
+				</view>
+			</view>
+			
+			<button class="search-btn" @click="searchStocks">开始选股</button>
+		</view>
+		
+		<!-- 技术选股 -->
+		<view class="strategy-content" v-if="currentStrategy === 'technical'">
+			<view class="filter-section">
+				<view class="filter-title">
+					<text class="filter-text">技术指标</text>
+				</view>
+				<view class="filter-options flex-wrap">
+					<view class="filter-option" :class="{ selected: techIndicators.includes('macd') }" @click="toggleTechIndicator('macd')">
+						<text class="option-text">MACD金叉</text>
+					</view>
+					<view class="filter-option" :class="{ selected: techIndicators.includes('kdj') }" @click="toggleTechIndicator('kdj')">
+						<text class="option-text">KDJ金叉</text>
+					</view>
+					<view class="filter-option" :class="{ selected: techIndicators.includes('ma') }" @click="toggleTechIndicator('ma')">
+						<text class="option-text">均线多头排列</text>
+					</view>
+					<view class="filter-option" :class="{ selected: techIndicators.includes('boll') }" @click="toggleTechIndicator('boll')">
+						<text class="option-text">BOLL突破</text>
+					</view>
+					<view class="filter-option" :class="{ selected: techIndicators.includes('rsi') }" @click="toggleTechIndicator('rsi')">
+						<text class="option-text">RSI背离</text>
+					</view>
+					<view class="filter-option" :class="{ selected: techIndicators.includes('volume') }" @click="toggleTechIndicator('volume')">
+						<text class="option-text">放量突破</text>
+					</view>
+				</view>
+			</view>
+			
+			<view class="filter-section">
+				<view class="filter-title">
+					<text class="filter-text">K线形态</text>
+				</view>
+				<view class="filter-options flex-wrap">
+					<view class="filter-option" :class="{ selected: kPatterns.includes('hammer') }" @click="toggleKPattern('hammer')">
+						<text class="option-text">锤子线</text>
+					</view>
+					<view class="filter-option" :class="{ selected: kPatterns.includes('morning') }" @click="toggleKPattern('morning')">
+						<text class="option-text">启明星</text>
+					</view>
+					<view class="filter-option" :class="{ selected: kPatterns.includes('engulfing') }" @click="toggleKPattern('engulfing')">
+						<text class="option-text">吞没形态</text>
+					</view>
+					<view class="filter-option" :class="{ selected: kPatterns.includes('three') }" @click="toggleKPattern('three')">
+						<text class="option-text">三兵</text>
+					</view>
+					<view class="filter-option" :class="{ selected: kPatterns.includes('gap') }" @click="toggleKPattern('gap')">
+						<text class="option-text">突破缺口</text>
+					</view>
+				</view>
+			</view>
+			
+			<button class="search-btn" @click="searchStocks">开始选股</button>
+		</view>
+		
+		<!-- 选股结果 -->
+		<view class="stock-results" v-if="stockResults.length > 0">
+			<view class="card-title">
+				<text class="title-text">选股结果</text>
+				<text class="result-count">{{stockResults.length}} 只股票</text>
+			</view>
+			<view class="stock-list">
+				<view class="stock-item" v-for="(stock, index) in stockResults" :key="index" @click="navigateToDetail(stock)">
+					<view class="stock-info">
+						<text class="stock-name">{{stock.name}}</text>
+						<text class="stock-code">{{stock.code}}</text>
+					</view>
+					<view class="stock-score">
+						<text class="score-value">{{stock.score}}</text>
+						<text class="score-label">匹配度</text>
+					</view>
+					<view class="stock-price" :class="stock.change >= 0 ? 'up' : 'down'">
+						<text class="price">{{stock.price}}</text>
+						<text class="change">{{stock.change >= 0 ? '+' : ''}}{{stock.change}}%</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 空状态 -->
+		<view class="empty-state" v-if="showEmpty">
+			<view class="empty-icon"></view>
+			<text class="empty-text">请设置选股条件并点击"开始选股"</text>
+		</view>
+	</view>
+</template>
+
+<script>
+export default {
+	data() {
+		return {
+			isDarkMode: false,
+			currentStrategy: 'smart',
+			selectedModel: 'comprehensive',
+			selectedStyle: 'balanced',
+			selectedMarket: 'all',
+			techIndicators: [],
+			kPatterns: [],
+			stockResults: [],
+			showEmpty: true
+		}
+	},
+	onLoad() {
+		// 获取当前主题设置
+		const app = getApp();
+		this.isDarkMode = app.globalData.isDarkMode;
+		
+		// 原有的onLoad逻辑保持不变
+	},
+	onShow() {
+		// 每次显示页面时检查当前主题
+		const app = getApp();
+		this.isDarkMode = app.globalData.isDarkMode;
+	},
+	methods: {
+		// 更改选股策略
+		changeStrategy(strategy) {
+			this.currentStrategy = strategy;
+		},
+		
+		// 选择智能模型
+		selectModel(model) {
+			this.selectedModel = model;
+		},
+		
+		// 选择风格
+		selectStyle(style) {
+			this.selectedStyle = style;
+		},
+		
+		// 选择市场
+		selectMarket(market) {
+			this.selectedMarket = market;
+		},
+		
+		// 切换技术指标
+		toggleTechIndicator(indicator) {
+			const index = this.techIndicators.indexOf(indicator);
+			if (index === -1) {
+				this.techIndicators.push(indicator);
+			} else {
+				this.techIndicators.splice(index, 1);
+			}
+		},
+		
+		// 切换K线形态
+		toggleKPattern(pattern) {
+			const index = this.kPatterns.indexOf(pattern);
+			if (index === -1) {
+				this.kPatterns.push(pattern);
+			} else {
+				this.kPatterns.splice(index, 1);
+			}
+		},
+		
+		// 搜索股票
+		searchStocks() {
+			// 模拟搜索请求
+			setTimeout(() => {
+				// 模拟数据
+				this.stockResults = [
+					{
+						name: '贵州茅台',
+						code: '600519',
+						price: 1826.50,
+						change: 2.34,
+						score: 97
+					},
+					{
+						name: '比亚迪',
+						code: '002594',
+						price: 241.85,
+						change: 1.58,
+						score: 95
+					},
+					{
+						name: '宁德时代',
+						code: '300750',
+						price: 187.36,
+						change: -0.75,
+						score: 92
+					},
+					{
+						name: '隆基绿能',
+						code: '601012',
+						price: 52.38,
+						change: 3.47,
+						score: 91
+					},
+					{
+						name: '中国平安',
+						code: '601318',
+						price: 48.65,
+						change: 0.89,
+						score: 88
+					}
+				];
+				this.showEmpty = false;
+			}, 1000);
+		},
+		
+		// 导航到详细页
+		navigateToDetail(stock) {
+			uni.navigateTo({
+				url: `/pages/stock-picking/detail?code=${stock.code}&name=${stock.name}`
+			});
+		}
+	}
+}
+</script>
+
+<style>
+/* 基础样式 */
+.container {
+	padding: 30rpx;
+	min-height: 100vh;
+}
+
+/* 主题样式 */
+.dark-theme {
+	background-color: #141414;
+	color: #ffffff;
+}
+
+.light-theme {
+	background-color: #f5f5f5;
+	color: #333333;
+}
+
+/* 头部样式 */
+.header {
+	margin-bottom: 30rpx;
+}
+
+.title {
+	font-size: 40rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+}
+
+.dark-theme .title {
+	color: #ffffff;
+}
+
+.light-theme .title {
+	color: #333333;
+}
+
+.subtitle {
+	font-size: 26rpx;
+}
+
+.dark-theme .subtitle {
+	color: #999999;
+}
+
+.light-theme .subtitle {
+	color: #666666;
+}
+
+/* 卡片标题 */
+.card-title {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.title-text {
+	font-size: 32rpx;
+	font-weight: bold;
+}
+
+.dark-theme .title-text {
+	color: #ffffff;
+}
+
+.light-theme .title-text {
+	color: #333333;
+}
+
+.result-count {
+	font-size: 24rpx;
+}
+
+.dark-theme .result-count {
+	color: #cccccc;
+}
+
+.light-theme .result-count {
+	color: #666666;
+}
+
+/* 策略选择器 */
+.strategy-selector {
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 30rpx;
+}
+
+.dark-theme .strategy-selector {
+	background-color: #222222;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.3);
+}
+
+.light-theme .strategy-selector {
+	background-color: #ffffff;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.strategy-tabs {
+	display: flex;
+	justify-content: space-between;
+	border-radius: 8rpx;
+	padding: 4rpx;
+}
+
+.dark-theme .strategy-tabs {
+	background-color: #333333;
+}
+
+.light-theme .strategy-tabs {
+	background-color: #f0f0f0;
+}
+
+.strategy-tab {
+	flex: 1;
+	text-align: center;
+	padding: 16rpx 0;
+	border-radius: 6rpx;
+}
+
+.strategy-tab.active {
+	background-color: #4c8dff;
+}
+
+.tab-text {
+	font-size: 26rpx;
+}
+
+.dark-theme .tab-text {
+	color: #cccccc;
+}
+
+.light-theme .tab-text {
+	color: #666666;
+}
+
+.active .tab-text {
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 策略内容 */
+.strategy-content {
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 30rpx;
+}
+
+.dark-theme .strategy-content {
+	background-color: #222222;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.3);
+}
+
+.light-theme .strategy-content {
+	background-color: #ffffff;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.filter-section {
+	margin-bottom: 30rpx;
+}
+
+.filter-title {
+	margin-bottom: 15rpx;
+}
+
+.filter-text {
+	font-size: 28rpx;
+}
+
+.dark-theme .filter-text {
+	color: #ffffff;
+}
+
+.light-theme .filter-text {
+	color: #333333;
+}
+
+.filter-options {
+	display: flex;
+	margin: 0 -10rpx;
+}
+
+.flex-wrap {
+	flex-wrap: wrap;
+}
+
+.filter-option {
+	margin: 10rpx;
+	border-radius: 6rpx;
+	padding: 12rpx 20rpx;
+}
+
+.dark-theme .filter-option {
+	background-color: #333333;
+}
+
+.light-theme .filter-option {
+	background-color: #f0f0f0;
+}
+
+.filter-option.selected {
+	background-color: #4c8dff;
+}
+
+.option-text {
+	font-size: 24rpx;
+}
+
+.dark-theme .option-text {
+	color: #cccccc;
+}
+
+.light-theme .option-text {
+	color: #666666;
+}
+
+.selected .option-text {
+	color: #ffffff;
+}
+
+.search-btn {
+	width: 100%;
+	height: 80rpx;
+	background-color: #4c8dff;
+	border-radius: 8rpx;
+	color: #ffffff;
+	font-size: 30rpx;
+	line-height: 80rpx;
+	text-align: center;
+}
+
+/* 选股结果 */
+.stock-results {
+	border-radius: 12rpx;
+	padding: 20rpx;
+}
+
+.dark-theme .stock-results {
+	background-color: #222222;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.3);
+}
+
+.light-theme .stock-results {
+	background-color: #ffffff;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.stock-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.stock-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 20rpx 0;
+}
+
+.dark-theme .stock-item {
+	border-bottom: 1px solid #333333;
+}
+
+.light-theme .stock-item {
+	border-bottom: 1px solid #eeeeee;
+}
+
+.stock-item:last-child {
+	border-bottom: none;
+}
+
+.stock-info {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+}
+
+.stock-name {
+	font-size: 28rpx;
+	margin-bottom: 5rpx;
+}
+
+.dark-theme .stock-name {
+	color: #ffffff;
+}
+
+.light-theme .stock-name {
+	color: #333333;
+}
+
+.stock-code {
+	font-size: 24rpx;
+}
+
+.dark-theme .stock-code {
+	color: #999999;
+}
+
+.light-theme .stock-code {
+	color: #666666;
+}
+
+.stock-score {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	margin-right: 30rpx;
+}
+
+.score-value {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #4c8dff;
+	margin-bottom: 5rpx;
+}
+
+.score-label {
+	font-size: 22rpx;
+}
+
+.dark-theme .score-label {
+	color: #999999;
+}
+
+.light-theme .score-label {
+	color: #666666;
+}
+
+.stock-price {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+}
+
+.price {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 5rpx;
+}
+
+.dark-theme .up .price, .dark-theme .up .change {
+	color: #ff5252;
+}
+
+.dark-theme .down .price, .dark-theme .down .change {
+	color: #4caf50;
+}
+
+.light-theme .up .price, .light-theme .up .change {
+	color: #ff5252;
+}
+
+.light-theme .down .price, .light-theme .down .change {
+	color: #4caf50;
+}
+
+.change {
+	font-size: 24rpx;
+}
+
+/* 空状态 */
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 200rpx;
+	border-radius: 12rpx;
+	padding: 30rpx;
+	margin-bottom: 30rpx;
+}
+
+.dark-theme .empty-state {
+	background-color: #222222;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.3);
+}
+
+.light-theme .empty-state {
+	background-color: #ffffff;
+	box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.empty-icon {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	margin-bottom: 20rpx;
+}
+
+.dark-theme .empty-icon {
+	background-color: #333333;
+}
+
+.light-theme .empty-icon {
+	background-color: #f0f0f0;
+}
+
+.empty-text {
+	font-size: 28rpx;
+}
+
+.dark-theme .empty-text {
+	color: #999999;
+}
+
+.light-theme .empty-text {
+	color: #666666;
+}
+</style> 

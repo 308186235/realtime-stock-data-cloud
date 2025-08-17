@@ -1,0 +1,16 @@
+elk_cluster:
+  nodes:
+    - elk-node1.prod:9200
+    - elk-node2.prod:9200
+  auth:
+    username: ${ELK_USERNAME}
+    password: ${ELK_PASSWORD}
+    api_key: ${ELK_API_KEY}
+  retry_policy:
+    max_attempts: 5
+    backoff_factor: 1.5
+  bulk_config:
+    max_chunk_size: 52428800  # 50MB in bytes
+    flush_interval: 5s
+  timeout: 30s
+  ssl_verify: true

@@ -1,0 +1,891 @@
+<template>
+	<view class="container">
+		<view class="header">
+			<text class="title">AI学习分析</text>
+			<text class="subtitle">基于历史交易数据的智能学习与优化</text>
+		</view>
+		
+		<!-- 学习进度 -->
+		<view class="progress-section">
+			<view class="section-header">
+				<text class="section-title">学习进度</text>
+				<text class="refresh-btn" @click="refreshLearning">刷新</text>
+			</view>
+			
+			<view class="learning-status">
+				<view class="status-icon" :class="hasLearned ? 'completed' : 'pending'">
+					<text class="icon">{{ hasLearned ? '✓' : '⟳' }}</text>
+				</view>
+				<view class="status-info">
+					<text class="status-text">{{ hasLearned ? 'AI已完成学习分析' : '点击下方按钮开始AI学习分析' }}</text>
+					<text class="status-detail">{{ learningDetail }}</text>
+				</view>
+			</view>
+			
+			<button v-if="!isLearning && !hasLearned" class="start-btn" @click="startLearning">开始学习分析</button>
+			<button v-if="isLearning" class="learning-btn" disabled>学习分析中...</button>
+		</view>
+		
+		<!-- 分析结果 -->
+		<view v-if="hasLearned" class="analysis-section">
+			<view class="section-header">
+				<text class="section-title">策略学习结果</text>
+			</view>
+			
+			<view class="strategy-rankings">
+				<view class="ranking-header">
+					<text class="header-cell">策略名称</text>
+					<text class="header-cell">胜率</text>
+					<text class="header-cell">样本数</text>
+					<text class="header-cell">推荐权重</text>
+				</view>
+				
+				<view class="ranking-item" v-for="(strategy, index) in learningResults.bestStrategies" :key="index">
+					<text class="strategy-name">{{ getStrategyDisplayName(strategy.name) }}</text>
+					<text class="win-rate">{{ (strategy.winRate * 100).toFixed(1) }}%</text>
+					<text class="sample-size">{{ strategy.sampleSize }}笔</text>
+					<view class="weight-container">
+						<view class="weight-bar" :style="{ width: `${strategy.score * 100}%` }"></view>
+						<text class="weight-text">{{ (strategy.score * 100).toFixed(0) }}%</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 指标重要性分析 -->
+		<view v-if="hasLearned" class="analysis-section">
+			<view class="section-header">
+				<text class="section-title">指标重要性分析</text>
+			</view>
+			
+			<view class="indicator-analysis">
+				<view class="indicator-item" v-for="(importance, indicator) in getSortedIndicators()" :key="indicator">
+					<view class="indicator-header">
+						<text class="indicator-name">{{ getIndicatorDisplayName(indicator) }}</text>
+						<text class="indicator-value">{{ (importance * 100).toFixed(0) }}%</text>
+					</view>
+					<view class="indicator-bar-container">
+						<view class="indicator-bar" :style="{ width: `${importance * 100}%`, backgroundColor: getIndicatorColor(importance) }"></view>
+					</view>
+					<text class="indicator-recommendation">{{ getIndicatorRecommendation(importance) }}</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 参数优化建议 -->
+		<view v-if="hasLearned" class="analysis-section">
+			<view class="section-header">
+				<text class="section-title">优化建议</text>
+			</view>
+			
+			<view class="optimization-tabs">
+				<view 
+					v-for="(tab, index) in optimizationTabs" 
+					:key="index" 
+					:class="['tab-item', { active: activeTab === index }]"
+					@click="activeTab = index"
+				>
+					<text class="tab-text">{{ tab }}</text>
+				</view>
+			</view>
+			
+			<!-- 威廉指标优化 -->
+			<view v-if="activeTab === 0 && learningResults.bestParameters.williamsR" class="optimization-content">
+				<view class="param-item">
+					<text class="param-name">推荐周期组合</text>
+					<text class="param-value">{{ learningResults.bestParameters.williamsR.lookbackPeriods.join(', ') }}</text>
+				</view>
+				
+				<view class="param-item">
+					<text class="param-name">超卖阈值</text>
+					<text class="param-value">{{ learningResults.bestParameters.williamsR.oversoldThreshold }}</text>
+				</view>
+				
+				<view class="param-item">
+					<text class="param-name">超买阈值</text>
+					<text class="param-value">{{ learningResults.bestParameters.williamsR.overboughtThreshold }}</text>
+				</view>
+				
+				<view class="param-item">
+					<text class="param-name">使用RSI确认</text>
+					<text class="param-value">{{ learningResults.bestParameters.williamsR.useRSIConfirmation ? '是' : '否' }}</text>
+				</view>
+				
+				<view class="param-item">
+					<text class="param-name">使用趋势过滤</text>
+					<text class="param-value">{{ learningResults.bestParameters.williamsR.useTrendFilter ? '是' : '否' }}</text>
+				</view>
+				
+				<view class="specific-suggestion" v-if="learningResults.specificSuggestions?.williamsR">
+					<text class="suggestion-title">具体建议:</text>
+					<text class="suggestion-content">{{ learningResults.specificSuggestions.williamsR }}</text>
+				</view>
+			</view>
+			
+			<!-- 策略权重优化 -->
+			<view v-if="activeTab === 1" class="optimization-content">
+				<view class="weight-suggestion-title">
+					<text>最佳策略权重配置</text>
+				</view>
+				
+				<view class="weight-distribution">
+					<view v-for="(weight, strategy) in weightSuggestions" :key="strategy" class="weight-slice" 
+						:style="{ 
+							width: `${weight * 100}%`, 
+							backgroundColor: getStrategyColor(strategy) 
+						}">
+					</view>
+				</view>
+				
+				<view class="weight-legends">
+					<view v-for="(weight, strategy) in weightSuggestions" :key="strategy" class="weight-legend">
+						<view class="legend-color" :style="{ backgroundColor: getStrategyColor(strategy) }"></view>
+						<text class="legend-name">{{ getStrategyDisplayName(strategy) }}</text>
+						<text class="legend-value">{{ (weight * 100).toFixed(0) }}%</text>
+					</view>
+				</view>
+				
+				<view class="apply-section">
+					<button class="apply-btn" @click="applyWeightSuggestions">应用权重建议</button>
+					<text class="apply-note">应用后将更新系统中的策略权重配置</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 长期学习趋势 -->
+		<view v-if="hasLearned" class="analysis-section">
+			<view class="section-header">
+				<text class="section-title">长期学习趋势</text>
+			</view>
+			
+			<view class="trend-description">
+				<text class="trend-text">AI会随着交易历史的积累不断优化策略表现</text>
+			</view>
+			
+			<view class="trend-stats">
+				<view class="trend-card">
+					<text class="trend-label">初始胜率</text>
+					<text class="trend-value">48.5%</text>
+				</view>
+				<view class="trend-arrow">→</view>
+				<view class="trend-card">
+					<text class="trend-label">当前胜率</text>
+					<text class="trend-value">{{ stats.currentWinRate }}%</text>
+				</view>
+				<view class="trend-arrow">→</view>
+				<view class="trend-card">
+					<text class="trend-label">预测胜率</text>
+					<text class="trend-value">{{ stats.predictedWinRate }}%</text>
+				</view>
+			</view>
+			
+			<view class="learning-curve-container">
+				<text class="curve-title">学习曲线</text>
+				<view class="learning-curve">
+					<!-- 简化的学习曲线图示 -->
+					<view class="curve-point" v-for="(point, index) in learningCurve" :key="index"
+						:style="{ 
+							left: `${index / (learningCurve.length - 1) * 100}%`, 
+							bottom: `${point}%` 
+						}">
+					</view>
+					<view class="curve-line"></view>
+				</view>
+				<view class="curve-labels">
+					<text class="curve-label">初始</text>
+					<text class="curve-label">当前</text>
+					<text class="curve-label">预测</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script>
+import LearningEngine from '../../../utils/ai/learningEngine.js';
+
+export default {
+	data() {
+		return {
+			learningEngine: null,
+			isLearning: false,
+			hasLearned: false,
+			learningDetail: '通过分析历史交易记录，AI能够优化交易策略和参数',
+			learningResults: {
+				bestStrategies: [],
+				bestParameters: {},
+				indicatorImportance: {}
+			},
+			weightSuggestions: {},
+			optimizationTabs: ['威廉指标优化', '策略权重优化'],
+			activeTab: 0,
+			stats: {
+				currentWinRate: 58.2,
+				predictedWinRate: 67.5
+			},
+			learningCurve: [20, 35, 45, 48, 52, 58, 65, 68]
+		}
+	},
+	methods: {
+		// 初始化学习引擎
+		initLearningEngine() {
+			this.learningEngine = new LearningEngine();
+			
+			// 从数据库或存储中加载交易历史数据
+			this.loadTradingHistory();
+		},
+		
+		// 加载交易历史
+		loadTradingHistory() {
+			// 模拟交易数据，实际应用中应从数据库或存储中获取
+			const mockTrades = this.generateMockTrades();
+			
+			// 将交易记录添加到学习引擎
+			mockTrades.forEach(trade => {
+				this.learningEngine.recordTrade(trade);
+			});
+		},
+		
+		// 生成模拟交易数据
+		generateMockTrades() {
+			// 模拟50笔交易
+			const trades = [];
+			const strategies = ['sixSword', 'jiuFang', 'compass', 'williamsR'];
+			const actions = ['buy', 'sell', 'hold'];
+			
+			for (let i = 0; i < 50; i++) {
+				const isProfit = Math.random() > 0.4; // 60%的胜率
+				const tradeResult = isProfit ? Math.random() * 5 + 1 : -Math.random() * 3 - 1;
+				
+				const trade = {
+					id: i + 1,
+					stockCode: `SH${600000 + Math.floor(Math.random() * 1000)}`,
+					stockName: `示例股票${i % 10 + 1}`,
+					type: i % 3 === 0 ? 'buy' : 'sell',
+					price: Math.random() * 50 + 20,
+					quantity: Math.floor(Math.random() * 1000) + 100,
+					amount: 0,
+					result: tradeResult,
+					timestamp: new Date(Date.now() - (50 - i) * 86400000), // 过去50天到今天
+					strategyDetails: {},
+					indicatorSignals: {
+						macd: Math.random() * 2 - 1,
+						rsi: Math.random() * 100,
+						kdj: Math.random() * 100,
+						boll: Math.random() > 0.5 ? 'upper' : 'lower',
+						volume: Math.random() > 0.5 ? 'increase' : 'decrease',
+						williamsR: -Math.random() * 100
+					}
+				};
+				
+				trade.amount = trade.price * trade.quantity;
+				
+				// 为每个策略添加随机信号
+				strategies.forEach(strategy => {
+					const randomAction = actions[Math.floor(Math.random() * actions.length)];
+					
+					trade.strategyDetails[strategy] = {
+						action: randomAction,
+						score: Math.random() * 100,
+						confidence: Math.random(),
+						signals: {
+							crossingFromOversold: Math.random() > 0.7,
+							crossingFromOverbought: Math.random() > 0.7,
+							rsiConfirmation: Math.random() > 0.5
+						}
+					};
+				});
+				
+				trades.push(trade);
+			}
+			
+			return trades;
+		},
+		
+		// 开始学习分析
+		startLearning() {
+			this.isLearning = true;
+			this.learningDetail = '正在分析交易历史数据，请稍等...';
+			
+			// 模拟学习过程需要时间
+			setTimeout(() => {
+				const result = this.learningEngine.learn();
+				
+				if (result.success) {
+					this.hasLearned = true;
+					this.learningResults = result.results;
+					this.learningDetail = `分析完成，共分析了${this.learningEngine.tradingHistory.length}笔交易记录`;
+					
+					// 获取优化建议
+					const optimizationSuggestions = this.learningEngine.getOptimizationSuggestions();
+					this.weightSuggestions = optimizationSuggestions.weightSuggestions;
+				} else {
+					this.learningDetail = result.message;
+				}
+				
+				this.isLearning = false;
+			}, 2000);
+		},
+		
+		// 刷新学习分析
+		refreshLearning() {
+			if (this.isLearning) return;
+			
+			this.hasLearned = false;
+			this.learningDetail = '通过分析历史交易记录，AI能够优化交易策略和参数';
+		},
+		
+		// 获取策略显示名称
+		getStrategyDisplayName(strategyName) {
+			const names = {
+				'sixSword': '六脉神剑',
+				'jiuFang': '九方智投',
+				'compass': '指南针',
+				'williamsR': '威廉指标'
+			};
+			
+			return names[strategyName] || strategyName;
+		},
+		
+		// 获取排序后的指标重要性
+		getSortedIndicators() {
+			if (!this.learningResults.indicatorImportance) return {};
+			
+			// 将指标按重要性排序
+			return Object.fromEntries(
+				Object.entries(this.learningResults.indicatorImportance)
+					.sort((a, b) => b[1] - a[1])
+			);
+		},
+		
+		// 获取指标显示名称
+		getIndicatorDisplayName(indicator) {
+			const names = {
+				'macd': 'MACD指标',
+				'rsi': 'RSI指标',
+				'kdj': 'KDJ指标',
+				'boll': '布林带',
+				'volume': '成交量',
+				'williamsR': '威廉指标'
+			};
+			
+			return names[indicator] || indicator;
+		},
+		
+		// 获取指标颜色
+		getIndicatorColor(importance) {
+			if (importance > 0.7) return '#52c41a'; // 绿色
+			if (importance > 0.5) return '#1989fa'; // 蓝色
+			if (importance > 0.3) return '#faad14'; // 橙色
+			return '#f5222d'; // 红色
+		},
+		
+		// 获取指标推荐
+		getIndicatorRecommendation(importance) {
+			if (importance > 0.7) return '非常重要，建议优先使用';
+			if (importance > 0.5) return '较为重要，建议作为主要参考';
+			if (importance > 0.3) return '一般重要，可作为辅助指标';
+			return '重要性较低，建议减少权重';
+		},
+		
+		// 获取策略颜色
+		getStrategyColor(strategy) {
+			const colors = {
+				'sixSword': '#1989fa',
+				'jiuFang': '#52c41a',
+				'compass': '#faad14',
+				'williamsR': '#f5222d'
+			};
+			
+			return colors[strategy] || '#1989fa';
+		},
+		
+		// 应用权重建议
+		applyWeightSuggestions() {
+			// 在实际应用中，这里会将权重配置保存到系统设置中
+			uni.showToast({
+				title: '权重配置已更新',
+				icon: 'success'
+			});
+			
+			// 跳转到策略设置页面
+			setTimeout(() => {
+				uni.navigateTo({
+					url: '/pages/strategy-settings/index'
+				});
+			}, 1500);
+		}
+	},
+	onLoad() {
+		// 初始化学习引擎
+		this.initLearningEngine();
+	}
+}
+</script>
+
+<style>
+.container {
+	padding: 30rpx;
+}
+
+.header {
+	padding: 20rpx 0;
+	margin-bottom: 30rpx;
+}
+
+.title {
+	font-size: 36rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+}
+
+.subtitle {
+	font-size: 24rpx;
+	color: #666;
+}
+
+.section-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.section-title {
+	font-size: 28rpx;
+	font-weight: bold;
+}
+
+.refresh-btn {
+	font-size: 24rpx;
+	color: #1989fa;
+}
+
+/* 学习进度样式 */
+.progress-section {
+	background-color: #fff;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 30rpx;
+	box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.learning-status {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 20rpx 0;
+	margin-bottom: 20rpx;
+}
+
+.status-icon {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	margin-right: 20rpx;
+	justify-content: center;
+	align-items: center;
+}
+
+.status-icon.completed {
+	background-color: #52c41a;
+}
+
+.status-icon.pending {
+	background-color: #faad14;
+}
+
+.icon {
+	font-size: 40rpx;
+	color: white;
+}
+
+.status-info {
+	flex: 1;
+}
+
+.status-text {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+}
+
+.status-detail {
+	font-size: 24rpx;
+	color: #666;
+}
+
+.start-btn {
+	background-color: #1989fa;
+	color: white;
+	font-size: 28rpx;
+	margin-top: 20rpx;
+}
+
+.learning-btn {
+	background-color: #d9d9d9;
+	color: #666;
+	font-size: 28rpx;
+	margin-top: 20rpx;
+}
+
+/* 分析结果样式 */
+.analysis-section {
+	background-color: #fff;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 30rpx;
+	box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.strategy-rankings {
+	margin-top: 20rpx;
+}
+
+.ranking-header {
+	display: flex;
+	flex-direction: row;
+	background-color: #f5f5f5;
+	padding: 15rpx;
+	border-radius: 8rpx 8rpx 0 0;
+}
+
+.header-cell {
+	flex: 1;
+	font-size: 24rpx;
+	color: #666;
+	text-align: center;
+}
+
+.ranking-item {
+	display: flex;
+	flex-direction: row;
+	padding: 20rpx 15rpx;
+	border-bottom: 1px solid #f0f0f0;
+	align-items: center;
+}
+
+.strategy-name {
+	flex: 1;
+	font-size: 28rpx;
+	font-weight: bold;
+}
+
+.win-rate {
+	flex: 1;
+	font-size: 28rpx;
+	color: #f5222d;
+	text-align: center;
+}
+
+.sample-size {
+	flex: 1;
+	font-size: 24rpx;
+	color: #666;
+	text-align: center;
+}
+
+.weight-container {
+	flex: 1;
+	position: relative;
+	height: 30rpx;
+	background-color: #f5f5f5;
+	border-radius: 15rpx;
+	overflow: hidden;
+}
+
+.weight-bar {
+	position: absolute;
+	left: 0;
+	top: 0;
+	height: 100%;
+	background-color: #1989fa;
+	border-radius: 15rpx;
+}
+
+.weight-text {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	line-height: 30rpx;
+	text-align: center;
+	font-size: 22rpx;
+	color: white;
+}
+
+/* 指标重要性分析样式 */
+.indicator-analysis {
+	margin-top: 20rpx;
+}
+
+.indicator-item {
+	margin-bottom: 20rpx;
+}
+
+.indicator-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 10rpx;
+}
+
+.indicator-name {
+	font-size: 28rpx;
+	font-weight: bold;
+}
+
+.indicator-value {
+	font-size: 28rpx;
+	color: #1989fa;
+	font-weight: bold;
+}
+
+.indicator-bar-container {
+	height: 20rpx;
+	background-color: #f5f5f5;
+	border-radius: 10rpx;
+	overflow: hidden;
+	margin-bottom: 10rpx;
+}
+
+.indicator-bar {
+	height: 100%;
+	border-radius: 10rpx;
+}
+
+.indicator-recommendation {
+	font-size: 24rpx;
+	color: #666;
+}
+
+/* 优化建议样式 */
+.optimization-tabs {
+	display: flex;
+	flex-direction: row;
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	margin-bottom: 20rpx;
+}
+
+.tab-item {
+	flex: 1;
+	padding: 15rpx 0;
+	text-align: center;
+}
+
+.tab-item.active {
+	background-color: #1989fa;
+	border-radius: 8rpx;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666;
+}
+
+.tab-item.active .tab-text {
+	color: white;
+}
+
+.optimization-content {
+	padding: 20rpx 0;
+}
+
+.param-item {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 15rpx;
+	padding-bottom: 15rpx;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.param-name {
+	font-size: 28rpx;
+	color: #333;
+}
+
+.param-value {
+	font-size: 28rpx;
+	color: #1989fa;
+	font-weight: bold;
+}
+
+.specific-suggestion {
+	margin-top: 20rpx;
+	padding: 15rpx;
+	background-color: #f0f7ff;
+	border-radius: 8rpx;
+}
+
+.suggestion-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 10rpx;
+}
+
+.suggestion-content {
+	font-size: 26rpx;
+	color: #333;
+	line-height: 1.5;
+}
+
+.weight-suggestion-title {
+	font-size: 28rpx;
+	margin-bottom: 15rpx;
+}
+
+.weight-distribution {
+	display: flex;
+	flex-direction: row;
+	height: 40rpx;
+	border-radius: 8rpx;
+	overflow: hidden;
+	margin-bottom: 20rpx;
+}
+
+.weight-slice {
+	height: 100%;
+}
+
+.weight-legends {
+	margin-bottom: 20rpx;
+}
+
+.weight-legend {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 10rpx;
+}
+
+.legend-color {
+	width: 30rpx;
+	height: 30rpx;
+	border-radius: 4rpx;
+	margin-right: 10rpx;
+}
+
+.legend-name {
+	flex: 1;
+	font-size: 26rpx;
+}
+
+.legend-value {
+	font-size: 26rpx;
+	font-weight: bold;
+}
+
+.apply-section {
+	margin-top: 30rpx;
+	align-items: center;
+}
+
+.apply-btn {
+	background-color: #1989fa;
+	color: white;
+	font-size: 28rpx;
+	margin-bottom: 10rpx;
+}
+
+.apply-note {
+	font-size: 24rpx;
+	color: #666;
+	text-align: center;
+}
+
+/* 长期学习趋势样式 */
+.trend-description {
+	margin-bottom: 20rpx;
+}
+
+.trend-text {
+	font-size: 26rpx;
+	color: #666;
+}
+
+.trend-stats {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 30rpx;
+}
+
+.trend-card {
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	padding: 15rpx;
+	width: 150rpx;
+	align-items: center;
+}
+
+.trend-label {
+	font-size: 24rpx;
+	color: #666;
+	margin-bottom: 10rpx;
+}
+
+.trend-value {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #1989fa;
+}
+
+.trend-arrow {
+	font-size: 40rpx;
+	color: #bbb;
+	margin: 0 20rpx;
+}
+
+.learning-curve-container {
+	margin-top: 30rpx;
+}
+
+.curve-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 15rpx;
+}
+
+.learning-curve {
+	position: relative;
+	height: 200rpx;
+	background-color: #f9f9f9;
+	border-radius: 8rpx;
+	margin-bottom: 10rpx;
+}
+
+.curve-point {
+	position: absolute;
+	width: 12rpx;
+	height: 12rpx;
+	background-color: #1989fa;
+	border-radius: 6rpx;
+	margin-left: -6rpx;
+	margin-bottom: -6rpx;
+}
+
+.curve-line {
+	position: absolute;
+	left: 0;
+	bottom: 20%;
+	width: 100%;
+	height: 2rpx;
+	background-color: #e8e8e8;
+}
+
+.curve-labels {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+}
+
+.curve-label {
+	font-size: 24rpx;
+	color: #999;
+}
+</style> 

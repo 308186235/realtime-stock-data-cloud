@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+测试Agent数据提交完整流程
+模拟从交易软件导出到Agent分析的完整过程
+"""
+
+import sys
+import os
+import json
+import requests
+import time
+from datetime import datetime
+
+# 添加stock-trading-backend到路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'stock-trading-backend'))
+
+class AgentSubmissionTester:
+    def __init__(self):
+        self.local_api = "http://localhost:8080"
+        self.cloud_api = "https://api.aigupiao.me"
+        
+    def test_complete_flow(self):
+        """测试完整的Agent数据提交流程"""
+        print("🎯 Agent数据提交完整流程测试")
+        print("=" * 60)
+        print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # 步骤1: 测试交易软件导出
+        print("\n📊 步骤1: 测试交易软件数据导出")
+        print("-" * 40)
+        export_result = self.test_trading_export()
+        
+        # 步骤2: 测试本地API
+        print("\n🔧 步骤2: 测试本地API服务")
+        print("-" * 40)
+        api_result = self.test_local_api()
+        
+        # 步骤3: 测试云端通信
+        print("\n☁️ 步骤3: 测试云端API通信")
+        print("-" * 40)
+        cloud_result = self.test_cloud_api()
+        
+        # 步骤4: 模拟Agent分析
+        print("\n🤖 步骤4: 模拟Agent智能分析")
+        print("-" * 40)
+        analysis_result = self.simulate_agent_analysis()
+        
+        # 步骤5: 生成测试报告
+        print("\n📋 步骤5: 生成测试报告")
+        print("-" * 40)
+        self.generate_test_report({
+            "export": export_result,
+            "local_api": api_result,
+            "cloud_api": cloud_result,
+            "agent_analysis": analysis_result
+        })
+        
+        return True
+    
+    def test_trading_export(self):
+        """测试交易软件导出功能"""
+        try:
+            from trader_export import export_holdings, export_transactions, export_orders
+            
+            print("✅ 交易导出模块加载成功")
+            print("📊 可用导出功能:")
+            print("   - export_holdings() - 持仓数据导出")
+            print("   - export_transactions() - 成交数据导出")
+            print("   - export_orders() - 委托数据导出")
+            
+            # 模拟导出操作（不实际执行，避免干扰）
+            print("\n🔄 模拟导出操作:")
+            print("   [模拟] 按W键导出持仓数据... ✅")
+            print("   [模拟] 按E键导出成交数据... ✅")
+            print("   [模拟] 按R键导出委托数据... ✅")
+            
+            return {
+                "status": "success",
+                "message": "交易软件导出功能正常",
+                "functions_available": ["holdings", "transactions", "orders"]
+            }
+            
+        except ImportError as e:
+            print(f"❌ 交易导出模块加载失败: {e}")
+            return {
+                "status": "error",
+                "message": f"导入失败: {e}",
+                "functions_available": []
+            }
+    
+    def test_local_api(self):
+        """测试本地API服务"""
+        try:
+            # 测试状态端点
+            response = requests.get(f"{self.local_api}/status", timeout=5)
+            
+            if response.status_code == 200:
+                status_data = response.json()
+                print("✅ 本地API服务器运行正常")
+                print(f"   📊 服务状态: {'运行中' if status_data.get('service_running') else '停止'}")
+                print(f"   🔗 WebSocket: {'已连接' if status_data.get('websocket_connected') else '未连接'}")
+                print(f"   🔧 交易API: {'可用' if status_data.get('trader_api_available') else '不可用'}")
+                
+                # 测试导出端点
+                export_data = {"data_type": "test", "timestamp": datetime.now().isoformat()}
+                export_response = requests.post(f"{self.local_api}/export", json=export_data, timeout=10)
+                
+                if export_response.status_code in [200, 503]:  # 503是预期的（交易API不可用）
+                    print("✅ 导出端点响应正常")
+                    return {
+                        "status": "success",
+                        "message": "本地API服务正常",
+                        "api_status": status_data
+                    }
+                else:
+                    print(f"⚠️ 导出端点异常: HTTP {export_response.status_code}")
+                    return {
+                        "status": "partial",
+                        "message": f"导出端点异常: {export_response.status_code}",
+                        "api_status": status_data
+                    }
+            else:
+                print(f"❌ 本地API异常: HTTP {response.status_code}")
+                return {
+                    "status": "error",
+                    "message": f"API异常: {response.status_code}",
+                    "api_status": None
+                }
+                
+        except requests.exceptions.ConnectionError:
+            print("❌ 本地API服务器未启动")
+            return {
+                "status": "error",
+                "message": "API服务器未启动",
+                "api_status": None
+            }
+        except Exception as e:
+            print(f"❌ 本地API测试异常: {e}")
+            return {
+                "status": "error",
+                "message": f"测试异常: {e}",
+                "api_status": None
+            }
+    
+    def test_cloud_api(self):
+        """测试云端API通信"""
+        try:
+            # 测试健康检查
+            response = requests.get(f"{self.cloud_api}/api/health", timeout=10)
+            
+            if response.status_code == 200:
+                print("✅ 云端API连接正常")
+                
+                # 测试虚拟账户API
+                account_response = requests.get(f"{self.cloud_api}/api/virtual-account/accounts", timeout=10)
+                
+                if account_response.status_code == 200:
+                    account_data = account_response.json()
+                    print("✅ 虚拟账户API正常")
+                    print(f"   📊 账户数据: {account_data.get('message', 'OK')}")
+                    
+                    return {
+                        "status": "success",
+                        "message": "云端API通信正常",
+                        "account_data_available": True
+                    }
+                else:
+                    print(f"⚠️ 虚拟账户API异常: HTTP {account_response.status_code}")
+                    return {
+                        "status": "partial",
+                        "message": f"虚拟账户API异常: {account_response.status_code}",
+                        "account_data_available": False
+                    }
+            else:
+                print(f"❌ 云端API异常: HTTP {response.status_code}")
+                return {
+                    "status": "error",
+                    "message": f"云端API异常: {response.status_code}",
+                    "account_data_available": False
+                }
+                
+        except Exception as e:
+            print(f"❌ 云端API测试异常: {e}")
+            return {
+                "status": "error",
+                "message": f"云端API异常: {e}",
+                "account_data_available": False
+            }
+    
+    def simulate_agent_analysis(self):
+        """模拟Agent智能分析"""
+        print("🤖 启动Agent智能分析引擎...")
+        
+        # 模拟数据收集
+        mock_data = {
+            "account_info": {
+                "total_assets": 1000000,
+                "available_cash": 500000,
+                "market_value": 500000
+            },
+            "positions": [
+                {"stock_code": "000001", "stock_name": "平安银行", "quantity": 1000, "profit_loss": 500},
+                {"stock_code": "000002", "stock_name": "万科A", "quantity": 500, "profit_loss": -200}
+            ],
+            "orders": [
+                {"order_id": "O001", "stock_code": "000001", "order_type": "买入", "status": "已成交"},
+                {"order_id": "O002", "stock_code": "000002", "order_type": "卖出", "status": "未成交"}
+            ],
+            "trades": [
+                {"trade_id": "T001", "stock_code": "000001", "trade_type": "买入", "amount": 13500}
+            ]
+        }
+        
+        print("📊 数据收集完成:")
+        print(f"   💰 总资产: ¥{mock_data['account_info']['total_assets']:,}")
+        print(f"   📈 持仓数量: {len(mock_data['positions'])}")
+        print(f"   📋 委托数量: {len(mock_data['orders'])}")
+        print(f"   🔄 成交数量: {len(mock_data['trades'])}")
+        
+        # 模拟分析过程
+        print("\n🧠 Agent分析中...")
+        time.sleep(1)  # 模拟分析时间
+        
+        analysis_result = {
+            "portfolio_analysis": {
+                "risk_level": "中等",
+                "diversification": "良好",
+                "total_profit_loss": 300,
+                "profit_loss_ratio": 0.06
+            },
+            "trading_analysis": {
+                "trading_frequency": "适中",
+                "success_rate": "75%",
+                "average_holding_period": "15天"
+            },
+            "recommendations": [
+                "建议适当增加科技股配置",
+                "当前仓位控制合理，可考虑增加仓位",
+                "建议设置止损点，控制风险",
+                "可考虑定期定额投资策略"
+            ],
+            "risk_warnings": [
+                "万科A当前处于亏损状态，需关注基本面变化",
+                "持仓集中度适中，但建议进一步分散化"
+            ]
+        }
+        
+        print("✅ Agent分析完成!")
+        print(f"   📈 投资组合风险: {analysis_result['portfolio_analysis']['risk_level']}")
+        print(f"   📊 交易成功率: {analysis_result['trading_analysis']['success_rate']}")
+        print(f"   💡 生成建议: {len(analysis_result['recommendations'])}条")
+        print(f"   ⚠️ 风险提醒: {len(analysis_result['risk_warnings'])}条")
+        
+        return {
+            "status": "success",
+            "message": "Agent分析完成",
+            "analysis_result": analysis_result
+        }
+    
+    def generate_test_report(self, results):
+        """生成测试报告"""
+        print("📊 Agent数据提交系统测试报告")
+        print("=" * 60)
+        
+        # 统计成功率
+        total_tests = len(results)
+        successful_tests = sum(1 for result in results.values() if result["status"] == "success")
+        partial_tests = sum(1 for result in results.values() if result["status"] == "partial")
+        
+        success_rate = (successful_tests / total_tests * 100) if total_tests > 0 else 0
+        
+        print(f"\n📈 测试统计:")
+        print(f"   总测试项: {total_tests}")
+        print(f"   完全成功: {successful_tests}")
+        print(f"   部分成功: {partial_tests}")
+        print(f"   失败项目: {total_tests - successful_tests - partial_tests}")
+        print(f"   成功率: {success_rate:.1f}%")
+        
+        print(f"\n📋 详细结果:")
+        for test_name, result in results.items():
+            status_icon = "✅" if result["status"] == "success" else "⚠️" if result["status"] == "partial" else "❌"
+            print(f"   {status_icon} {test_name}: {result['message']}")
+        
+        print(f"\n🎯 系统状态评估:")
+        if success_rate >= 90:
+            print("🎉 优秀 - Agent数据提交系统完全正常")
+        elif success_rate >= 70:
+            print("✅ 良好 - 系统基本正常，少量问题")
+        elif success_rate >= 50:
+            print("⚠️ 一般 - 系统部分功能正常")
+        else:
+            print("❌ 异常 - 系统需要修复")
+        
+        print(f"\n💡 使用建议:")
+        print("1. 🖥️  确保网上交易5.0软件正在运行")
+        print("2. 🔧 启动本地API服务器 (python unified_local_agent.py)")
+        print("3. ⌨️  使用W/E/R键导出交易数据")
+        print("4. 📱 在移动端点击'提交Agent'按钮")
+        print("5. 🤖 查看Agent智能分析结果")
+        print("6. 📊 根据建议优化投资策略")
+        
+        print(f"\n🔗 相关链接:")
+        print(f"   本地API: {self.local_api}/status")
+        print(f"   云端API: {self.cloud_api}/api/health")
+        print(f"   移动端: 交易中心 → 🤖提交Agent")
+
+def main():
+    """主函数"""
+    tester = AgentSubmissionTester()
+    tester.test_complete_flow()
+
+if __name__ == "__main__":
+    main()

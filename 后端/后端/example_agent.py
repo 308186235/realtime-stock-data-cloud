@@ -1,0 +1,182 @@
+"""
+Agent调用示例
+演示如何使用模块化的交易API
+"""
+
+from trader_api import api
+
+def example_simple_trading():
+    """简单交易示例"""
+    print("🤖 Agent示例: 简单交易")
+    print("-" * 40)
+    
+    # 查看当前状态
+    status = api.get_status()
+    print(f"当前窗口: {status['current_window']}")
+    print(f"交易软件激活: {status['trading_software_active']}")
+    
+    # 买入股票
+    print("\n📈 执行买入操作...")
+    success = api.buy("000001", "100", "10.50")
+    print(f"买入结果: {'成功' if success else '失败'}")
+    
+    # 卖出股票
+    print("\n📉 执行卖出操作...")
+    success = api.sell("000001", "50", "10.60")
+    print(f"卖出结果: {'成功' if success else '失败'}")
+
+def example_batch_trading():
+    """批量交易示例"""
+    print("🤖 Agent示例: 批量交易")
+    print("-" * 40)
+    
+    # 定义交易列表
+    trades = [
+        {"action": "buy", "code": "000001", "quantity": "100", "price": "10.50"},
+        {"action": "buy", "code": "600000", "quantity": "200", "price": "市价"},
+        {"action": "sell", "code": "000002", "quantity": "150", "price": "15.80"}
+    ]
+    
+    print("执行批量交易:")
+    for trade in trades:
+        print(f"  {trade['action']} {trade['code']} {trade['quantity']}股 @ {trade['price']}")
+    
+    # 执行批量交易
+    results = api.batch_trade(trades)
+    
+    print("\n交易结果:")
+    for result in results:
+        trade = result['trade']
+        success = result['success']
+        status = "✅" if success else "❌"
+        print(f"  {status} {trade['action']} {trade['code']}")
+
+def example_data_export():
+    """数据导出示例"""
+    print("🤖 Agent示例: 数据导出")
+    print("-" * 40)
+    
+    # 导出所有数据
+    print("导出所有数据...")
+    results = api.export_all()
+    
+    print("导出结果:")
+    for data_type, success in results.items():
+        status = "✅" if success else "❌"
+        type_name = {"holdings": "持仓", "transactions": "成交", "orders": "委托"}[data_type]
+        print(f"  {status} {type_name}数据")
+    
+    # 查看导出文件
+    print("\n导出文件列表:")
+    files = api.get_files()
+    for file_type, file_list in files.items():
+        type_name = {"holdings": "持仓", "transactions": "成交", "orders": "委托"}[file_type]
+        print(f"  {type_name}: {len(file_list)} 个文件")
+
+def example_file_management():
+    """文件管理示例"""
+    print("🤖 Agent示例: 文件管理")
+    print("-" * 40)
+    
+    # 查看文件统计
+    files = api.get_files()
+    total_files = sum(len(file_list) for file_list in files.values())
+    print(f"当前共有 {total_files} 个导出文件")
+    
+    # 清理过期文件
+    print("\n清理过期文件...")
+    api.cleanup_files()
+    
+    # 再次查看文件统计
+    files_after = api.get_files()
+    total_files_after = sum(len(file_list) for file_list in files_after.values())
+    print(f"清理后共有 {total_files_after} 个导出文件")
+    
+    if total_files > total_files_after:
+        print(f"✅ 清理了 {total_files - total_files_after} 个过期文件")
+    else:
+        print("✅ 没有过期文件需要清理")
+
+def example_smart_agent():
+    """智能Agent示例"""
+    print("🤖 Agent示例: 智能交易助手")
+    print("-" * 40)
+    
+    # 1. 检查系统状态
+    print("1. 检查系统状态...")
+    status = api.get_status()
+    
+    if not status['trading_software_active']:
+        print("⚠️ 交易软件未激活,请先打开交易软件")
+        return
+    
+    # 2. 清理过期文件
+    print("\n2. 清理过期文件...")
+    api.cleanup_files()
+    
+    # 3. 导出最新数据
+    print("\n3. 导出最新数据...")
+    export_results = api.export_all()
+    
+    # 4. 根据导出结果决定是否进行交易
+    if all(export_results.values()):
+        print("\n4. 数据导出成功,可以进行交易...")
+        
+        # 示例交易决策逻辑
+        trades = [
+            {"action": "buy", "code": "000001", "quantity": "100", "price": "市价"}
+        ]
+        
+        print("执行智能交易...")
+        trade_results = api.batch_trade(trades)
+        
+        success_count = sum(1 for r in trade_results if r['success'])
+        print(f"✅ 完成 {success_count}/{len(trades)} 笔交易")
+        
+    else:
+        print("\n4. 数据导出失败,跳过交易操作")
+    
+    # 5. 生成报告
+    print("\n5. 生成操作报告...")
+    final_status = api.get_status()
+    files = final_status['export_files']
+    
+    print("📊 操作总结:")
+    print(f"  - 导出文件: {sum(files.values())} 个")
+    print(f"  - 持仓数据: {files['holdings_count']} 个")
+    print(f"  - 成交数据: {files['transactions_count']} 个")
+    print(f"  - 委托数据: {files['orders_count']} 个")
+
+def main():
+    """主函数"""
+    print("🎯 交易API使用示例")
+    print("=" * 50)
+    
+    examples = [
+        ("1", "简单交易", example_simple_trading),
+        ("2", "批量交易", example_batch_trading),
+        ("3", "数据导出", example_data_export),
+        ("4", "文件管理", example_file_management),
+        ("5", "智能Agent", example_smart_agent)
+    ]
+    
+    print("选择示例:")
+    for num, name, _ in examples:
+        print(f"  {num}. {name}")
+    print("  0. 退出")
+    
+    choice = input("\n请选择 (0-5): ").strip()
+    
+    for num, name, func in examples:
+        if choice == num:
+            print(f"\n{'='*20} {name} {'='*20}")
+            func()
+            break
+    else:
+        if choice == "0":
+            print("👋 退出示例")
+        else:
+            print("❌ 无效选择")
+
+if __name__ == "__main__":
+    main()

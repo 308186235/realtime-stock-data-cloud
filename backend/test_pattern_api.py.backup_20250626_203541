@@ -1,0 +1,330 @@
+import requests
+import json
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import random
+
+# API 基础URL
+BASE_URL = "http://localhost:8000/api"
+
+def generate_test_candles(days=30, trend="uptrend", volatility=0.02):
+    """生成测试用K线数据"""
+    candles = []
+    start_date = datetime.now() - timedelta(days=days)
+    price = 10.0  # 起始价格
+    
+    # 趋势因子
+    trend_factor = 1.005 if trend == "uptrend" else 0.995
+    
+    for i in range(days):
+        current_date = start_date + timedelta(days=i)
+        
+        # 生成OHLCV数据
+        daily_volatility = volatility * random.uniform(0.5, 1.5)
+        open_price = price * random.uniform(0.99, 1.01)
+        high_price = open_price * (1 + daily_volatility * random.uniform(0.5, 1.0))
+        low_price = open_price * (1 - daily_volatility * random.uniform(0.5, 1.0))
+        
+        # 根据趋势调整收盘价
+        if trend == "uptrend":
+            close_price = open_price * (1 + daily_volatility * random.uniform(-0.3, 0.7))
+        elif trend == "downtrend":
+            close_price = open_price * (1 - daily_volatility * random.uniform(-0.3, 0.7))
+        else:  # 震荡行情
+            close_price = open_price * (1 + daily_volatility * random.uniform(-0.5, 0.5))
+        
+        # 确保高低价合理
+        high_price = max(high_price, open_price, close_price)
+        low_price = min(low_price, open_price, close_price)
+        
+        # 生成成交量
+        volume = random.randint(500000, 2000000)
+        
+        # 添加K线
+        candles.append({
+            "time": current_date.strftime("%Y-%m-%d"),
+            "open": round(open_price, 2),
+            "high": round(high_price, 2),
+            "low": round(low_price, 2),
+            "close": round(close_price, 2),
+            "volume": volume
+        })
+        
+        # 更新下一天的开盘价基准
+        price = close_price * trend_factor
+    
+    return candles
+
+def create_double_green_parallel_pattern(candles):
+    """在指定K线数据中创建双绿并行形态"""
+    if len(candles) < 5:
+        return candles
+    
+    # 选择一个位置注入形态（倒数第2-3根K线）
+    position = len(candles) - 3
+    
+    # 获取前一根K线的价格
+    prev_close = candles[position-1]["close"]
+    
+    # 创建第一根阴线
+    open_price1 = prev_close * 1.02  # 高开
+    close_price1 = open_price1 * 0.97  # 收阴
+    candles[position]["open"] = round(open_price1, 2)
+    candles[position]["close"] = round(close_price1, 2)
+    candles[position]["high"] = round(open_price1 * 1.01, 2)
+    candles[position]["low"] = round(close_price1 * 0.99, 2)
+    
+    # 创建第二根阴线（平行于第一根）
+    open_price2 = open_price1 * 1.002  # 开盘价接近第一根
+    close_price2 = close_price1 * 1.002  # 收盘价接近第一根
+    candles[position+1]["open"] = round(open_price2, 2)
+    candles[position+1]["close"] = round(close_price2, 2)
+    candles[position+1]["high"] = round(open_price2 * 1.01, 2)
+    candles[position+1]["low"] = round(close_price2 * 0.99, 2)
+    
+    # 增加成交量变化
+    candles[position+1]["volume"] = int(candles[position]["volume"] * 1.3)  # 放量
+    
+    return candles
+
+def create_three_black_crows_pattern(candles):
+    """在指定K线数据中创建顶部三鸦形态"""
+    if len(candles) < 10:
+        return candles
+    
+    # 选择一个位置注入形态（倒数第2-4根K线）
+    position = len(candles) - 4
+    
+    # 获取前几天的收盘价，确保形态前有上涨趋势
+    prev_close = candles[position-1]["close"]
+    for i in range(position-5, position-1):
+        if i >= 0:
+            # 创建上涨趋势
+            candles[i]["open"] = prev_close * (1 - 0.01 * random.random())
+            candles[i]["close"] = candles[i]["open"] * 1.02
+            candles[i]["high"] = candles[i]["close"] * 1.01
+            candles[i]["low"] = candles[i]["open"] * 0.99
+            prev_close = candles[i]["close"]
+    
+    # 创建第一根阴线
+    open_price1 = prev_close * 1.01  # 微微高开
+    close_price1 = open_price1 * 0.97  # 收阴
+    candles[position]["open"] = round(open_price1, 2)
+    candles[position]["close"] = round(close_price1, 2)
+    candles[position]["high"] = round(open_price1 * 1.01, 2)
+    candles[position]["low"] = round(close_price1 * 0.99, 2)
+    
+    # 创建第二根阴线
+    open_price2 = (open_price1 + close_price1) / 2  # 开盘价在第一根实体内
+    close_price2 = close_price1 * 0.97  # 收盘价低于第一根
+    candles[position+1]["open"] = round(open_price2, 2)
+    candles[position+1]["close"] = round(close_price2, 2)
+    candles[position+1]["high"] = round(open_price2 * 1.01, 2)
+    candles[position+1]["low"] = round(close_price2 * 0.99, 2)
+    
+    # 创建第三根阴线
+    open_price3 = (open_price2 + close_price2) / 2  # 开盘价在第二根实体内
+    close_price3 = close_price2 * 0.97  # 收盘价低于第二根
+    candles[position+2]["open"] = round(open_price3, 2)
+    candles[position+2]["close"] = round(close_price3, 2)
+    candles[position+2]["high"] = round(open_price3 * 1.01, 2)
+    candles[position+2]["low"] = round(close_price3 * 0.99, 2)
+    
+    # 增加放量特征
+    candles[position]["volume"] = int(candles[position-1]["volume"] * 1.1)
+    candles[position+1]["volume"] = int(candles[position]["volume"] * 1.2)
+    candles[position+2]["volume"] = int(candles[position+1]["volume"] * 1.3)
+    
+    return candles
+
+def test_pattern_detection():
+    """测试形态检测API"""
+    print("测试双绿并行形K线形态检测...")
+    
+    # 生成测试K线数据
+    uptrend_candles = generate_test_candles(days=30, trend="uptrend")
+    # 注入双绿并行形态
+    uptrend_candles = create_double_green_parallel_pattern(uptrend_candles)
+    
+    # 构建请求数据
+    request_data = {
+        "pattern_id": "double_green_parallel",
+        "candles": uptrend_candles
+    }
+    
+    try:
+        # 发送API请求
+        response = requests.post(
+            f"{BASE_URL}/patterns/detect",
+            json=request_data
+        )
+        
+        # 打印响应
+        print(f"状态码: {response.status_code}")
+        print(f"响应内容: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
+        
+        # 可视化K线图
+        visualize_candles(uptrend_candles, "双绿并行形测试数据")
+        
+        return response.json()
+    except Exception as e:
+        print(f"API调用失败: {str(e)}")
+        return None
+
+def test_pattern_list():
+    """测试获取可用形态列表"""
+    print("获取可用K线形态列表...")
+    
+    try:
+        # 发送API请求
+        response = requests.get(f"{BASE_URL}/patterns/list")
+        
+        # 打印响应
+        print(f"状态码: {response.status_code}")
+        print(f"响应内容: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
+        
+        return response.json()
+    except Exception as e:
+        print(f"API调用失败: {str(e)}")
+        return None
+
+def test_pattern_stats():
+    """测试获取双绿并行形统计数据"""
+    print("获取双绿并行形统计数据...")
+    
+    try:
+        # 发送API请求
+        response = requests.get(f"{BASE_URL}/patterns/double-green-parallel/stats")
+        
+        # 打印响应
+        print(f"状态码: {response.status_code}")
+        print(f"响应内容: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
+        
+        return response.json()
+    except Exception as e:
+        print(f"API调用失败: {str(e)}")
+        return None
+
+def test_three_black_crows_detection():
+    """测试顶部三鸦形态检测API"""
+    print("测试顶部三鸦形K线形态检测...")
+    
+    # 生成测试K线数据
+    uptrend_candles = generate_test_candles(days=30, trend="uptrend")
+    # 注入顶部三鸦形态
+    uptrend_candles = create_three_black_crows_pattern(uptrend_candles)
+    
+    # 构建请求数据
+    request_data = {
+        "pattern_id": "three_black_crows",
+        "candles": uptrend_candles
+    }
+    
+    try:
+        # 发送API请求
+        response = requests.post(
+            f"{BASE_URL}/patterns/detect",
+            json=request_data
+        )
+        
+        # 打印响应
+        print(f"状态码: {response.status_code}")
+        print(f"响应内容: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
+        
+        # 可视化K线图
+        visualize_candles(uptrend_candles, "顶部三鸦形测试数据")
+        
+        return response.json()
+    except Exception as e:
+        print(f"API调用失败: {str(e)}")
+        return None
+
+def test_three_black_crows_stats():
+    """测试获取顶部三鸦形统计数据"""
+    print("获取顶部三鸦形统计数据...")
+    
+    try:
+        # 发送API请求
+        response = requests.get(f"{BASE_URL}/patterns/three-black-crows/stats")
+        
+        # 打印响应
+        print(f"状态码: {response.status_code}")
+        print(f"响应内容: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
+        
+        return response.json()
+    except Exception as e:
+        print(f"API调用失败: {str(e)}")
+        return None
+
+def visualize_candles(candles, title="K线图"):
+    """可视化K线数据"""
+    # 转换为DataFrame
+    df = pd.DataFrame(candles)
+    df['time'] = pd.to_datetime(df['time'])
+    df.set_index('time', inplace=True)
+    
+    # 创建绘图
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # 绘制K线
+    for i, row in df.iterrows():
+        # 确定颜色 (红色表示阳线，绿色表示阴线)
+        color = 'red' if row['close'] > row['open'] else 'green'
+        
+        # 绘制实体
+        ax.add_patch(plt.Rectangle(
+            (i.toordinal() - 0.4, row['open']), 
+            0.8, 
+            row['close'] - row['open'],
+            color=color, 
+            alpha=0.8
+        ))
+        
+        # 绘制上下影线
+        ax.plot([i.toordinal(), i.toordinal()], 
+                [row['high'], max(row['open'], row['close'])], 
+                color='black', linewidth=1)
+        ax.plot([i.toordinal(), i.toordinal()], 
+                [min(row['open'], row['close']), row['low']], 
+                color='black', linewidth=1)
+    
+    # 设置坐标轴和标题
+    plt.title(title)
+    plt.xlabel("日期")
+    plt.ylabel("价格")
+    plt.grid(True, alpha=0.3)
+    
+    # 设置x轴日期格式
+    from matplotlib.dates import DateFormatter
+    date_format = DateFormatter("%m-%d")
+    ax.xaxis.set_major_formatter(date_format)
+    
+    plt.tight_layout()
+    plt.savefig("pattern_test_chart.png")
+    print("K线图已保存为 pattern_test_chart.png")
+
+if __name__ == "__main__":
+    # 测试获取形态列表
+    test_pattern_list()
+    
+    print("\n" + "-"*50 + "\n")
+    
+    # 测试双绿并行形态检测
+    test_pattern_detection()
+    
+    print("\n" + "-"*50 + "\n")
+    
+    # 测试顶部三鸦形态检测
+    test_three_black_crows_detection()
+    
+    print("\n" + "-"*50 + "\n")
+    
+    # 测试双绿并行形统计
+    test_pattern_stats()
+    
+    print("\n" + "-"*50 + "\n")
+    
+    # 测试顶部三鸦形统计
+    test_three_black_crows_stats() 

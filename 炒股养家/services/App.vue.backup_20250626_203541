@@ -1,0 +1,109 @@
+<script>
+	let firstBackTime = 0
+	export default {
+		globalData: {
+			operableAmount: '10,000.00',
+			availableCash: '27,230.00'
+		},
+		onLaunch: function () {
+			console.log('App Launch')
+		},
+		onShow: function () {
+			console.log('App Show')
+		},
+		onHide: function () {
+			console.log('App Hide')
+		},
+		// #ifdef APP-ANDROID
+		onLastPageBackPress: function () {
+			console.log('App LastPageBackPress')
+			if (firstBackTime == 0) {
+				uni.showToast({
+					title: '再按一次退出应用',
+					position: 'bottom',
+				})
+				firstBackTime = Date.now()
+				setTimeout(() => {
+					firstBackTime = 0
+				}, 2000)
+			} else if (Date.now() - firstBackTime < 2000) {
+				firstBackTime = Date.now()
+				uni.exit()
+			}
+		},
+		// #endif
+		onExit: function () {
+			console.log('App Exit')
+		},
+	}
+</script>
+
+<style>
+	/*每个页面公共css */
+	page {
+		font-size: 28rpx;
+		line-height: 1.5;
+		background-color: #f5f5f5;
+		color: #333;
+		font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Segoe UI, Arial, Roboto, 'PingFang SC', 'miui', 'Hiragino Sans GB', 'Microsoft Yahei', sans-serif;
+		-webkit-font-smoothing: antialiased;
+	}
+	
+	/* 布局类 */
+	.uni-row {
+		flex-direction: row;
+	}
+
+	.uni-column {
+		flex-direction: column;
+	}
+	
+	/* 常用间距 */
+	.margin-sm { margin: 10rpx; }
+	.margin { margin: 20rpx; }
+	.margin-lg { margin: 30rpx; }
+	
+	.padding-sm { padding: 10rpx; }
+	.padding { padding: 20rpx; }
+	.padding-lg { padding: 30rpx; }
+	
+	/* 常用颜色 */
+	.text-primary { color: #1989fa; }
+	.text-success { color: #52c41a; }
+	.text-warning { color: #faad14; }
+	.text-danger { color: #f5222d; }
+	
+	/* 文本样式 */
+	.text-bold { font-weight: bold; }
+	.text-center { text-align: center; }
+	.text-right { text-align: right; }
+	
+	/* 卡片样式 */
+	.card {
+		background-color: #fff;
+		border-radius: 12rpx;
+		padding: 20rpx;
+		margin: 20rpx;
+		box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+	}
+	
+	/* 按钮样式优化 */
+	button {
+		font-size: 28rpx;
+		border-radius: 8rpx;
+	}
+	
+	/* 修复移动端适配问题 */
+	image {
+		width: 100%;
+	}
+	
+	/* 解决滚动条问题 */
+	::-webkit-scrollbar {
+		display: none;
+		width: 0 !important;
+		height: 0 !important;
+		-webkit-appearance: none;
+		background: transparent;
+	}
+</style> 

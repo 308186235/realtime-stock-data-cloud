@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""
+生产环境配置设置脚本
+帮助用户完成Supabase生产环境配置
+"""
+import os
+import getpass
+from datetime import datetime
+
+def get_database_password():
+    """获取数据库密码"""
+    print("\n🔐 数据库密码配置")
+    print("=" * 30)
+    print("请按照以下步骤获取Supabase数据库密码:")
+    print("1. 访问 https://supabase.com/dashboard")
+    print("2. 选择项目: ai-stock-trading-system")
+    print("3. 进入 Settings > Database")
+    print("4. 在 Connection string 部分找到密码")
+    print("5. 或者在 Database password 部分重置密码")
+    print()
+    
+    while True:
+        choice = input("请选择操作 (1: 输入现有密码, 2: 生成新密码建议, 3: 跳过): ").strip()
+        
+        if choice == '1':
+            password = getpass.getpass("请输入数据库密码: ")
+            if password:
+                return password
+            else:
+                print("❌ 密码不能为空")
+        
+        elif choice == '2':
+            # 生成密码建议
+            import secrets
+            import string
+            
+            # 生成强密码
+            alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+            password = ''.join(secrets.choice(alphabet) for _ in range(16))
+            
+            print(f"\n💡 建议的强密码: {password}")
+            print("⚠️ 请在Supabase Dashboard中设置此密码,然后重新运行此脚本")
+            return None
+        
+        elif choice == '3':
+            print("⏭️ 跳过密码配置,将使用占位符")
+            return None
+        
+        else:
+            print("❌ 无效选择,请输入 1,2 或 3")
+
+def update_production_config(db_password=None):
+    """更新生产环境配置"""
+    if not os.path.exists('.env.production'):
+        print("❌ .env.production 文件不存在,请先运行 supabase_production_config.py")
+        return False
+    
+    # 读取现有配置
+    with open('.env.production', 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # 替换数据库密码
+    if db_password:
+        content = content.replace('[YOUR_DB_PASSWORD]', db_password)
+        print("✅ 数据库密码已更新")
+    
+    # 其他配置项的交互式设置
+    print("\n🔧 其他配置项设置")
+    print("=" * 30)
+    
+    config_items = [
+        ('YOUR_STOCK_API_KEY', '股票API密钥', '请输入股票数据API密钥'),
+        ('YOUR_CLOUDFLARE_API_TOKEN', 'Cloudflare API令牌', '请输入Cloudflare API令牌'),
+        ('YOUR_ZONE_ID', 'Cloudflare Zone ID', '请输入Cloudflare Zone ID'),
+        ('YOUR_TOKEN', '钉钉机器人Token', '请输入钉钉机器人Token'),
+        ('yourdomain.com', '域名', '请输入您的域名')
+    ]
+    
+    for placeholder, name, prompt in config_items:
+        if placeholder in content:
+            print(f"\n📝 配置 {name}:")
+            choice = input(f"{prompt} (回车跳过): ").strip()
+            if choice:
+                content = content.replace(placeholder, choice)
+                print(f"✅ {name} 已更新")
+            else:
+                print(f"⏭️ 跳过 {name} 配置")
+    
+    # 保存更新的配置
+    backup_file = f'.env.production.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    
+    # 创建备份
+    with open(backup_file, 'w', encoding='utf-8') as f:
+        with open('.env.production', 'r', encoding='utf-8') as original:
+            f.write(original.read())
+    
+    # 保存新配置
+    with open('.env.production', 'w', encoding='utf-8') as f:
+        f.write(content)
+    
+    print(f"\n✅ 配置已更新")
+    print(f"📁 原配置备份为: {backup_file}")
+    
+    return True
+
+def test_updated_config():
+    """测试更新后的配置"""
+    print("\n🧪 测试更新后的配置...")
+    
+    try:
+        import subprocess
+        result = subprocess.run(['python', 'test_production_supabase.py'], 
+                              capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            print("✅ 配置测试通过!")
+            return True
+        else:
+            print("❌ 配置测试失败:")
+            print(result.stdout)
+            return False
+    
+    except subprocess.TimeoutExpired:
+        print("⏰ 配置测试超时")
+        return False
+    except Exception as e:
+        print(f"❌ 测试过程中发生错误: {e}")
+        return False
+
+def main():
+    """主函数"""
+    print("🚀 Supabase生产环境配置设置")
+    print("=" * 40)
+    
+    # 检查必要文件
+    if not os.path.exists('.env.production'):
+        print("❌ .env.production 文件不存在")
+        print("请先运行: python supabase_production_config.py")
+        return False
+    
+    print("✅ 找到生产环境配置文件")
+    
+    # 获取数据库密码
+    db_password = get_database_password()
+    
+    # 更新配置
+    if update_production_config(db_password):
+        print("\n🎉 配置更新完成!")
+        
+        # 测试配置
+        if test_updated_config():
+            print("\n✅ 生产环境配置设置成功!")
+            print("\n📋 下一步操作:")
+            print("1. 在Supabase Dashboard中执行 supabase_init.sql")
+            print("2. 运行: python test_production_supabase.py 验证配置")
+            print("3. 部署应用到生产环境")
+            return True
+        else:
+            print("\n⚠️ 配置测试失败,请检查配置项")
+            return False
+    else:
+        print("\n❌ 配置更新失败")
+        return False
+
+if __name__ == "__main__":
+    try:
+        result = main()
+        exit(0 if result else 1)
+    except KeyboardInterrupt:
+        print("\n\n⏹️ 配置设置被用户中断")
+        exit(1)
+    except Exception as e:
+        print(f"\n\n❌ 配置设置过程中发生错误: {e}")
+        exit(1)

@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+测试交易数据导出和上传功能
+从网上交易5.0导出委托、成交数据，然后上传到Agent系统
+"""
+
+import sys
+import os
+import json
+import requests
+import time
+from datetime import datetime
+
+# 添加stock-trading-backend到路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'stock-trading-backend'))
+
+def test_trading_software_export():
+    """测试交易软件导出功能"""
+    print("🔍 测试交易软件导出功能...")
+    print("=" * 50)
+    
+    try:
+        # 导入交易导出模块
+        from trader_export import export_holdings, export_transactions, export_orders, export_all_data
+        print("✅ 交易导出模块导入成功")
+        
+        # 测试各个导出功能
+        export_functions = [
+            ("持仓数据", export_holdings),
+            ("成交数据", export_transactions), 
+            ("委托数据", export_orders),
+            ("全部数据", export_all_data)
+        ]
+        
+        results = {}
+        
+        for name, func in export_functions:
+            print(f"\n📊 测试{name}导出...")
+            try:
+                # 注意：这里只是测试函数是否可调用，实际导出需要交易软件运行
+                print(f"   函数 {func.__name__} 可用")
+                results[name] = "✅ 函数可用"
+            except Exception as e:
+                print(f"   ❌ {name}导出测试失败: {e}")
+                results[name] = f"❌ 失败: {e}"
+        
+        return results
+        
+    except ImportError as e:
+        print(f"❌ 无法导入交易导出模块: {e}")
+        return {"导出模块": f"❌ 导入失败: {e}"}
+
+def test_local_api_server():
+    """测试本地API服务器"""
+    print("\n🔍 测试本地API服务器...")
+    print("=" * 50)
+    
+    local_api_url = "http://localhost:8000"
+    
+    # 测试端点
+    endpoints = [
+        ("/", "根路径"),
+        ("/export", "导出接口"),
+        ("/orders", "委托数据"),
+        ("/trades", "成交数据"),
+        ("/health", "健康检查")
+    ]
+    
+    results = {}
+    
+    for endpoint, name in endpoints:
+        url = f"{local_api_url}{endpoint}"
+        print(f"\n📡 测试{name}: {url}")
+        
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                print(f"   ✅ {name} 响应正常 (200)")
+                results[name] = "✅ 正常"
+            else:
+                print(f"   ⚠️ {name} 响应状态: {response.status_code}")
+                results[name] = f"⚠️ HTTP {response.status_code}"
+        except requests.exceptions.ConnectionError:
+            print(f"   ❌ {name} 连接失败 (服务器未启动)")
+            results[name] = "❌ 连接失败"
+        except Exception as e:
+            print(f"   ❌ {name} 测试失败: {e}")
+            results[name] = f"❌ 失败: {e}"
+    
+    return results
+
+def test_cloud_api_upload():
+    """测试云端API上传功能"""
+    print("\n🔍 测试云端API上传功能...")
+    print("=" * 50)
+    
+    cloud_api_url = "https://api.aigupiao.me"
+    
+    # 测试数据
+    test_data = {
+        "orders": [
+            {
+                "order_id": "TEST_ORDER_001",
+                "stock_code": "000001",
+                "stock_name": "平安银行",
+                "order_type": "buy",
+                "quantity": 100,
+                "price": 13.50,
+                "status": "filled",
+                "order_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        ],
+        "trades": [
+            {
+                "trade_id": "TEST_TRADE_001",
+                "stock_code": "000001",
+                "stock_name": "平安银行",
+                "trade_type": "buy",
+                "quantity": 100,
+                "price": 13.50,
+                "amount": 1350.0,
+                "trade_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        ]
+    }
+    
+    # 测试端点
+    upload_endpoints = [
+        ("/api/orders", "GET", "获取委托列表"),
+        ("/api/orders", "POST", "上传委托数据"),
+        ("/api/trades", "GET", "获取成交列表"),
+        ("/api/trades", "POST", "上传成交数据"),
+        ("/api/trading-data/upload", "POST", "批量上传交易数据")
+    ]
+    
+    results = {}
+    
+    for endpoint, method, name in upload_endpoints:
+        url = f"{cloud_api_url}{endpoint}"
+        print(f"\n📡 测试{name}: {method} {url}")
+        
+        try:
+            if method == "GET":
+                response = requests.get(url, timeout=10)
+            elif method == "POST":
+                if "trading-data" in endpoint:
+                    response = requests.post(url, json=test_data, timeout=10)
+                elif "orders" in endpoint:
+                    response = requests.post(url, json={"orders": test_data["orders"]}, timeout=10)
+                elif "trades" in endpoint:
+                    response = requests.post(url, json={"trades": test_data["trades"]}, timeout=10)
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                print(f"   ✅ {name} 成功")
+                print(f"   📊 响应: {result_data.get('message', 'OK')}")
+                results[name] = "✅ 成功"
+            else:
+                print(f"   ❌ {name} 失败: HTTP {response.status_code}")
+                results[name] = f"❌ HTTP {response.status_code}"
+                
+        except Exception as e:
+            print(f"   ❌ {name} 测试失败: {e}")
+            results[name] = f"❌ 失败: {e}"
+    
+    return results
+
+def test_data_flow_integration():
+    """测试完整的数据流集成"""
+    print("\n🔍 测试完整数据流集成...")
+    print("=" * 50)
+    
+    # 模拟完整的数据流程
+    print("📋 数据流程:")
+    print("1. 交易软件导出数据 (W/E/R键)")
+    print("2. 本地API服务器接收数据")
+    print("3. 数据上传到云端Agent系统")
+    print("4. Agent系统分析处理数据")
+    
+    # 检查各个环节
+    flow_steps = [
+        ("交易软件导出模块", test_trading_software_export),
+        ("本地API服务器", test_local_api_server),
+        ("云端API上传", test_cloud_api_upload)
+    ]
+    
+    integration_results = {}
+    
+    for step_name, test_func in flow_steps:
+        print(f"\n🔄 测试环节: {step_name}")
+        try:
+            step_result = test_func()
+            integration_results[step_name] = step_result
+        except Exception as e:
+            print(f"   ❌ {step_name} 测试失败: {e}")
+            integration_results[step_name] = {"错误": f"❌ {e}"}
+    
+    return integration_results
+
+def generate_test_report(results):
+    """生成测试报告"""
+    print("\n📊 交易数据导出上传测试报告")
+    print("=" * 60)
+    
+    total_tests = 0
+    passed_tests = 0
+    
+    for category, category_results in results.items():
+        print(f"\n📋 {category}:")
+        print("-" * 40)
+        
+        if isinstance(category_results, dict):
+            for test_name, test_result in category_results.items():
+                total_tests += 1
+                if "✅" in str(test_result):
+                    passed_tests += 1
+                print(f"   {test_name}: {test_result}")
+        else:
+            total_tests += 1
+            if "✅" in str(category_results):
+                passed_tests += 1
+            print(f"   结果: {category_results}")
+    
+    success_rate = (passed_tests / total_tests * 100) if total_tests > 0 else 0
+    
+    print(f"\n📈 测试统计:")
+    print(f"   总测试数: {total_tests}")
+    print(f"   通过数: {passed_tests}")
+    print(f"   失败数: {total_tests - passed_tests}")
+    print(f"   成功率: {success_rate:.1f}%")
+    
+    if success_rate >= 80:
+        print("\n🎉 系统状态: 优秀 - 交易数据导出上传功能基本正常")
+    elif success_rate >= 60:
+        print("\n✅ 系统状态: 良好 - 大部分功能正常")
+    elif success_rate >= 40:
+        print("\n⚠️ 系统状态: 一般 - 存在部分问题")
+    else:
+        print("\n❌ 系统状态: 异常 - 需要修复多个问题")
+    
+    print(f"\n💡 使用建议:")
+    if "交易软件导出模块" in results:
+        print("   1. 确保网上交易5.0软件正在运行")
+        print("   2. 使用W键导出持仓，E键导出成交，R键导出委托")
+    
+    if "本地API服务器" in results:
+        print("   3. 启动本地API服务器接收导出数据")
+        print("   4. 检查localhost:8000端口是否可访问")
+    
+    if "云端API上传" in results:
+        print("   5. 确保网络连接正常，可访问api.aigupiao.me")
+        print("   6. 数据会自动上传到Agent系统进行分析")
+
+def main():
+    """主函数"""
+    print("🚀 交易数据导出上传功能测试")
+    print("=" * 60)
+    print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 运行完整的数据流集成测试
+    results = test_data_flow_integration()
+    
+    # 生成测试报告
+    generate_test_report(results)
+    
+    print("\n🏁 测试完成")
+
+if __name__ == "__main__":
+    main()

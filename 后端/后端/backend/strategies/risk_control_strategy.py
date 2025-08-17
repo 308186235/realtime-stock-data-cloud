@@ -1,0 +1,559 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import logging
+from .base_strategy import BaseStrategy
+
+class RiskControlStrategy(BaseStrategy):
+    """
+    风险控制策略
+    
+    基于用户的风险管理需求,实现一套完整的风险控制策略,包括:
+    1. 基本面排雷(财务指标筛查)
+    2. 技术面趋势判断
+    3. 仓位动态管理(金字塔建仓法)
+    4. 止损止盈系统
+    
+    该策略可以作为独立策略使用,也可以与其他交易策略组合使用。
+    """
+    
+    def __init__(self, parameters=None):
+        """
+        初始化风险控制策略
+        
+        Args:
+            parameters (dict): 策略参数
+        """
+        super().__init__(parameters)
+        self.name = "风险控制策略"
+        self.description = "通过多维度风险控制降低交易风险,提高盈利概率"
+        
+        # 设置默认参数
+        default_params = self.get_default_parameters()
+        for key, value in default_params.items():
+            if key not in self.parameters:
+                self.parameters[key] = value
+        
+        # 初始化日志
+        self.logger = logging.getLogger(__name__)
+        
+        # 初始化状态
+        self.current_position = 0  # 当前持仓量
+        self.position_cost = 0     # 持仓成本
+        self.max_position = 0      # 最大允许持仓
+        self.initial_capital = self.parameters.get('initial_capital', 100000)  # 初始资金
+        
+        # 交易记录
+        self.trade_history = []
+        
+        # 风险评估结果
+        self.risk_assessment = {
+            'fundamental_risk': 0,   # 基本面风险 (0-100)
+            'technical_risk': 0,     # 技术面风险 (0-100)
+            'market_risk': 0,        # 市场风险 (0-100)
+            'position_risk': 0,      # 仓位风险 (0-100)
+            'overall_risk': 0        # 综合风险 (0-100)
+        }
+
+    def get_default_parameters(self):
+        """
+        获取默认策略参数
+        
+        Returns:
+            dict: 默认参数
+        """
+        return {
+            'initial_capital': 100000,  # 初始资金
+            'max_position_ratio': 0.5,  # 单只股票最大仓位比例
+            'first_position_ratio': 0.2,  # 首次建仓比例
+            'add_position_threshold': 0.05,  # 加仓阈值(上涨5%)
+            'stop_loss_ratio': 0.07,  # 止损比例(7%)
+            'trailing_stop_ratio': 0.05,  # 移动止盈(5%)
+            'target_profit_ratio': 0.2,  # 目标利润(20%)
+            'enable_fundamental_check': True,  # 启用基本面检查
+            'enable_technical_check': True,    # 启用技术面检查
+            'enable_pyramid_position': True,   # 启用金字塔建仓
+        }
+    
+    def get_parameter_ranges(self):
+        """
+        获取策略参数的优化范围
+        
+        Returns:
+            dict: 参数优化范围
+        """
+        return {
+            'max_position_ratio': {'min': 0.3, 'max': 0.8, 'step': 0.1},
+            'first_position_ratio': {'min': 0.1, 'max': 0.3, 'step': 0.05},
+            'stop_loss_ratio': {'min': 0.05, 'max': 0.1, 'step': 0.01},
+            'trailing_stop_ratio': {'min': 0.03, 'max': 0.08, 'step': 0.01},
+        }
+    
+    def check_fundamental_risk(self, stock_data):
+        """
+        检查基本面风险
+        
+        Args:
+            stock_data (dict): 股票基本面数据,包括财务指标等
+            
+        Returns:
+            tuple: (通过/失败, 风险评分, 风险描述)
+        """
+        if not self.parameters['enable_fundamental_check']:
+            return True, 0, "基本面检查已禁用"
+            
+        risk_score = 0
+        risk_factors = []
+        
+        # 1. 检查净利润增长率
+        if 'net_profit_growth' in stock_data:
+            net_profit_growth = stock_data['net_profit_growth']
+            if net_profit_growth <= 0:
+                risk_score += 30
+                risk_factors.append("净利润增长率为负")
+            elif net_profit_growth < 0.1:  # 10%
+                risk_score += 10
+                risk_factors.append("净利润增长率低于10%")
+        else:
+            risk_score += 15
+            risk_factors.append("缺少净利润增长率数据")
+            
+        # 2. 检查资产负债率
+        if 'debt_ratio' in stock_data:
+            debt_ratio = stock_data['debt_ratio']
+            industry = stock_data.get('industry', 'other')
+            
+            # 根据行业设置不同的资产负债率阈值
+            if industry in ['tech', 'consumer']:  # 科技/消费行业
+                threshold = 0.4  # 40%
+            else:  # 制造业等
+                threshold = 0.6  # 60%
+                
+            if debt_ratio > threshold + 0.2:  # 超过阈值20%
+                risk_score += 40
+                risk_factors.append(f"资产负债率({debt_ratio:.1%})远高于行业标准({threshold:.1%})")
+            elif debt_ratio > threshold:
+                risk_score += 20
+                risk_factors.append(f"资产负债率({debt_ratio:.1%})高于行业标准({threshold:.1%})")
+        else:
+            risk_score += 20
+            risk_factors.append("缺少资产负债率数据")
+            
+        # 3. 检查商誉/市值比
+        if 'goodwill_to_market_value' in stock_data:
+            goodwill_ratio = stock_data['goodwill_to_market_value']
+            if goodwill_ratio > 0.2:  # 20%
+                risk_score += 40
+                risk_factors.append(f"商誉/市值比过高({goodwill_ratio:.1%}),减值风险大")
+            elif goodwill_ratio > 0.1:  # 10%
+                risk_score += 20
+                risk_factors.append(f"商誉/市值比偏高({goodwill_ratio:.1%})")
+        else:
+            risk_score += 10
+            risk_factors.append("缺少商誉数据")
+            
+        # 4. 检查机构持仓比例
+        if 'institutional_holdings' in stock_data:
+            inst_holdings = stock_data['institutional_holdings']
+            if inst_holdings < 0.1:  # 10%
+                risk_score += 15
+                risk_factors.append(f"机构持仓比例低({inst_holdings:.1%}),缺乏机构背书")
+        else:
+            risk_score += 5
+            risk_factors.append("缺少机构持仓数据")
+            
+        # 5. 检查监管问询函
+        if 'regulatory_inquiries' in stock_data and stock_data['regulatory_inquiries'] > 0:
+            inquiries = stock_data['regulatory_inquiries']
+            if inquiries >= 3:
+                risk_score += 40
+                risk_factors.append(f"近一年收到{inquiries}次监管问询,财务风险高")
+            elif inquiries > 0:
+                risk_score += 20
+                risk_factors.append(f"近一年收到{inquiries}次监管问询")
+                
+        # 计算最终风险分数并决定是否通过
+        self.risk_assessment['fundamental_risk'] = min(risk_score, 100)
+        
+        if risk_score >= 50:  # 风险过高
+            return False, risk_score, "基本面风险过高: " + ", ".join(risk_factors)
+        elif risk_score >= 30:  # 中等风险
+            return True, risk_score, "基本面存在一定风险: " + ", ".join(risk_factors)
+        else:  # 低风险
+            return True, risk_score, "基本面风险较低" + (": " + ", ".join(risk_factors) if risk_factors else "")
+    
+    def check_technical_trend(self, price_data):
+        """
+        检查技术面趋势
+        
+        Args:
+            price_data (pd.DataFrame): 价格数据,包含OHLCV
+            
+        Returns:
+            tuple: (趋势方向, 强度, 描述)
+                趋势方向: 1 (上升), 0 (中性), -1 (下降)
+                强度: 0-100
+        """
+        if not self.parameters['enable_technical_check'] or price_data is None or len(price_data) < 60:
+            return 0, 0, "技术面检查已禁用或数据不足"
+            
+        # 计算移动平均线
+        price_data['ma5'] = price_data['close'].rolling(window=5).mean()
+        price_data['ma10'] = price_data['close'].rolling(window=10).mean()
+        price_data['ma20'] = price_data['close'].rolling(window=20).mean()
+        price_data['ma60'] = price_data['close'].rolling(window=60).mean()
+        
+        # 计算MACD
+        price_data['ema12'] = price_data['close'].ewm(span=12, adjust=False).mean()
+        price_data['ema26'] = price_data['close'].ewm(span=26, adjust=False).mean()
+        price_data['macd_line'] = price_data['ema12'] - price_data['ema26']
+        price_data['signal_line'] = price_data['macd_line'].ewm(span=9, adjust=False).mean()
+        price_data['macd_histogram'] = price_data['macd_line'] - price_data['signal_line']
+        
+        # 获取最新的数据
+        latest = price_data.iloc[-1]
+        prev = price_data.iloc[-2]
+        
+        trend_score = 0
+        trend_factors = []
+        
+        # 1. 检查均线排列
+        ma_alignment = 0
+        if latest['ma5'] > latest['ma10'] > latest['ma20']:
+            ma_alignment = 1  # 多头排列
+            trend_score += 30
+            trend_factors.append("均线多头排列")
+        elif latest['ma5'] < latest['ma10'] < latest['ma20']:
+            ma_alignment = -1  # 空头排列
+            trend_score -= 30
+            trend_factors.append("均线空头排列")
+            
+        # 2. 检查价格相对于均线位置
+        if latest['close'] > latest['ma20']:
+            trend_score += 15
+            trend_factors.append("价格站稳20日均线")
+        elif latest['close'] < latest['ma60']:
+            trend_score -= 25
+            trend_factors.append("价格跌破60日均线")
+            
+        # 3. 检查MACD信号
+        macd_signal = 0
+        if latest['macd_line'] > latest['signal_line'] and prev['macd_line'] <= prev['signal_line']:
+            macd_signal = 1  # MACD金叉
+            trend_score += 20
+            trend_factors.append("MACD金叉")
+        elif latest['macd_line'] < latest['signal_line'] and prev['macd_line'] >= prev['signal_line']:
+            macd_signal = -1  # MACD死叉
+            trend_score -= 20
+            trend_factors.append("MACD死叉")
+            
+        # 4. 检查MACD背离
+        # 寻找最近的高点和低点
+        high_point_idx = price_data['close'][-20:].idxmax()
+        low_point_idx = price_data['close'][-20:].idxmin()
+        
+        # 顶背离检查(股价创新高但MACD未创新高)
+        if high_point_idx == price_data.index[-1]:  # 当前是最高点
+            prev_high_idx = price_data['close'][-40:-20].idxmax()
+            if (price_data.loc[high_point_idx, 'close'] > price_data.loc[prev_high_idx, 'close'] and 
+                price_data.loc[high_point_idx, 'macd_histogram'] < price_data.loc[prev_high_idx, 'macd_histogram']):
+                trend_score -= 25
+                trend_factors.append("MACD顶背离(见顶信号)")
+                
+        # 底背离检查(股价创新低但MACD未创新低)
+        if low_point_idx == price_data.index[-1]:  # 当前是最低点
+            prev_low_idx = price_data['close'][-40:-20].idxmin()
+            if (price_data.loc[low_point_idx, 'close'] < price_data.loc[prev_low_idx, 'close'] and 
+                price_data.loc[low_point_idx, 'macd_histogram'] > price_data.loc[prev_low_idx, 'macd_histogram']):
+                trend_score += 25
+                trend_factors.append("MACD底背离(见底信号)")
+        
+        # 5. 检查成交量
+        # 计算过去5日平均成交量
+        avg_volume = price_data['volume'][-6:-1].mean()
+        volume_change = latest['volume'] / avg_volume - 1 if avg_volume > 0 else 0
+        
+        if latest['close'] > prev['close']:  # 上涨
+            if volume_change > 0.5:  # 放量上涨
+                trend_score += 10
+                trend_factors.append(f"放量上涨(量比{1+volume_change:.2f})")
+            elif volume_change > 0.2:  # 温和放量
+                trend_score += 15
+                trend_factors.append(f"量价配合(量比{1+volume_change:.2f})")
+            elif volume_change < 0:  # 缩量上涨
+                trend_score -= 5
+                trend_factors.append("缩量上涨,持续性存疑")
+        else:  # 下跌
+            if volume_change < -0.3:  # 缩量下跌
+                trend_score += 5
+                trend_factors.append("缩量下跌,抛压减轻")
+            elif volume_change > 0.2:  # 放量下跌
+                trend_score -= 15
+                trend_factors.append("放量下跌,卖盘积极")
+        
+        # 确定趋势方向和强度
+        trend_score = max(-100, min(100, trend_score))  # 限制在-100到100之间
+        
+        if trend_score > 30:
+            trend_direction = 1  # 上升趋势
+            description = "技术面呈上升趋势: " + ", ".join(trend_factors)
+        elif trend_score < -30:
+            trend_direction = -1  # 下降趋势
+            description = "技术面呈下降趋势: " + ", ".join(trend_factors)
+        else:
+            trend_direction = 0  # 中性趋势
+            description = "技术面呈震荡趋势: " + ", ".join(trend_factors)
+        
+        # 将分数转换为0-100的风险评分(负分转为高风险)
+        risk_score = 50 - trend_score / 2
+        self.risk_assessment['technical_risk'] = risk_score
+        
+        return trend_direction, abs(trend_score), description
+    
+    def calculate_position_size(self, price, trend_strength, risk_level=0.5):
+        """
+        计算建仓仓位大小(金字塔建仓法)
+        
+        Args:
+            price (float): 当前价格
+            trend_strength (float): 趋势强度 (0-100)
+            risk_level (float): 风险水平 (0-1)
+            
+        Returns:
+            int: 建议买入数量
+        """
+        if not self.parameters['enable_pyramid_position']:
+            # 不使用金字塔建仓,返回最大仓位的一半
+            max_shares = int(self.initial_capital * self.parameters['max_position_ratio'] / price)
+            return int(max_shares * 0.5)
+        
+        # 获取当前持仓情况
+        current_value = self.current_position * price
+        max_value = self.initial_capital * self.parameters['max_position_ratio']
+        
+        # 如果当前是首次建仓
+        if self.current_position == 0:
+            # 首次建仓比例
+            position_ratio = self.parameters['first_position_ratio']
+            # 根据趋势强度调整(强趋势可以略微提高首仓)
+            position_ratio = position_ratio * (1 + trend_strength / 200)
+            # 根据风险水平调整(高风险降低仓位)
+            position_ratio = position_ratio * (1 - risk_level * 0.5)
+            
+            # 确保不超过最大限制
+            position_ratio = min(position_ratio, self.parameters['max_position_ratio'] * 0.5)
+            
+            # 计算股数
+            shares = int(self.initial_capital * position_ratio / price)
+            return shares
+        
+        # 如果是加仓
+        else:
+            # 计算可用于加仓的资金比例
+            available_ratio = (max_value - current_value) / self.initial_capital
+            if available_ratio <= 0:
+                return 0  # 已达到最大仓位,不再加仓
+            
+            # 加仓量通常为首次建仓的一半到相等
+            base_add_ratio = self.parameters['first_position_ratio'] * 0.5
+            # 根据趋势强度调整
+            add_ratio = base_add_ratio * (trend_strength / 100)
+            # 根据风险水平调整
+            add_ratio = add_ratio * (1 - risk_level * 0.5)
+            
+            # 确保不超过可用资金
+            add_ratio = min(add_ratio, available_ratio)
+            
+            # 计算加仓股数
+            shares = int(self.initial_capital * add_ratio / price)
+            return shares
+    
+    def should_stop_loss(self, current_price):
+        """
+        判断是否应该止损
+        
+        Args:
+            current_price (float): 当前价格
+            
+        Returns:
+            bool: 是否应该止损
+        """
+        if self.current_position == 0 or self.position_cost == 0:
+            return False
+            
+        # 计算浮动盈亏比例
+        profit_ratio = (current_price - self.position_cost) / self.position_cost
+        
+        # 如果亏损超过止损线,触发止损
+        if profit_ratio < -self.parameters['stop_loss_ratio']:
+            return True
+            
+        return False
+    
+    def should_take_profit(self, current_price, dynamic=True):
+        """
+        判断是否应该止盈
+        
+        Args:
+            current_price (float): 当前价格
+            dynamic (bool): 是否使用动态止盈
+            
+        Returns:
+            bool: 是否应该止盈
+        """
+        if self.current_position == 0 or self.position_cost == 0:
+            return False
+            
+        # 计算浮动盈亏比例
+        profit_ratio = (current_price - self.position_cost) / self.position_cost
+        
+        # 静态止盈:达到目标利润
+        if profit_ratio >= self.parameters['target_profit_ratio']:
+            return True
+            
+        # 动态止盈:从最高点回落超过移动止盈比例
+        if dynamic and hasattr(self, 'highest_price') and self.highest_price > 0:
+            if (self.highest_price - current_price) / self.highest_price >= self.parameters['trailing_stop_ratio']:
+                return True
+                
+        return False
+    
+    def update_position(self, price, shares, is_buy):
+        """
+        更新持仓信息
+        
+        Args:
+            price (float): 交易价格
+            shares (int): 交易股数
+            is_buy (bool): 是否为买入
+        """
+        if is_buy:
+            # 买入更新持仓
+            new_shares = self.current_position + shares
+            new_cost = (self.current_position * self.position_cost + shares * price) / new_shares if new_shares > 0 else 0
+            
+            self.current_position = new_shares
+            self.position_cost = new_cost
+            self.highest_price = price  # 重置最高价
+        else:
+            # 卖出更新持仓
+            self.current_position -= shares
+            # 全部卖出则重置成本
+            if self.current_position <= 0:
+                self.current_position = 0
+                self.position_cost = 0
+                self.highest_price = 0
+    
+    def generate_signals(self, data):
+        """
+        根据风险控制策略生成交易信号
+        
+        Args:
+            data (pd.DataFrame): 市场数据
+                必须包含: open, high, low, close, volume列
+            
+        Returns:
+            pd.Series: 交易信号 (1: 买入, -1: 卖出, 0: 持有)
+        """
+        if not isinstance(data, pd.DataFrame) or len(data) == 0:
+            return pd.Series(0, index=range(1))
+            
+        # 创建结果信号Series
+        signals = pd.Series(0, index=data.index)
+        
+        # 获取最新价格
+        latest_price = data['close'].iloc[-1]
+        
+        # 更新最高价记录(用于移动止盈)
+        if self.current_position > 0 and (not hasattr(self, 'highest_price') or latest_price > self.highest_price):
+            self.highest_price = latest_price
+        
+        # 检查是否需要止损
+        if self.should_stop_loss(latest_price):
+            signals.iloc[-1] = -1  # 卖出信号
+            self.logger.warning(f"触发止损信号,当前价格:{latest_price},成本价:{self.position_cost}")
+            return signals
+            
+        # 检查是否需要止盈
+        if self.should_take_profit(latest_price):
+            signals.iloc[-1] = -1  # 卖出信号
+            self.logger.info(f"触发止盈信号,当前价格:{latest_price},成本价:{self.position_cost}")
+            return signals
+            
+        # 分析技术面趋势
+        trend_direction, trend_strength, trend_desc = self.check_technical_trend(data)
+        
+        # 根据趋势判断信号
+        if trend_direction == 1 and trend_strength > 50:  # 强上升趋势
+            # 如果是空仓或加仓点
+            if self.current_position == 0 or (
+                self.current_position > 0 and 
+                latest_price >= self.position_cost * (1 + self.parameters['add_position_threshold'])
+            ):
+                # 计算合适的仓位
+                risk_level = self.risk_assessment['overall_risk'] / 100
+                shares = self.calculate_position_size(latest_price, trend_strength, risk_level)
+                
+                if shares > 0:
+                    signals.iloc[-1] = 1  # 买入信号
+                    self.logger.info(f"生成买入信号: 价格={latest_price}, 数量={shares}, 趋势强度={trend_strength}")
+                    
+        elif trend_direction == -1 and trend_strength > 70:  # 强下降趋势
+            if self.current_position > 0:
+                signals.iloc[-1] = -1  # 卖出信号
+                self.logger.info(f"强下降趋势触发卖出信号: 价格={latest_price}, 趋势强度={trend_strength}")
+                
+        return signals
+    
+    def update_risk_assessment(self, market_data=None, stock_data=None):
+        """
+        更新风险评估结果
+        
+        Args:
+            market_data (pd.DataFrame): 市场行情数据
+            stock_data (dict): 股票基本面数据
+            
+        Returns:
+            dict: 风险评估结果
+        """
+        # 如果有基本面数据,更新基本面风险
+        if stock_data is not None:
+            _, risk_score, _ = self.check_fundamental_risk(stock_data)
+            self.risk_assessment['fundamental_risk'] = risk_score
+            
+        # 如果有市场数据,更新技术面风险
+        if market_data is not None:
+            _, _, _ = self.check_technical_trend(market_data)  # 内部会更新technical_risk
+            
+        # 更新仓位风险
+        if self.current_position > 0:
+            position_ratio = self.current_position * market_data['close'].iloc[-1] / self.initial_capital
+            if position_ratio > self.parameters['max_position_ratio']:
+                self.risk_assessment['position_risk'] = 100
+            else:
+                self.risk_assessment['position_risk'] = position_ratio / self.parameters['max_position_ratio'] * 100
+        else:
+            self.risk_assessment['position_risk'] = 0
+            
+        # 更新市场风险(可从外部市场指标获取)
+        if 'market_risk' not in self.risk_assessment:
+            self.risk_assessment['market_risk'] = 50  # 默认中等市场风险
+            
+        # 计算综合风险
+        self.risk_assessment['overall_risk'] = (
+            self.risk_assessment['fundamental_risk'] * 0.3 +
+            self.risk_assessment['technical_risk'] * 0.3 +
+            self.risk_assessment['market_risk'] * 0.2 +
+            self.risk_assessment['position_risk'] * 0.2
+        )
+        
+        return self.risk_assessment
+    
+    def get_risk_assessment(self):
+        """
+        获取最新风险评估结果
+        
+        Returns:
+            dict: 风险评估结果
+        """
+        return self.risk_assessment 

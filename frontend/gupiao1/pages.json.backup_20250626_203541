@@ -1,0 +1,256 @@
+{
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "股票交易系统",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/trade/index",
+			"style": {
+				"navigationBarTitleText": "交易中心",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/market-tracking/index",
+			"style": {
+				"navigationBarTitleText": "市场追踪",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/agent-analysis/index",
+			"style": {
+				"navigationBarTitleText": "AI智能交易",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/agent-training/index",
+			"style": {
+				"navigationBarTitleText": "AI模型训练",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/agent-research/index",
+			"style": {
+				"navigationBarTitleText": "AI策略研究",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/agent-prediction/index",
+			"style": {
+				"navigationBarTitleText": "AI智能预测",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/stock-picking/index",
+			"style": {
+				"navigationBarTitleText": "选股策略",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/stock-picking/detail",
+			"style": {
+				"navigationBarTitleText": "股票详情",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/indicators/index",
+			"style": {
+				"navigationBarTitleText": "技术指标",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/portfolio/index",
+			"style": {
+				"navigationBarTitleText": "我的持仓",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/portfolio/stock-detail",
+			"style": {
+				"navigationBarTitleText": "持仓详情",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/portfolio/trade-detail",
+			"style": {
+				"navigationBarTitleText": "交易记录",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/auto-trader/index",
+			"style": {
+				"navigationBarTitleText": "自动交易",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/strategy-analysis/index",
+			"style": {
+				"navigationBarTitleText": "策略分析",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/strategy-analysis/pattern-recognition",
+			"style": {
+				"navigationBarTitleText": "形态识别",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/trade-history/index",
+			"style": {
+				"navigationBarTitleText": "交易历史",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/trade-settings/index",
+			"style": {
+				"navigationBarTitleText": "交易设置",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/settings/index",
+			"style": {
+				"navigationBarTitleText": "系统设置",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/settings/device-transfer-guide",
+			"style": {
+				"navigationBarTitleText": "设备迁移指南",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/settings/security",
+			"style": {
+				"navigationBarTitleText": "安全设置",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/settings/notification",
+			"style": {
+				"navigationBarTitleText": "通知设置",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		},
+		{
+			"path": "pages/test-style",
+			"style": {
+				"navigationBarTitleText": "样式测试",
+				"navigationBarTextStyle": "white",
+				"navigationBarBackgroundColor": "#141414",
+				"backgroundColor": "#141414"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "股票交易系统",
+		"navigationBarBackgroundColor": "#141414",
+		"backgroundColor": "#141414"
+	},
+	"tabBar": {
+		"color": "#999",
+		"selectedColor": "#4c8dff",
+		"backgroundColor": "#222",
+		"borderStyle": "black",
+		"list": [
+			{
+				"pagePath": "pages/agent-analysis/index",
+				"text": "Agent交易"
+			},
+			{
+				"pagePath": "pages/index/index",
+				"text": "首页"
+			},
+			{
+				"pagePath": "pages/stock-picking/index",
+				"text": "选股"
+			},
+			{
+				"pagePath": "pages/trade/index",
+				"text": "交易"
+			},
+			{
+				"pagePath": "pages/portfolio/index",
+				"text": "持仓"
+			},
+			{
+				"pagePath": "pages/settings/index",
+				"text": "设置"
+			}
+		]
+	},
+	"easycom": {
+		"autoscan": true,
+		"custom": {
+			"^uni-(.*)": "@dcloudio/uni-ui/lib/uni-$1/uni-$1.vue"
+		}
+	},
+	"uniIdRouter": {}
+}

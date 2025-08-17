@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+"""
+测试云服务Agent到本地交易后端的连接
+"""
+
+import asyncio
+import websockets
+import requests
+import json
+import time
+from datetime import datetime
+import logging
+
+# 设置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class CloudAgentLocalTradingTester:
+    def __init__(self):
+        self.config = {
+            # 云服务地址
+            'cloud_api': 'https://aigupiao.me',
+            'cloud_api_ngrok': 'https://2346443b1406.ngrok-free.app',
+            'cloud_websocket': 'wss://aigupiao.me/ws',
+            
+            # 本地服务地址
+            'local_api': 'http://localhost:8000',
+            'local_trading': 'http://localhost:8888',
+            
+            # 测试配置
+            'timeout': 15,
+            'max_retries': 3
+        }
+        
+        self.test_results = {}
+    
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    async def test_local_services(self):
+        """测试本地服务状态"""
+        self.log("🖥️ 测试本地服务状态...")
+        
+        local_tests = [
+            {'name': '本地API服务', 'url': f"{self.config['local_api']}/api/health"},
+            {'name': '本地交易服务', 'url': f"{self.config['local_trading']}/health"}
+        ]
+        
+        local_results = {}
+        
+        for test in local_tests:
+            try:
+                start_time = time.time()
+                response = requests.get(test['url'], timeout=self.config['timeout'])
+                latency = round((time.time() - start_time) * 1000)
+                
+                local_results[test['name']] = {
+                    'status': 'success',
+                    'latency': latency,
+                    'status_code': response.status_code,
+                    'response': response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:200]
+                }
+                
+                self.log(f"✅ {test['name']}: {latency}ms (状态码: {response.status_code})", "SUCCESS")
+                
+            except Exception as e:
+                local_results[test['name']] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+                self.log(f"❌ {test['name']}: 失败 - {e}", "ERROR")
+        
+        self.test_results['local_services'] = local_results
+        return local_results
+    
+    async def test_cloud_services(self):
+        """测试云服务状态"""
+        self.log("☁️ 测试云服务状态...")
+        
+        cloud_tests = [
+            {'name': 'Cloudflare云服务', 'url': f"{self.config['cloud_api']}/health"},
+            {'name': 'ngrok云服务', 'url': f"{self.config['cloud_api_ngrok']}/api/health"}
+        ]
+        
+        cloud_results = {}
+        
+        for test in cloud_tests:
+            try:
+                start_time = time.time()
+                response = requests.get(test['url'], timeout=self.config['timeout'])
+                latency = round((time.time() - start_time) * 1000)
+                
+                cloud_results[test['name']] = {
+                    'status': 'success',
+                    'latency': latency,
+                    'status_code': response.status_code,
+                    'response': response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:200]
+                }
+                
+                self.log(f"✅ {test['name']}: {latency}ms (状态码: {response.status_code})", "SUCCESS")
+                
+            except Exception as e:
+                cloud_results[test['name']] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+                self.log(f"❌ {test['name']}: 失败 - {e}", "ERROR")
+        
+        self.test_results['cloud_services'] = cloud_results
+        return cloud_results
+    
+    async def test_agent_decision_api(self):
+        """测试Agent决策API"""
+        self.log("🤖 测试Agent决策API...")
+        
+        # 测试云端Agent决策接口
+        decision_tests = [
+            {
+                'name': '云端Agent决策接口',
+                'url': f"{self.config['cloud_api_ngrok']}/api/agent/decision",
+                'method': 'POST',
+                'data': {
+                    'stock_code': '000001',
+                    'action': 'analyze',
+                    'agent_id': 'test_agent'
+                }
+            },
+            {
+                'name': '本地Agent执行接口',
+                'url': f"{self.config['local_api']}/api/agent/execute",
+                'method': 'POST',
+                'data': {
+                    'action': 'buy',
+                    'stock_code': '000001',
+                    'quantity': 100,
+                    'price': 10.50
+                }
+            }
+        ]
+        
+        decision_results = {}
+        
+        for test in decision_tests:
+            try:
+                start_time = time.time()
+                
+                if test['method'] == 'POST':
+                    response = requests.post(
+                        test['url'], 
+                        json=test['data'], 
+                        timeout=self.config['timeout']
+                    )
+                else:
+                    response = requests.get(test['url'], timeout=self.config['timeout'])
+                
+                latency = round((time.time() - start_time) * 1000)
+                
+                decision_results[test['name']] = {
+                    'status': 'success',
+                    'latency': latency,
+                    'status_code': response.status_code,
+                    'response': response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:200]
+                }
+                
+                self.log(f"✅ {test['name']}: {latency}ms (状态码: {response.status_code})", "SUCCESS")
+                
+            except Exception as e:
+                decision_results[test['name']] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+                self.log(f"❌ {test['name']}: 失败 - {e}", "ERROR")
+        
+        self.test_results['agent_decision'] = decision_results
+        return decision_results
+    
+    async def test_websocket_connection(self):
+        """测试WebSocket连接"""
+        self.log("🔗 测试WebSocket连接...")
+        
+        websocket_results = {}
+        
+        # 测试云端WebSocket
+        try:
+            self.log("🌐 测试云端WebSocket连接...")
+            
+            # 尝试连接云端WebSocket
+            websocket_url = self.config['cloud_websocket']
+            
+            async with websockets.connect(websocket_url, timeout=10) as websocket:
+                # 发送注册消息
+                register_msg = {
+                    "type": "register",
+                    "agent_type": "local_trading",
+                    "capabilities": ["buy", "sell", "export", "balance"],
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                await websocket.send(json.dumps(register_msg))
+                self.log("📤 已发送注册消息", "INFO")
+                
+                # 等待响应
+                try:
+                    response = await asyncio.wait_for(websocket.recv(), timeout=5)
+                    response_data = json.loads(response)
+                    
+                    websocket_results['cloud_websocket'] = {
+                        'status': 'success',
+                        'response': response_data
+                    }
+                    
+                    self.log(f"✅ 云端WebSocket连接成功: {response_data}", "SUCCESS")
+                    
+                except asyncio.TimeoutError:
+                    websocket_results['cloud_websocket'] = {
+                        'status': 'timeout',
+                        'message': '连接成功但无响应'
+                    }
+                    self.log("⚠️ 云端WebSocket连接成功但无响应", "WARNING")
+                
+        except Exception as e:
+            websocket_results['cloud_websocket'] = {
+                'status': 'failed',
+                'error': str(e)
+            }
+            self.log(f"❌ 云端WebSocket连接失败: {e}", "ERROR")
+        
+        self.test_results['websocket'] = websocket_results
+        return websocket_results
+    
+    async def test_complete_trading_chain(self):
+        """测试完整的交易链路"""
+        self.log("🔗 测试完整交易链路...")
+        
+        # 模拟完整的Agent决策到本地交易执行流程
+        chain_test = {
+            'step1': '云端Agent分析',
+            'step2': '生成交易决策',
+            'step3': '发送到本地执行',
+            'step4': '本地交易执行',
+            'step5': '返回执行结果'
+        }
+        
+        chain_results = {}
+        
+        try:
+            # Step 1: 测试云端Agent分析
+            self.log("📊 Step 1: 云端Agent分析...")
+            analysis_url = f"{self.config['cloud_api_ngrok']}/api/agent/analyze"
+            analysis_data = {
+                'stock_code': '000001',
+                'analysis_type': 'technical'
+            }
+            
+            response = requests.post(analysis_url, json=analysis_data, timeout=15)
+            if response.status_code == 200:
+                chain_results['step1'] = {'status': 'success', 'data': response.json()}
+                self.log("✅ Step 1: 云端分析成功", "SUCCESS")
+            else:
+                chain_results['step1'] = {'status': 'failed', 'status_code': response.status_code}
+                self.log(f"❌ Step 1: 云端分析失败 (状态码: {response.status_code})", "ERROR")
+            
+        except Exception as e:
+            chain_results['step1'] = {'status': 'error', 'error': str(e)}
+            self.log(f"❌ Step 1: 云端分析异常 - {e}", "ERROR")
+        
+        try:
+            # Step 2: 测试本地交易执行
+            self.log("💰 Step 2: 本地交易执行...")
+            trading_url = f"{self.config['local_trading']}/trade"
+            trading_data = {
+                'action': 'buy',
+                'stock_code': '000001',
+                'quantity': 100,
+                'price': 10.50
+            }
+            
+            response = requests.post(trading_url, json=trading_data, timeout=15)
+            if response.status_code == 200:
+                chain_results['step2'] = {'status': 'success', 'data': response.json()}
+                self.log("✅ Step 2: 本地交易执行成功", "SUCCESS")
+            else:
+                chain_results['step2'] = {'status': 'failed', 'status_code': response.status_code}
+                self.log(f"❌ Step 2: 本地交易执行失败 (状态码: {response.status_code})", "ERROR")
+            
+        except Exception as e:
+            chain_results['step2'] = {'status': 'error', 'error': str(e)}
+            self.log(f"❌ Step 2: 本地交易执行异常 - {e}", "ERROR")
+        
+        self.test_results['trading_chain'] = chain_results
+        return chain_results
+    
+    def analyze_connectivity(self):
+        """分析连接状态"""
+        self.log("📊 分析云端Agent到本地交易的连接状态...")
+        
+        # 检查各个组件状态
+        local_ok = any(result.get('status') == 'success' for result in self.test_results.get('local_services', {}).values())
+        cloud_ok = any(result.get('status') == 'success' for result in self.test_results.get('cloud_services', {}).values())
+        websocket_ok = self.test_results.get('websocket', {}).get('cloud_websocket', {}).get('status') == 'success'
+        
+        self.log("🔍 连接状态分析:", "INFO")
+        self.log(f"   本地服务: {'✅ 正常' if local_ok else '❌ 异常'}", "SUCCESS" if local_ok else "ERROR")
+        self.log(f"   云端服务: {'✅ 正常' if cloud_ok else '❌ 异常'}", "SUCCESS" if cloud_ok else "ERROR")
+        self.log(f"   WebSocket: {'✅ 正常' if websocket_ok else '❌ 异常'}", "SUCCESS" if websocket_ok else "ERROR")
+        
+        # 总体评估
+        if local_ok and cloud_ok:
+            if websocket_ok:
+                self.log("🎉 云端Agent可以连接到本地交易后端！", "SUCCESS")
+                connectivity_status = "完全连通"
+            else:
+                self.log("⚠️ 云端Agent可以通过HTTP连接本地，但WebSocket有问题", "WARNING")
+                connectivity_status = "部分连通"
+        elif local_ok:
+            self.log("⚠️ 本地服务正常，但云端服务有问题", "WARNING")
+            connectivity_status = "本地正常，云端异常"
+        elif cloud_ok:
+            self.log("⚠️ 云端服务正常，但本地服务有问题", "WARNING")
+            connectivity_status = "云端正常，本地异常"
+        else:
+            self.log("❌ 云端Agent无法连接到本地交易后端", "ERROR")
+            connectivity_status = "连接失败"
+        
+        return connectivity_status
+    
+    def generate_report(self):
+        """生成测试报告"""
+        connectivity_status = self.analyze_connectivity()
+        
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'test_type': 'Cloud Agent to Local Trading Connectivity Test',
+            'connectivity_status': connectivity_status,
+            'test_results': self.test_results,
+            'recommendations': self.get_recommendations()
+        }
+        
+        # 保存报告
+        filename = f"cloud_agent_local_trading_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        
+        self.log(f"📄 测试报告已保存: {filename}", "SUCCESS")
+        return report
+    
+    def get_recommendations(self):
+        """获取建议"""
+        recommendations = []
+        
+        local_services = self.test_results.get('local_services', {})
+        cloud_services = self.test_results.get('cloud_services', {})
+        websocket = self.test_results.get('websocket', {})
+        
+        if not any(result.get('status') == 'success' for result in local_services.values()):
+            recommendations.append("启动本地服务 (端口8000和8888)")
+        
+        if not any(result.get('status') == 'success' for result in cloud_services.values()):
+            recommendations.append("检查云端服务连接")
+        
+        if websocket.get('cloud_websocket', {}).get('status') != 'success':
+            recommendations.append("修复WebSocket连接问题")
+        
+        if not recommendations:
+            recommendations.append("所有连接正常，可以进行Agent交易")
+        
+        return recommendations
+    
+    async def run_full_test(self):
+        """运行完整测试"""
+        self.log("🚀 开始云端Agent到本地交易连接测试", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 执行所有测试
+        await self.test_local_services()
+        print()
+        
+        await self.test_cloud_services()
+        print()
+        
+        await self.test_agent_decision_api()
+        print()
+        
+        await self.test_websocket_connection()
+        print()
+        
+        await self.test_complete_trading_chain()
+        print()
+        
+        # 分析和生成报告
+        report = self.generate_report()
+        
+        self.log("🎯 测试完成！", "SUCCESS")
+        return report
+
+if __name__ == "__main__":
+    tester = CloudAgentLocalTradingTester()
+    asyncio.run(tester.run_full_test())

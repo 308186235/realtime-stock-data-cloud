@@ -1,0 +1,110 @@
+<template>
+	<view class="agent-learning-status" @click="navigateToLearningAnalysis">
+		<view class="status-icon" :class="optimized ? 'optimized' : 'learning'">
+			<text class="icon-text">{{ optimized ? '✓' : '⟳' }}</text>
+		</view>
+		<view class="status-info">
+			<text class="status-title">AI{{ optimized ? '已优化' : '学习中' }}</text>
+			<text class="status-desc">{{ statusText }}</text>
+		</view>
+		<text class="arrow">→</text>
+	</view>
+</template>
+
+<script>
+export default {
+	props: {
+		// 是否已优化
+		optimized: {
+			type: Boolean,
+			default: false
+		},
+		// 学习进度 (0-100)
+		progress: {
+			type: Number,
+			default: 0
+		},
+		// 交易样本数量
+		samples: {
+			type: Number,
+			default: 0
+		}
+	},
+	computed: {
+		// 状态文本
+		statusText() {
+			if (this.optimized) {
+				return `已基于${this.samples}笔交易记录优化策略`;
+			} else {
+				if (this.samples < 10) {
+					return `还需${10 - this.samples}笔交易记录才能开始优化`;
+				} else {
+					return `已收集${this.samples}笔交易记录，可开始分析`;
+				}
+			}
+		}
+	},
+	methods: {
+		// 导航到学习分析页面
+		navigateToLearningAnalysis() {
+			uni.navigateTo({
+				url: '/pages/agent-analysis/learning/index'
+			});
+		}
+	}
+}
+</script>
+
+<style>
+.agent-learning-status {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	background-color: #f9f9f9;
+	padding: 15rpx;
+	border-radius: 8rpx;
+	margin-bottom: 20rpx;
+}
+
+.status-icon {
+	width: 60rpx;
+	height: 60rpx;
+	border-radius: 30rpx;
+	justify-content: center;
+	align-items: center;
+	margin-right: 15rpx;
+}
+
+.status-icon.optimized {
+	background-color: #52c41a;
+}
+
+.status-icon.learning {
+	background-color: #faad14;
+}
+
+.icon-text {
+	font-size: 32rpx;
+	color: white;
+}
+
+.status-info {
+	flex: 1;
+}
+
+.status-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	margin-bottom: 5rpx;
+}
+
+.status-desc {
+	font-size: 24rpx;
+	color: #666;
+}
+
+.arrow {
+	font-size: 28rpx;
+	color: #999;
+}
+</style> 

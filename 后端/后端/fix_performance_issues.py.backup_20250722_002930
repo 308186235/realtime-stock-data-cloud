@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""
+修复性能瓶颈问题
+"""
+
+import os
+import shutil
+import re
+from datetime import datetime
+
+class PerformanceFixer:
+    """性能问题修复器"""
+    
+    def __init__(self):
+        self.backup_dir = f"performance_fix_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.fixed_files = []
+        
+    def fix_all_performance_issues(self):
+        """修复所有性能问题"""
+        print("⚡ 修复性能瓶颈问题")
+        print("=" * 50)
+        
+        # 创建备份目录
+        os.makedirs(self.backup_dir, exist_ok=True)
+        
+        # 1. 优化内存管理
+        self._optimize_memory_usage()
+        
+        # 2. 修复无限循环风险
+        self._fix_infinite_loops()
+        
+        # 3. 优化数据库连接池
+        self._optimize_database_pool()
+        
+        # 4. 添加性能监控
+        self._add_performance_monitoring()
+        
+        # 5. 创建性能优化配置
+        self._create_performance_config()
+        
+        print(f"\n✅ 性能优化完成！")
+        print(f"📁 备份文件保存在: {self.backup_dir}")
+        print(f"⚡ 优化了 {len(self.fixed_files)} 个文件")
+        
+    def _optimize_memory_usage(self):
+        """优化内存使用"""
+        print("\n⚡ 优化内存使用...")
+        
+        memory_intensive_files = [
+            "ultra_high_performance_receiver.py",
+            "mass_stock_database_processor.py",
+            "chagubang_receiver.py"
+        ]
+        
+        for file_path in memory_intensive_files:
+            if os.path.exists(file_path):
+                self._backup_file(file_path)
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 添加内存优化代码
+                content = self._add_memory_optimization(content)
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.fixed_files.append(file_path)
+                print(f"✅ 已优化: {file_path}")
+    
+    def _fix_infinite_loops(self):
+        """修复无限循环风险"""
+        print("\n⚡ 修复无限循环风险...")
+        
+        loop_files = [
+            "chagubang_receiver.py",
+            "backend/services/realtime_stock_receiver.py",
+            "ultra_high_performance_receiver.py"
+        ]
+        
+        for file_path in loop_files:
+            if os.path.exists(file_path):
+                self._backup_file(file_path)
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 添加循环安全检查
+                content = self._add_loop_safety(content)
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.fixed_files.append(file_path)
+                print(f"✅ 已修复: {file_path}")
+    
+    def _optimize_database_pool(self):
+        """优化数据库连接池"""
+        print("\n⚡ 优化数据库连接池...")
+        
+        db_files = [
+            "backend/supabase_config.py"
+        ]
+        
+        for file_path in db_files:
+            if os.path.exists(file_path):
+                self._backup_file(file_path)
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 优化连接池配置
+                content = content.replace(
+                    "max_size=10",
+                    "max_size=20"  # 增加连接池大小
+                )
+                content = content.replace(
+                    "min_size=1",
+                    "min_size=5"   # 增加最小连接数
+                )
+                content = content.replace(
+                    "command_timeout=60",
+                    "command_timeout=30"  # 减少超时时间
+                )
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.fixed_files.append(file_path)
+                print(f"✅ 已优化: {file_path}")
+    
+    def _add_performance_monitoring(self):
+        """添加性能监控"""
+        print("\n⚡ 添加性能监控...")
+        
+        monitoring_code = '''"""
+增强性能监控器
+"""
+
+import time
+import psutil
+import threading
+import logging
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from collections import deque
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class PerformanceMetrics:
+    """性能指标"""
+    timestamp: float
+    cpu_percent: float
+    memory_percent: float
+    memory_mb: float
+    disk_io_read: int
+    disk_io_write: int
+    network_sent: int
+    network_recv: int
+    active_threads: int
+    
+class EnhancedPerformanceMonitor:
+    """增强性能监控器"""
+    
+    def __init__(self, max_history=1000):
+        self.max_history = max_history
+        self.metrics_history = deque(maxlen=max_history)
+        self.monitoring = False
+        self.monitor_thread = None
+        self.alert_thresholds = {
+            'cpu_percent': 80.0,
+            'memory_percent': 85.0,
+            'memory_mb': 500.0,
+            'response_time': 2000.0
+        }
+        self.alert_callbacks = []
+    
+    def start_monitoring(self, interval=1.0):
+        """开始监控"""
+        if self.monitoring:
+            return
+        
+        self.monitoring = True
+        self.monitor_thread = threading.Thread(
+            target=self._monitor_loop,
+            args=(interval,),
+            daemon=True
+        )
+        self.monitor_thread.start()
+        logger.info("性能监控已启动")
+    
+    def stop_monitoring(self):
+        """停止监控"""
+        self.monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=5)
+        logger.info("性能监控已停止")
+    
+    def _monitor_loop(self, interval):
+        """监控循环"""
+        while self.monitoring:
+            try:
+                metrics = self._collect_metrics()
+                self.metrics_history.append(metrics)
+                self._check_alerts(metrics)
+                time.sleep(interval)
+            except Exception as e:
+                logger.error(f"性能监控错误: {e}")
+                time.sleep(interval)
+    
+    def _collect_metrics(self) -> PerformanceMetrics:
+        """收集性能指标"""
+        process = psutil.Process()
+        
+        # CPU和内存
+        cpu_percent = process.cpu_percent()
+        memory_info = process.memory_info()
+        memory_percent = process.memory_percent()
+        memory_mb = memory_info.rss / 1024 / 1024
+        
+        # 磁盘IO
+        disk_io = process.io_counters()
+        disk_io_read = disk_io.read_bytes if disk_io else 0
+        disk_io_write = disk_io.write_bytes if disk_io else 0
+        
+        # 网络IO（系统级别）
+        net_io = psutil.net_io_counters()
+        network_sent = net_io.bytes_sent if net_io else 0
+        network_recv = net_io.bytes_recv if net_io else 0
+        
+        # 线程数
+        active_threads = process.num_threads()
+        
+        return PerformanceMetrics(
+            timestamp=time.time(),
+            cpu_percent=cpu_percent,
+            memory_percent=memory_percent,
+            memory_mb=memory_mb,
+            disk_io_read=disk_io_read,
+            disk_io_write=disk_io_write,
+            network_sent=network_sent,
+            network_recv=network_recv,
+            active_threads=active_threads
+        )
+    
+    def _check_alerts(self, metrics: PerformanceMetrics):
+        """检查告警"""
+        alerts = []
+        
+        if metrics.cpu_percent > self.alert_thresholds['cpu_percent']:
+            alerts.append(f"CPU使用率过高: {metrics.cpu_percent:.1f}%")
+        
+        if metrics.memory_percent > self.alert_thresholds['memory_percent']:
+            alerts.append(f"内存使用率过高: {metrics.memory_percent:.1f}%")
+        
+        if metrics.memory_mb > self.alert_thresholds['memory_mb']:
+            alerts.append(f"内存使用量过高: {metrics.memory_mb:.1f}MB")
+        
+        for alert in alerts:
+            logger.warning(f"性能告警: {alert}")
+            for callback in self.alert_callbacks:
+                try:
+                    callback(alert, metrics)
+                except Exception as e:
+                    logger.error(f"告警回调失败: {e}")
+    
+    def get_current_metrics(self) -> Optional[PerformanceMetrics]:
+        """获取当前指标"""
+        if self.metrics_history:
+            return self.metrics_history[-1]
+        return None
+    
+    def get_average_metrics(self, last_n=60) -> Dict:
+        """获取平均指标"""
+        if not self.metrics_history:
+            return {}
+        
+        recent_metrics = list(self.metrics_history)[-last_n:]
+        
+        return {
+            'avg_cpu': sum(m.cpu_percent for m in recent_metrics) / len(recent_metrics),
+            'avg_memory': sum(m.memory_percent for m in recent_metrics) / len(recent_metrics),
+            'avg_memory_mb': sum(m.memory_mb for m in recent_metrics) / len(recent_metrics),
+            'avg_threads': sum(m.active_threads for m in recent_metrics) / len(recent_metrics)
+        }
+
+# 全局性能监控器
+enhanced_monitor = EnhancedPerformanceMonitor()
+'''
+        
+        with open("backend/services/enhanced_performance_monitor.py", "w", encoding="utf-8") as f:
+            f.write(monitoring_code)
+        
+        print("✅ 已创建: backend/services/enhanced_performance_monitor.py")
+    
+    def _create_performance_config(self):
+        """创建性能优化配置"""
+        print("\n⚡ 创建性能优化配置...")
+        
+        config_code = '''"""
+性能优化配置
+"""
+
+import os
+from typing import Dict, Any
+
+class PerformanceConfig:
+    """性能优化配置"""
+    
+    # 内存管理配置
+    MEMORY_CONFIG = {
+        'max_memory_mb': int(os.getenv('MAX_MEMORY_MB', '500')),
+        'memory_check_interval': float(os.getenv('MEMORY_CHECK_INTERVAL', '1.0')),
+        'cleanup_threshold_mb': int(os.getenv('CLEANUP_THRESHOLD_MB', '400')),
+        'force_cleanup_threshold_mb': int(os.getenv('FORCE_CLEANUP_THRESHOLD_MB', '450'))
+    }
+    
+    # 数据库连接池配置
+    DATABASE_CONFIG = {
+        'min_connections': int(os.getenv('DB_MIN_CONNECTIONS', '5')),
+        'max_connections': int(os.getenv('DB_MAX_CONNECTIONS', '20')),
+        'connection_timeout': int(os.getenv('DB_CONNECTION_TIMEOUT', '30')),
+        'idle_timeout': int(os.getenv('DB_IDLE_TIMEOUT', '300'))
+    }
+    
+    # 缓存配置
+    CACHE_CONFIG = {
+        'max_cache_size': int(os.getenv('MAX_CACHE_SIZE', '1000')),
+        'cache_ttl': int(os.getenv('CACHE_TTL', '300')),
+        'cleanup_interval': int(os.getenv('CACHE_CLEANUP_INTERVAL', '60'))
+    }
+    
+    # 并发配置
+    CONCURRENCY_CONFIG = {
+        'max_workers': int(os.getenv('MAX_WORKERS', '10')),
+        'queue_size': int(os.getenv('QUEUE_SIZE', '1000')),
+        'batch_size': int(os.getenv('BATCH_SIZE', '100'))
+    }
+    
+    # 监控配置
+    MONITORING_CONFIG = {
+        'enable_monitoring': os.getenv('ENABLE_MONITORING', 'true').lower() == 'true',
+        'monitoring_interval': float(os.getenv('MONITORING_INTERVAL', '1.0')),
+        'alert_cpu_threshold': float(os.getenv('ALERT_CPU_THRESHOLD', '80.0')),
+        'alert_memory_threshold': float(os.getenv('ALERT_MEMORY_THRESHOLD', '85.0'))
+    }
+    
+    @classmethod
+    def get_all_config(cls) -> Dict[str, Any]:
+        """获取所有配置"""
+        return {
+            'memory': cls.MEMORY_CONFIG,
+            'database': cls.DATABASE_CONFIG,
+            'cache': cls.CACHE_CONFIG,
+            'concurrency': cls.CONCURRENCY_CONFIG,
+            'monitoring': cls.MONITORING_CONFIG
+        }
+
+# 全局配置实例
+perf_config = PerformanceConfig()
+'''
+        
+        with open("backend/config/performance_config.py", "w", encoding="utf-8") as f:
+            f.write(config_code)
+        
+        print("✅ 已创建: backend/config/performance_config.py")
+    
+    def _backup_file(self, file_path: str):
+        """备份文件"""
+        backup_name = file_path.replace("/", "_").replace("\\", "_") + ".backup"
+        backup_path = os.path.join(self.backup_dir, backup_name)
+        shutil.copy2(file_path, backup_path)
+    
+    def _add_memory_optimization(self, content: str) -> str:
+        """添加内存优化代码"""
+        if "# 内存优化" not in content:
+            optimization_code = '''
+# 内存优化
+import gc
+import sys
+from backend.config.performance_config import perf_config
+
+def optimize_memory():
+    """内存优化"""
+    # 强制垃圾回收
+    gc.collect()
+    
+    # 检查内存使用
+    import psutil
+    process = psutil.Process()
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    
+    if memory_mb > perf_config.MEMORY_CONFIG['cleanup_threshold_mb']:
+        # 清理缓存
+        if hasattr(sys.modules[__name__], '_cache'):
+            sys.modules[__name__]._cache.clear()
+        
+        # 再次垃圾回收
+        gc.collect()
+        
+        logger.info(f"内存优化完成，当前使用: {memory_mb:.1f}MB")
+
+'''
+            content = optimization_code + content
+        
+        return content
+    
+    def _add_loop_safety(self, content: str) -> str:
+        """添加循环安全检查"""
+        if "# 循环安全检查" not in content:
+            safety_code = '''
+# 循环安全检查
+import time
+import signal
+import threading
+
+class LoopSafetyManager:
+    """循环安全管理器"""
+    
+    def __init__(self, max_iterations=None, timeout=None):
+        self.max_iterations = max_iterations
+        self.timeout = timeout
+        self.start_time = None
+        self.iteration_count = 0
+        self.should_stop = False
+        
+        # 注册信号处理
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+    
+    def _signal_handler(self, signum, frame):
+        """信号处理器"""
+        self.should_stop = True
+    
+    def check_loop_safety(self):
+        """检查循环安全性"""
+        if self.should_stop:
+            raise KeyboardInterrupt("收到停止信号")
+        
+        if self.start_time is None:
+            self.start_time = time.time()
+        
+        self.iteration_count += 1
+        
+        # 检查最大迭代次数
+        if self.max_iterations and self.iteration_count > self.max_iterations:
+            raise RuntimeError(f"超过最大迭代次数: {self.max_iterations}")
+        
+        # 检查超时
+        if self.timeout:
+            elapsed = time.time() - self.start_time
+            if elapsed > self.timeout:
+                raise TimeoutError(f"循环超时: {elapsed:.1f}s")
+        
+        # 定期让出CPU
+        if self.iteration_count % 1000 == 0:
+            time.sleep(0.001)
+
+'''
+            content = safety_code + content
+        
+        return content
+
+if __name__ == "__main__":
+    fixer = PerformanceFixer()
+    fixer.fix_all_performance_issues()

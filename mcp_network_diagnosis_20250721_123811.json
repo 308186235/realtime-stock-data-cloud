@@ -1,0 +1,115 @@
+{
+  "dns_resolution": {
+    "aigupiao.me": {
+      "status": "SUCCESS",
+      "ipv4": [
+        "104.21.83.126"
+      ],
+      "ipv6": []
+    },
+    "api.aigupiao.me": {
+      "status": "SUCCESS",
+      "ipv4": [
+        "172.67.220.212",
+        "104.21.38.89"
+      ],
+      "ipv6": []
+    }
+  },
+  "ping_latency": {
+    "aigupiao.me": {
+      "status": "SUCCESS",
+      "average_latency": "1167",
+      "raw_output": "\n正在 Ping aigupiao.me [104.21.83.126] 具有 32 字节的数据:\n来自 104.21.83.126 的回复: 字节=32 时间=1131ms TTL=51\n来自 104.21.83.126 的回复: 字节=32 时间=1205ms TTL=51\n来自 104.21.83.126 的回复: 字节=32 时间=1165ms TTL=51\n请求超时。\n\n104.21.83.126 的 Ping 统计信息:\n    数据包: 已发送 = 4,已接收 = 3,丢失 = 1 (25% 丢失),\n往返行程的估计时间(以毫秒为单位):\n    最短 = 1131ms,最长 = 1205ms,平均 = 1167ms\n"
+    },
+    "api.aigupiao.me": {
+      "status": "SUCCESS",
+      "average_latency": "1089",
+      "raw_output": "\n正在 Ping api.aigupiao.me [172.67.220.212] 具有 32 字节的数据:\n来自 172.67.220.212 的回复: 字节=32 时间=736ms TTL=51\n来自 172.67.220.212 的回复: 字节=32 时间=1202ms TTL=51\n来自 172.67.220.212 的回复: 字节=32 时间=1224ms TTL=51\n来自 172.67.220.212 的回复: 字节=32 时间=1194ms TTL=51\n\n172.67.220.212 的 Ping 统计信息:\n    数据包: 已发送 = 4,已接收 = 4,丢失 = 0 (0% 丢失),\n往返行程的估计时间(以毫秒为单位):\n    最短 = 736ms,最长 = 1224ms,平均 = 1089ms\n"
+    }
+  },
+  "http_connectivity": {
+    "https://aigupiao.me": {
+      "status": "SUCCESS",
+      "status_code": 200,
+      "latency_ms": 9592,
+      "headers": {
+        "Date": "Mon, 21 Jul 2025 04:37:51 GMT",
+        "Content-Type": "text/html; charset=UTF-8",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Server": "cloudflare",
+        "X-Powered-By": "Express",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=0",
+        "Last-Modified": "Sat, 19 Jul 2025 13:59:44 GMT",
+        "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=8sSBA620G%2BNftWqQ5eWwmxa1KpmWWJ4GcxZIB43TllCY08IZPHATTxMWRDH7SRwYFVj9Q2Qnvx6kAAtoYGwnYVFs4Q2hAhFIQ6h4\"}]}",
+        "Cf-Cache-Status": "DYNAMIC",
+        "Vary": "accept-encoding",
+        "Alt-Svc": "h3=\":443\"; ma=86400",
+        "Content-Encoding": "gzip",
+        "CF-RAY": "96280162586408e2-LAX"
+      },
+      "content_length": 5395
+    },
+    "https://aigupiao.me/health": {
+      "status": "SUCCESS",
+      "status_code": 200,
+      "latency_ms": 5391,
+      "headers": {
+        "Date": "Mon, 21 Jul 2025 04:38:01 GMT",
+        "Content-Type": "application/json",
+        "Transfer-Encoding": "chunked",
+        "Connection": "keep-alive",
+        "Content-Encoding": "gzip",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Max-Age": "86400",
+        "Report-To": "{\"endpoints\":[{\"url\":\"https:\\/\\/a.nel.cloudflare.com\\/report\\/v4?s=ziST%2F%2BbYDnvHX5BWTOL5Yi3jcw%2Fr1SEf%2FiyVSRO4b%2FHxo8dnfxfJt4cTNmYLIdbSx5g5znJyZW0toK5qgtRiWkj6nABY8VyZpqGonObEFmO5WU8sgXzASSsSC2D%2FDw%3D%3D\"}],\"group\":\"cf-nel\",\"max_age\":604800}",
+        "NEL": "{\"success_fraction\":0,\"report_to\":\"cf-nel\",\"max_age\":604800}",
+        "Vary": "Accept-Encoding",
+        "Server": "cloudflare",
+        "CF-RAY": "962801a048377c95-LAX",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "server-timing": "cfL4;desc=\"?proto=TCP&rtt=0&min_rtt=4294967295&rtt_var=750000&sent=6&recv=7&lost=0&retrans=3&sent_bytes=2964&recv_bytes=767&delivery_rate=0&cwnd=254&unsent_bytes=0&cid=e13cc3681ea6169c&ts=1501&x=0\""
+      },
+      "content_length": 210
+    },
+    "https://api.aigupiao.me": {
+      "status": "CONNECTION_ERROR",
+      "error": "HTTPSConnectionPool(host='api.aigupiao.me', port=443): Max retries exceeded with url: / (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000012FE7131E50>: Failed to resolve 'api.aigupiao.me' ([Errno 11001] getaddrinfo failed)\"))"
+    },
+    "https://api.aigupiao.me/health": {
+      "status": "CONNECTION_ERROR",
+      "error": "HTTPSConnectionPool(host='api.aigupiao.me', port=443): Max retries exceeded with url: /health (Caused by NameResolutionError(\"<urllib3.connection.HTTPSConnection object at 0x0000012FE7131450>: Failed to resolve 'api.aigupiao.me' ([Errno 11001] getaddrinfo failed)\"))"
+    }
+  },
+  "local_services": {
+    "后端服务": {
+      "status": "RUNNING",
+      "port": 8000,
+      "http_status": 200,
+      "response": "404"
+    },
+    "本地交易服务": {
+      "status": "RUNNING",
+      "port": 8888,
+      "http_status": 200,
+      "response": "{\"status\":\"healthy\",\"local_trading_available\":true,\"websocket_connected\":false,\"timestamp\":\"2025-07-21T12:38:10.953580\"}"
+    }
+  },
+  "cloudflare_tunnel": {
+    "process": {
+      "status": "NOT_RUNNING"
+    },
+    "config": {
+      "status": "EXISTS",
+      "content": "tunnel: 1fb27cbf-d69a-4e23-995e-f8bd0f42c0a2\ncredentials-file: C:\\Users\\锋\\.cloudflared\\1fb27cbf-d69a-4e23-995e-f8bd0f42c0a2.json\n\ningress:\n  - hostname: api.aigupiao.me\n    service: http://127.0.0.1:8000\n  - service: http_status:404\n"
+    }
+  }
+}

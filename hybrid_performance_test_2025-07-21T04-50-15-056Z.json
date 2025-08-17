@@ -1,0 +1,85 @@
+{
+  "timestamp": "2025-07-21T04:50:15.055Z",
+  "test_results": {
+    "cloudflare": {
+      "Cloudflare健康检查": {
+        "latency": 4889,
+        "success": true,
+        "statusCode": 200
+      },
+      "Cloudflare API": {
+        "latency": 1644,
+        "success": true,
+        "statusCode": 200
+      },
+      "api.aigupiao.me": {
+        "latency": 9999,
+        "success": false,
+        "error": "getaddrinfo ENOTFOUND api.aigupiao.me"
+      }
+    },
+    "ngrok": {
+      "模拟测试": {
+        "latency": 600,
+        "success": true,
+        "note": "需要实际ngrok URL进行测试"
+      }
+    },
+    "local": {
+      "本地API服务": {
+        "latency": 9999,
+        "success": false,
+        "error": ""
+      },
+      "本地交易服务": {
+        "latency": 6,
+        "success": true,
+        "statusCode": 200
+      }
+    },
+    "comparison": {
+      "JSDelivr CDN": {
+        "latency": 1160,
+        "success": true,
+        "statusCode": 200
+      },
+      "BootCDN": {
+        "latency": 635,
+        "success": true,
+        "statusCode": 200
+      },
+      "Cloudflare CDN": {
+        "latency": 1960,
+        "success": true,
+        "statusCode": 200
+      }
+    },
+    "comparison_summary": {
+      "cloudflare_tunnel": {
+        "average_latency": 3267,
+        "description": "Cloudflare隧道 (当前方案)"
+      },
+      "ngrok_tunnel": {
+        "average_latency": 600,
+        "description": "ngrok隧道 (混合方案)"
+      },
+      "local_services": {
+        "average_latency": 6,
+        "description": "本地服务基准"
+      },
+      "cdn_performance": {
+        "average_latency": 1252,
+        "description": "CDN性能"
+      },
+      "expected_improvement": "82%"
+    }
+  },
+  "recommendations": {
+    "immediate": [
+      "使用ngrok亚太区域隧道替代Cloudflare隧道",
+      "切换到Google DNS (8.8.8.8)",
+      "使用JSDelivr CDN作为主要CDN"
+    ],
+    "architecture": "Cloudflare SSL/CDN + ngrok Tunnel + Google DNS + JSDelivr CDN"
+  }
+}

@@ -1,0 +1,23 @@
+name = "ai-stock-trading-agent"
+main = "complete-api-worker.js"
+compatibility_date = "2025-07-15"
+compatibility_flags = ["nodejs_compat"]
+
+# MCP性能优化配置
+[placement]
+mode = "smart"
+
+# 生产环境配置
+[env.production]
+name = "ai-stock-trading-agent"
+
+# 环境变量
+[vars]
+ENVIRONMENT = "production"
+SERVICE_NAME = "AI Stock Trading Cloud Agent - MCP优化版"
+VERSION = "1.1.0"
+
+# 自定义域名配置 - 使用Custom Domain
+routes = [
+  { pattern = "api.aigupiao.me", custom_domain = true }
+]

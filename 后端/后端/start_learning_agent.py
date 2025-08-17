@@ -1,0 +1,279 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+自学习AI交易Agent启动脚本
+"""
+
+import asyncio
+import argparse
+import json
+import logging
+import sys
+import os
+import traceback
+from datetime import datetime
+import signal
+
+# 设置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(f"logs/agent_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+    ]
+)
+logger = logging.getLogger("AgentLauncher")
+
+# 添加当前路径到系统路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 确保日志目录存在
+os.makedirs("logs", exist_ok=True)
+os.makedirs("models", exist_ok=True)
+os.makedirs("data", exist_ok=True)
+
+# 导入Agent模块
+try:
+    from backend.ai.agent_system import TradingAgent
+    from backend.ai.learning_manager import LearningManager
+    from backend.ai.reinforcement_learning import DeepQLearner, FeatureExtractor
+    from backend.ai.experience_memory import ExperienceMemory
+    from backend.ai.meta_learning import MetaLearner, AdaptiveStrategySelector
+    from backend.ai.agent_api import AgentWebAPI
+except ImportError:
+    logger.error("无法导入Agent模块,请确保正确安装了所有依赖")
+    traceback.print_exc()
+    sys.exit(1)
+
+class AgentLauncher:
+    """Agent启动器,负责初始化和启动自学习交易Agent"""
+    
+    def __init__(self, config_file=None):
+        """初始化启动器"""
+        self.config = self._load_config(config_file)
+        self.agent = None
+        self.learning_manager = None
+        self.api_server = None
+        self.running = False
+        self.stop_event = asyncio.Event()
+        
+        # 保存组件实例
+        self.components = {}
+        
+        logger.info("Agent启动器初始化完成")
+    
+    def _load_config(self, config_file):
+        """加载配置文件"""
+        default_config = {
+            "agent": {
+                "name": "LearningTradingAgent",
+                "loop_interval": 10,
+                "monitor_interval": 5
+            },
+            "learning": {
+                "experience_buffer_size": 1000,
+                "learning_rate": 0.01,
+                "batch_size": 64,
+                "save_model_interval": 100
+            },
+            "api": {
+                "host": "0.0.0.0",
+                "port": 8000,
+                "enable_api": True,
+                "debug": False
+            },
+            "data_source": {
+                "use_live_data": False,
+                "backtest_data": "data/market_data.csv",
+                "symbol": "BTC/USDT"
+            }
+        }
+        
+        if config_file and os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    loaded_config = json.load(f)
+                    # 合并配置
+                    default_config.update(loaded_config)
+                logger.info(f"已加载配置文件: {config_file}")
+            except Exception as e:
+                logger.error(f"加载配置文件失败: {str(e)}")
+        
+        return default_config
+    
+    async def setup(self):
+        """设置Agent系统"""
+        try:
+            # 创建学习管理器
+            self.learning_manager = LearningManager(config=self.config["learning"])
+            self.components["learning_manager"] = self.learning_manager
+            
+            # 创建经验记忆库
+            experience_memory = ExperienceMemory({
+                "memory_limit": self.config["learning"]["experience_buffer_size"],
+                "use_db": True,
+                "db_path": "data/experience.db"
+            })
+            self.components["experience_memory"] = experience_memory
+            
+            # 创建特征提取器
+            feature_extractor = FeatureExtractor()
+            self.components["feature_extractor"] = feature_extractor
+            
+            # 创建DQN学习器
+            dqn_learner = DeepQLearner({
+                "learning_rate": self.config["learning"]["learning_rate"],
+                "batch_size": self.config["learning"]["batch_size"],
+                "state_dim": 20,
+                "action_dim": 3,  # 买,卖,持有
+                "models_dir": "models"
+            })
+            self.components["dqn_learner"] = dqn_learner
+            
+            # 创建元学习器
+            meta_learner = MetaLearner({
+                "models_dir": "models"
+            })
+            self.components["meta_learner"] = meta_learner
+            
+            # 创建自适应策略选择器
+            strategy_selector = AdaptiveStrategySelector()
+            self.components["strategy_selector"] = strategy_selector
+            
+            # 创建Agent实例
+            agent_config = self.config["agent"].copy()
+            agent_config["components"] = self.components
+            
+            self.agent = TradingAgent(config=agent_config)
+            
+            # 如果启用API,创建API服务器
+            if self.config["api"]["enable_api"]:
+                self.api_server = AgentWebAPI(
+                    agent=self.agent,
+                    host=self.config["api"]["host"],
+                    port=self.config["api"]["port"],
+                    debug=self.config["api"]["debug"]
+                )
+            
+            logger.info("Agent系统设置完成")
+            return True
+        except Exception as e:
+            logger.error(f"Agent系统设置失败: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    async def start(self):
+        """启动Agent系统"""
+        try:
+            logger.info("正在启动Agent系统...")
+            
+            # 设置信号处理
+            self._setup_signal_handlers()
+            
+            # 启动Agent
+            start_result = await self.agent.start()
+            if not start_result:
+                logger.error("Agent启动失败")
+                return False
+            
+            logger.info("Agent已启动")
+            self.running = True
+            
+            # 如果启用API,启动API服务器
+            if self.api_server:
+                await self.api_server.start()
+                logger.info(f"API服务器已启动: http://{self.config['api']['host']}:{self.config['api']['port']}")
+            
+            # 等待停止信号
+            await self.stop_event.wait()
+            
+            # 停止Agent
+            logger.info("正在停止Agent系统...")
+            await self.agent.stop()
+            
+            # 如果API服务器在运行,停止它
+            if self.api_server and self.api_server.running:
+                await self.api_server.stop()
+            
+            logger.info("Agent系统已停止")
+            self.running = False
+            
+            return True
+        except Exception as e:
+            logger.error(f"启动Agent系统时出错: {str(e)}")
+            traceback.print_exc()
+            
+            # 确保Agent停止
+            if self.agent and hasattr(self.agent, 'active') and self.agent.active:
+                await self.agent.stop()
+                
+            # 确保API服务器停止
+            if self.api_server and hasattr(self.api_server, 'running') and self.api_server.running:
+                await self.api_server.stop()
+                
+            self.running = False
+            return False
+    
+    async def stop(self):
+        """停止Agent系统"""
+        if self.running:
+            logger.info("触发Agent停止...")
+            self.stop_event.set()
+    
+    def _setup_signal_handlers(self):
+        """设置信号处理"""
+        if os.name != 'nt':  # 非Windows系统
+            # 注册SIGTERM和SIGINT信号处理
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                signal.signal(sig, self._handle_exit)
+        else:
+            # Windows系统仅处理SIGINT (Ctrl+C)
+            signal.signal(signal.SIGINT, self._handle_exit)
+    
+    def _handle_exit(self, signum, frame):
+        """处理退出信号"""
+        logger.info(f"收到信号 {signum},准备退出...")
+        asyncio.create_task(self.stop())
+
+async def main():
+    """主函数"""
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='自学习AI交易Agent启动工具')
+    parser.add_argument('--config', type=str, help='配置文件路径')
+    parser.add_argument('--debug', action='store_true', help='启用调试模式')
+    
+    args = parser.parse_args()
+    
+    # 设置日志级别
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("调试模式已启用")
+    
+    # 创建启动器
+    launcher = AgentLauncher(args.config)
+    
+    # 设置Agent系统
+    setup_success = await launcher.setup()
+    if not setup_success:
+        logger.error("Agent系统设置失败,启动终止")
+        return 1
+    
+    # 启动Agent系统
+    await launcher.start()
+    
+    return 0
+
+if __name__ == "__main__":
+    try:
+        # 运行异步主函数
+        exit_code = asyncio.run(main())
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        logger.info("程序被用户中断")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"程序运行时发生未处理异常: {str(e)}")
+        traceback.print_exc()
+        sys.exit(1) 

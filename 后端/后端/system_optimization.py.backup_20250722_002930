@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""
+混合交易系统性能优化和安全加固
+"""
+
+import os
+import json
+import time
+import psutil
+import requests
+import subprocess
+from datetime import datetime
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('optimization.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class SystemOptimizer:
+    def __init__(self):
+        self.optimization_results = []
+        
+    def log_result(self, category, item, success, message, details=None):
+        """记录优化结果"""
+        result = {
+            "timestamp": datetime.now().isoformat(),
+            "category": category,
+            "item": item,
+            "success": success,
+            "message": message,
+            "details": details
+        }
+        self.optimization_results.append(result)
+        
+        status = "✅" if success else "❌"
+        logger.info(f"{status} [{category}] {item}: {message}")
+        if details:
+            logger.info(f"   详情: {details}")
+    
+    def optimize_network_settings(self):
+        """优化网络设置"""
+        logger.info("🌐 优化网络设置...")
+        
+        # 检查网络连接质量
+        try:
+            start_time = time.time()
+            response = requests.get("https://api.aigupiao.me/health", timeout=10)
+            latency = (time.time() - start_time) * 1000
+            
+            if response.status_code == 200:
+                if latency < 500:
+                    self.log_result("网络优化", "延迟测试", True, f"网络延迟良好: {latency:.1f}ms")
+                elif latency < 1000:
+                    self.log_result("网络优化", "延迟测试", True, f"网络延迟可接受: {latency:.1f}ms")
+                else:
+                    self.log_result("网络优化", "延迟测试", False, f"网络延迟较高: {latency:.1f}ms")
+            else:
+                self.log_result("网络优化", "连接测试", False, f"连接异常: HTTP {response.status_code}")
+                
+        except Exception as e:
+            self.log_result("网络优化", "连接测试", False, f"连接失败: {e}")
+        
+        # 检查DNS解析
+        try:
+            import socket
+            domains = ["api.aigupiao.me", "aigupiao.me"]
+            for domain in domains:
+                start_time = time.time()
+                ip = socket.gethostbyname(domain)
+                dns_time = (time.time() - start_time) * 1000
+                
+                if dns_time < 100:
+                    self.log_result("网络优化", f"DNS解析-{domain}", True, 
+                                  f"解析快速: {ip} ({dns_time:.1f}ms)")
+                else:
+                    self.log_result("网络优化", f"DNS解析-{domain}", False, 
+                                  f"解析较慢: {ip} ({dns_time:.1f}ms)")
+                    
+        except Exception as e:
+            self.log_result("网络优化", "DNS解析", False, f"DNS解析失败: {e}")
+    
+    def optimize_system_performance(self):
+        """优化系统性能"""
+        logger.info("⚡ 优化系统性能...")
+        
+        # 检查系统资源
+        try:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            # CPU优化建议
+            if cpu_percent < 50:
+                self.log_result("性能优化", "CPU使用率", True, 
+                              f"CPU使用率良好: {cpu_percent:.1f}%")
+            elif cpu_percent < 80:
+                self.log_result("性能优化", "CPU使用率", True, 
+                              f"CPU使用率正常: {cpu_percent:.1f}%", 
+                              "建议关闭不必要的程序")
+            else:
+                self.log_result("性能优化", "CPU使用率", False, 
+                              f"CPU使用率过高: {cpu_percent:.1f}%", 
+                              "需要优化或升级硬件")
+            
+            # 内存优化建议
+            if memory.percent < 70:
+                self.log_result("性能优化", "内存使用率", True, 
+                              f"内存使用率良好: {memory.percent:.1f}%")
+            elif memory.percent < 85:
+                self.log_result("性能优化", "内存使用率", True, 
+                              f"内存使用率正常: {memory.percent:.1f}%", 
+                              "建议清理内存")
+            else:
+                self.log_result("性能优化", "内存使用率", False, 
+                              f"内存使用率过高: {memory.percent:.1f}%", 
+                              "需要增加内存或优化程序")
+            
+            # 磁盘优化建议
+            if disk.percent < 80:
+                self.log_result("性能优化", "磁盘使用率", True, 
+                              f"磁盘空间充足: {disk.percent:.1f}%")
+            elif disk.percent < 90:
+                self.log_result("性能优化", "磁盘使用率", True, 
+                              f"磁盘空间正常: {disk.percent:.1f}%", 
+                              "建议清理临时文件")
+            else:
+                self.log_result("性能优化", "磁盘使用率", False, 
+                              f"磁盘空间不足: {disk.percent:.1f}%", 
+                              "需要清理磁盘或扩容")
+                
+        except Exception as e:
+            self.log_result("性能优化", "系统资源检查", False, f"检查失败: {e}")
+    
+    def optimize_service_configuration(self):
+        """优化服务配置"""
+        logger.info("🔧 优化服务配置...")
+        
+        # 检查服务响应时间
+        services = {
+            "本地交易API": "http://localhost:5000/health",
+            "本地主API": "http://localhost:8000/health",
+            "本地交易系统": "http://localhost:8888/health",
+            "本地Agent": "http://localhost:9999/health"
+        }
+        
+        for service_name, url in services.items():
+            try:
+                start_time = time.time()
+                response = requests.get(url, timeout=5)
+                response_time = (time.time() - start_time) * 1000
+                
+                if response.status_code == 200:
+                    if response_time < 100:
+                        self.log_result("服务优化", service_name, True, 
+                                      f"响应快速: {response_time:.1f}ms")
+                    elif response_time < 500:
+                        self.log_result("服务优化", service_name, True, 
+                                      f"响应正常: {response_time:.1f}ms")
+                    else:
+                        self.log_result("服务优化", service_name, False, 
+                                      f"响应较慢: {response_time:.1f}ms", 
+                                      "建议优化服务配置")
+                else:
+                    self.log_result("服务优化", service_name, False, 
+                                  f"服务异常: HTTP {response.status_code}")
+                    
+            except Exception as e:
+                self.log_result("服务优化", service_name, False, f"连接失败: {e}")
+    
+    def security_hardening(self):
+        """安全加固"""
+        logger.info("🔒 执行安全加固...")
+        
+        # 检查端口安全
+        try:
+            # 检查开放端口
+            connections = psutil.net_connections(kind='inet')
+            listening_ports = [conn.laddr.port for conn in connections 
+                             if conn.status == 'LISTEN']
+            
+            expected_ports = [5000, 8000, 8888, 9999]  # 预期的服务端口
+            unexpected_ports = [port for port in listening_ports 
+                              if port not in expected_ports and port > 1024]
+            
+            if len(unexpected_ports) == 0:
+                self.log_result("安全加固", "端口检查", True, 
+                              f"端口配置安全，监听端口: {expected_ports}")
+            else:
+                self.log_result("安全加固", "端口检查", False, 
+                              f"发现意外开放端口: {unexpected_ports}", 
+                              "建议检查并关闭不必要的端口")
+                
+        except Exception as e:
+            self.log_result("安全加固", "端口检查", False, f"检查失败: {e}")
+        
+        # 检查配置文件安全
+        config_files = ["config.yml", "local_trading_api.py"]
+        for config_file in config_files:
+            if os.path.exists(config_file):
+                try:
+                    # 检查文件权限 (Windows下简化检查)
+                    stat_info = os.stat(config_file)
+                    self.log_result("安全加固", f"配置文件-{config_file}", True, 
+                                  "配置文件存在且可访问")
+                except Exception as e:
+                    self.log_result("安全加固", f"配置文件-{config_file}", False, 
+                                  f"文件权限检查失败: {e}")
+            else:
+                self.log_result("安全加固", f"配置文件-{config_file}", False, 
+                              "配置文件不存在")
+        
+        # 检查API安全
+        try:
+            # 测试API是否有基本的错误处理
+            response = requests.get("http://localhost:5000/nonexistent", timeout=5)
+            if response.status_code == 404:
+                self.log_result("安全加固", "API错误处理", True, 
+                              "API具有正确的错误处理")
+            else:
+                self.log_result("安全加固", "API错误处理", False, 
+                              f"API错误处理异常: {response.status_code}")
+                
+        except Exception as e:
+            self.log_result("安全加固", "API安全检查", False, f"检查失败: {e}")
+    
+    def optimize_cloudflare_settings(self):
+        """优化Cloudflare设置"""
+        logger.info("☁️ 优化Cloudflare设置...")
+        
+        try:
+            from zero_trust_manager import ZeroTrustManager
+            manager = ZeroTrustManager()
+            tunnel_status = manager.get_tunnel_status()
+            
+            if tunnel_status.get('tunnel_connected'):
+                uptime = tunnel_status.get('uptime', '未知')
+                self.log_result("Cloudflare优化", "隧道连接", True, 
+                              f"隧道连接稳定，运行时间: {uptime}")
+                
+                # 检查连接质量
+                try:
+                    start_time = time.time()
+                    response = requests.get("https://api.aigupiao.me/health", timeout=10)
+                    tunnel_latency = (time.time() - start_time) * 1000
+                    
+                    if tunnel_latency < 1000:
+                        self.log_result("Cloudflare优化", "隧道延迟", True, 
+                                      f"隧道延迟良好: {tunnel_latency:.1f}ms")
+                    else:
+                        self.log_result("Cloudflare优化", "隧道延迟", False, 
+                                      f"隧道延迟较高: {tunnel_latency:.1f}ms", 
+                                      "建议检查网络配置")
+                        
+                except Exception as e:
+                    self.log_result("Cloudflare优化", "隧道延迟测试", False, f"测试失败: {e}")
+                    
+            else:
+                self.log_result("Cloudflare优化", "隧道连接", False, 
+                              "隧道未连接", "需要重启隧道服务")
+                
+        except Exception as e:
+            self.log_result("Cloudflare优化", "隧道状态检查", False, f"检查失败: {e}")
+    
+    def generate_optimization_report(self):
+        """生成优化报告"""
+        logger.info("📊 生成优化报告...")
+        
+        total_items = len(self.optimization_results)
+        successful_items = sum(1 for result in self.optimization_results if result['success'])
+        success_rate = (successful_items / total_items * 100) if total_items > 0 else 0
+        
+        # 按类别统计
+        categories = {}
+        for result in self.optimization_results:
+            category = result['category']
+            if category not in categories:
+                categories[category] = {'total': 0, 'success': 0}
+            categories[category]['total'] += 1
+            if result['success']:
+                categories[category]['success'] += 1
+        
+        print("\n" + "=" * 60)
+        print("📊 系统优化和安全加固报告")
+        print("=" * 60)
+        print(f"总检查项: {total_items}")
+        print(f"通过项目: {successful_items}")
+        print(f"失败项目: {total_items - successful_items}")
+        print(f"通过率: {success_rate:.1f}%")
+        print("\n分类统计:")
+        
+        for category, stats in categories.items():
+            category_rate = (stats['success'] / stats['total'] * 100) if stats['total'] > 0 else 0
+            print(f"  {category}: {stats['success']}/{stats['total']} ({category_rate:.1f}%)")
+        
+        # 生成建议
+        print("\n🔧 优化建议:")
+        failed_items = [result for result in self.optimization_results if not result['success']]
+        
+        if not failed_items:
+            print("  🎉 系统运行状态优秀，无需额外优化！")
+        else:
+            for i, item in enumerate(failed_items[:5], 1):  # 显示前5个问题
+                print(f"  {i}. [{item['category']}] {item['item']}: {item['message']}")
+                if item['details']:
+                    print(f"     建议: {item['details']}")
+        
+        # 保存详细报告
+        report_data = {
+            "timestamp": datetime.now().isoformat(),
+            "summary": {
+                "total_items": total_items,
+                "successful_items": successful_items,
+                "success_rate": success_rate,
+                "categories": categories
+            },
+            "detailed_results": self.optimization_results
+        }
+        
+        with open("optimization_report.json", "w", encoding="utf-8") as f:
+            json.dump(report_data, f, ensure_ascii=False, indent=2)
+        
+        print(f"\n📄 详细报告已保存到: optimization_report.json")
+        
+        if success_rate >= 90:
+            print("\n🎉 系统优化完成！性能和安全状态优秀。")
+        elif success_rate >= 75:
+            print("\n✅ 系统基本优化完成，建议关注失败项目。")
+        else:
+            print("\n⚠️ 系统需要进一步优化，请重点解决失败项目。")
+
+def main():
+    """主函数"""
+    print(f"🔧 混合交易系统优化和安全加固 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
+    
+    optimizer = SystemOptimizer()
+    
+    # 执行所有优化检查
+    optimizer.optimize_network_settings()
+    optimizer.optimize_system_performance()
+    optimizer.optimize_service_configuration()
+    optimizer.security_hardening()
+    optimizer.optimize_cloudflare_settings()
+    
+    # 生成报告
+    optimizer.generate_optimization_report()
+
+if __name__ == "__main__":
+    main()

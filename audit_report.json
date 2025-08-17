@@ -1,0 +1,330 @@
+{
+  "audit_time": "2025-07-22T00:32:07.481573",
+  "total_issues": 16,
+  "severity_summary": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 16,
+    "LOW": 0
+  },
+  "detailed_issues": {
+    "security": [],
+    "database": [],
+    "dependencies": [],
+    "configuration": [],
+    "performance": [],
+    "architecture": [
+      {
+        "issue": "端口8000冲突",
+        "severity": "MEDIUM",
+        "description": "端口8000在多个文件中使用",
+        "files": [
+          ".\\aliyun-backend-server.py",
+          ".\\create_clean_repositories.py",
+          ".\\create_clean_repositories.py",
+          ".\\mcp_comprehensive_network_solutions.py",
+          ".\\stock-trading-backend\\agent_api_adapter.py",
+          ".\\stock-trading-backend\\check_system_status.py",
+          ".\\stock-trading-backend\\cloudflare_tunnel_diagnostic.py",
+          ".\\stock-trading-backend\\deploy_cloud.py",
+          ".\\stock-trading-backend\\main.py",
+          ".\\stock-trading-backend\\mcp_cloudflare_dns_fix.py",
+          ".\\stock-trading-backend\\network_diagnostic.py",
+          ".\\stock-trading-backend\\prepare_cloud_deployment.py",
+          ".\\stock-trading-backend\\run_server.py",
+          ".\\stock-trading-backend\\server_websocket_fix.py",
+          ".\\stock-trading-backend\\server_websocket_fix.py",
+          ".\\stock-trading-backend\\setup.py",
+          ".\\stock-trading-backend\\setup.py",
+          ".\\stock-trading-backend\\setup.py",
+          ".\\stock-trading-backend\\setup_cloudflare_simple.py",
+          ".\\stock-trading-backend\\setup_frp.py",
+          ".\\stock-trading-backend\\simple_api_server.py",
+          ".\\stock-trading-backend\\simple_test_server.py",
+          ".\\stock-trading-backend\\supabase_production_config.py",
+          ".\\stock-trading-backend\\backend\\agent_main.py",
+          ".\\stock-trading-backend\\backend\\main.py",
+          ".\\stock-trading-backend\\backend\\main.py",
+          ".\\stock-trading-backend\\backend\\simple_backend.py",
+          ".\\stock-trading-backend\\backend\\simple_test_server.py",
+          ".\\stock-trading-backend\\backend\\start_server.py",
+          ".\\stock-trading-backend\\backend\\ai\\agent_api.py",
+          ".\\stock-trading-backend\\cloud_deployment\\backend\\main.py",
+          ".\\stock-trading-backend\\cloud_deployment\\backend\\main.py",
+          ".\\后端\\后端\\agent_api_adapter.py",
+          ".\\后端\\后端\\check_system_status.py",
+          ".\\后端\\后端\\cloudflare_tunnel_diagnostic.py",
+          ".\\后端\\后端\\deploy_cloud.py",
+          ".\\后端\\后端\\mcp_cloudflare_dns_fix.py",
+          ".\\后端\\后端\\network_diagnostic.py",
+          ".\\后端\\后端\\prepare_cloud_deployment.py",
+          ".\\后端\\后端\\run_server.py",
+          ".\\后端\\后端\\server_websocket_fix.py",
+          ".\\后端\\后端\\server_websocket_fix.py",
+          ".\\后端\\后端\\setup.py",
+          ".\\后端\\后端\\setup.py",
+          ".\\后端\\后端\\setup.py",
+          ".\\后端\\后端\\setup_cloudflare_simple.py",
+          ".\\后端\\后端\\setup_frp.py",
+          ".\\后端\\后端\\simple_api_server.py",
+          ".\\后端\\后端\\simple_test_server.py",
+          ".\\后端\\后端\\supabase_production_config.py",
+          ".\\后端\\后端\\backend\\agent_main.py",
+          ".\\后端\\后端\\backend\\main.py",
+          ".\\后端\\后端\\backend\\main.py",
+          ".\\后端\\后端\\backend\\simple_backend.py",
+          ".\\后端\\后端\\backend\\simple_test_server.py",
+          ".\\后端\\后端\\backend\\start_server.py",
+          ".\\后端\\后端\\backend\\ai\\agent_api.py",
+          ".\\后端\\后端\\cloud_deployment\\backend\\main.py",
+          ".\\后端\\后端\\cloud_deployment\\backend\\main.py"
+        ]
+      },
+      {
+        "issue": "端口9999冲突",
+        "severity": "MEDIUM",
+        "description": "端口9999在多个文件中使用",
+        "files": [
+          ".\\aliyun-server-proxy.py",
+          ".\\connect-to-aliyun.py",
+          ".\\stock-trading-backend\\local_agent_backend.py",
+          ".\\后端\\后端\\local_agent_backend.py"
+        ]
+      },
+      {
+        "issue": "端口8889冲突",
+        "severity": "MEDIUM",
+        "description": "端口8889在多个文件中使用",
+        "files": [
+          ".\\fast_trading_api_server.py",
+          ".\\ultra_fast_trading_solution.py",
+          ".\\stock-trading-backend\\real_cloud_local_trading_system.py",
+          ".\\后端\\后端\\real_cloud_local_trading_system.py"
+        ]
+      },
+      {
+        "issue": "端口8080冲突",
+        "severity": "MEDIUM",
+        "description": "端口8080在多个文件中使用",
+        "files": [
+          ".\\start_hehe_server.py",
+          ".\\stock-trading-backend\\aliyun_hybrid_implementation.py",
+          ".\\stock-trading-backend\\onedrive_file_server.py",
+          ".\\stock-trading-backend\\server_config_wizard.py",
+          ".\\stock-trading-backend\\ubuntu_cloud_deployment.py",
+          ".\\后端\\后端\\aliyun_hybrid_implementation.py",
+          ".\\后端\\后端\\onedrive_file_server.py",
+          ".\\后端\\后端\\server_config_wizard.py",
+          ".\\后端\\后端\\ubuntu_cloud_deployment.py"
+        ]
+      },
+      {
+        "issue": "端口6380冲突",
+        "severity": "MEDIUM",
+        "description": "端口6380在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\agent_debug_parser.py",
+          ".\\stock-trading-backend\\agent_fixed_system.py",
+          ".\\stock-trading-backend\\agent_raw_debug.py",
+          ".\\stock-trading-backend\\agent_simple_test.py",
+          ".\\stock-trading-backend\\chagubang_deep_diagnosis.py",
+          ".\\stock-trading-backend\\chagubang_to_database.py",
+          ".\\stock-trading-backend\\debug_chagubang.py",
+          ".\\stock-trading-backend\\debug_chagubang_connection.py",
+          ".\\stock-trading-backend\\debug_raw_data.py",
+          ".\\stock-trading-backend\\fix_critical_security_issues.py",
+          ".\\stock-trading-backend\\realtime_agent_processor.py",
+          ".\\stock-trading-backend\\test_agent_realtime.py",
+          ".\\stock-trading-backend\\test_chagubang.py",
+          ".\\stock-trading-backend\\test_chagubang.py",
+          ".\\stock-trading-backend\\test_realtime_database.py",
+          ".\\后端\\后端\\agent_debug_parser.py",
+          ".\\后端\\后端\\agent_fixed_system.py",
+          ".\\后端\\后端\\agent_raw_debug.py",
+          ".\\后端\\后端\\agent_simple_test.py",
+          ".\\后端\\后端\\chagubang_deep_diagnosis.py",
+          ".\\后端\\后端\\chagubang_to_database.py",
+          ".\\后端\\后端\\debug_chagubang.py",
+          ".\\后端\\后端\\debug_chagubang_connection.py",
+          ".\\后端\\后端\\debug_raw_data.py",
+          ".\\后端\\后端\\fix_critical_security_issues.py",
+          ".\\后端\\后端\\realtime_agent_processor.py",
+          ".\\后端\\后端\\test_agent_realtime.py",
+          ".\\后端\\后端\\test_chagubang.py",
+          ".\\后端\\后端\\test_chagubang.py",
+          ".\\后端\\后端\\test_realtime_database.py"
+        ]
+      },
+      {
+        "issue": "端口8003冲突",
+        "severity": "MEDIUM",
+        "description": "端口8003在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\app_api_server.py",
+          ".\\stock-trading-backend\\port_proxy.py",
+          ".\\stock-trading-backend\\websocket_fix_patch.py",
+          ".\\后端\\后端\\app_api_server.py",
+          ".\\后端\\后端\\port_proxy.py",
+          ".\\后端\\后端\\websocket_fix_patch.py"
+        ]
+      },
+      {
+        "issue": "端口0冲突",
+        "severity": "MEDIUM",
+        "description": "端口0在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\auto_cleanup_trading_agent.py",
+          ".\\stock-trading-backend\\push_receiver_diagnostics.py",
+          ".\\stock-trading-backend\\robust_push_receiver.py",
+          ".\\stock-trading-backend\\stock_data_receiver.py",
+          ".\\后端\\后端\\auto_cleanup_trading_agent.py",
+          ".\\后端\\后端\\push_receiver_diagnostics.py",
+          ".\\后端\\后端\\robust_push_receiver.py",
+          ".\\后端\\后端\\stock_data_receiver.py"
+        ]
+      },
+      {
+        "issue": "端口8081冲突",
+        "severity": "MEDIUM",
+        "description": "端口8081在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\cloudflare_diagnostic.py",
+          ".\\stock-trading-backend\\fix_cloudflare_tunnel.py",
+          ".\\stock-trading-backend\\simple_tunnel_server.py",
+          ".\\后端\\后端\\cloudflare_diagnostic.py",
+          ".\\后端\\后端\\fix_cloudflare_tunnel.py",
+          ".\\后端\\后端\\simple_tunnel_server.py"
+        ]
+      },
+      {
+        "issue": "端口5000冲突",
+        "severity": "MEDIUM",
+        "description": "端口5000在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\cloud_agent_rest_api.py",
+          ".\\stock-trading-backend\\complete_integration_system.py",
+          ".\\stock-trading-backend\\enhanced_local_api.py",
+          ".\\stock-trading-backend\\local_trading_api.py",
+          ".\\stock-trading-backend\\stock_api_server.py",
+          ".\\stock-trading-backend\\web_config_manager.py",
+          ".\\后端\\后端\\cloud_agent_rest_api.py",
+          ".\\后端\\后端\\complete_integration_system.py",
+          ".\\后端\\后端\\enhanced_local_api.py",
+          ".\\后端\\后端\\local_trading_api.py",
+          ".\\后端\\后端\\stock_api_server.py",
+          ".\\后端\\后端\\web_config_manager.py"
+        ]
+      },
+      {
+        "issue": "端口8888冲突",
+        "severity": "MEDIUM",
+        "description": "端口8888在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\complete_cloud_local_trading_system.py",
+          ".\\stock-trading-backend\\robust_push_receiver.py",
+          ".\\stock-trading-backend\\robust_push_receiver.py",
+          ".\\stock-trading-backend\\robust_push_receiver.py",
+          ".\\stock-trading-backend\\simple_cloud_to_local_solution.py",
+          ".\\后端\\后端\\complete_cloud_local_trading_system.py",
+          ".\\后端\\后端\\robust_push_receiver.py",
+          ".\\后端\\后端\\robust_push_receiver.py",
+          ".\\后端\\后端\\robust_push_receiver.py",
+          ".\\后端\\后端\\simple_cloud_to_local_solution.py"
+        ]
+      },
+      {
+        "issue": "端口8001冲突",
+        "severity": "MEDIUM",
+        "description": "端口8001在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\deploy_realtime_test_cloud.py",
+          ".\\stock-trading-backend\\deploy_realtime_test_cloud.py",
+          ".\\stock-trading-backend\\deploy_realtime_test_cloud.py",
+          ".\\stock-trading-backend\\deploy_realtime_test_cloud.py",
+          ".\\stock-trading-backend\\mcp_server_diagnostic.py",
+          ".\\stock-trading-backend\\verify_zero_trust_complete.py",
+          ".\\后端\\后端\\deploy_realtime_test_cloud.py",
+          ".\\后端\\后端\\deploy_realtime_test_cloud.py",
+          ".\\后端\\后端\\deploy_realtime_test_cloud.py",
+          ".\\后端\\后端\\deploy_realtime_test_cloud.py",
+          ".\\后端\\后端\\mcp_server_diagnostic.py",
+          ".\\后端\\后端\\verify_zero_trust_complete.py"
+        ]
+      },
+      {
+        "issue": "端口8002冲突",
+        "severity": "MEDIUM",
+        "description": "端口8002在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\domain_server.py",
+          ".\\stock-trading-backend\\mobile_accessible_server.py",
+          ".\\stock-trading-backend\\setup_domain_access.py",
+          ".\\stock-trading-backend\\backend\\robust_server.py",
+          ".\\后端\\后端\\domain_server.py",
+          ".\\后端\\后端\\mobile_accessible_server.py",
+          ".\\后端\\后端\\setup_domain_access.py",
+          ".\\后端\\后端\\backend\\robust_server.py"
+        ]
+      },
+      {
+        "issue": "端口7709冲突",
+        "severity": "MEDIUM",
+        "description": "端口7709在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\final_mock_data_cleanup.py",
+          ".\\后端\\后端\\final_mock_data_cleanup.py"
+        ]
+      },
+      {
+        "issue": "端口6379冲突",
+        "severity": "MEDIUM",
+        "description": "端口6379在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\optimize_configuration.py",
+          ".\\stock-trading-backend\\robust_push_receiver.py",
+          ".\\stock-trading-backend\\ubuntu_cloud_deployment.py",
+          ".\\stock-trading-backend\\ultra_high_performance_receiver.py",
+          ".\\stock-trading-backend\\ultra_high_performance_receiver.py",
+          ".\\stock-trading-backend\\backend\\services\\high_performance_market_service.py",
+          ".\\stock-trading-backend\\backend\\services\\mass_stock_receiver.py",
+          ".\\stock-trading-backend\\backend\\services\\realtime_stock_receiver.py",
+          ".\\stock-trading-backend\\backend\\services\\stock_data_consumer.py",
+          ".\\后端\\后端\\optimize_configuration.py",
+          ".\\后端\\后端\\robust_push_receiver.py",
+          ".\\后端\\后端\\ubuntu_cloud_deployment.py",
+          ".\\后端\\后端\\ultra_high_performance_receiver.py",
+          ".\\后端\\后端\\ultra_high_performance_receiver.py",
+          ".\\后端\\后端\\backend\\services\\high_performance_market_service.py",
+          ".\\后端\\后端\\backend\\services\\mass_stock_receiver.py",
+          ".\\后端\\后端\\backend\\services\\realtime_stock_receiver.py",
+          ".\\后端\\后端\\backend\\services\\stock_data_consumer.py"
+        ]
+      },
+      {
+        "issue": "端口8082冲突",
+        "severity": "MEDIUM",
+        "description": "端口8082在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\port_proxy.py",
+          ".\\后端\\后端\\port_proxy.py"
+        ]
+      },
+      {
+        "issue": "端口9000冲突",
+        "severity": "MEDIUM",
+        "description": "端口9000在多个文件中使用",
+        "files": [
+          ".\\stock-trading-backend\\simple_api_server_9000.py",
+          ".\\stock-trading-backend\\start_simple_frontend.py",
+          ".\\stock-trading-backend\\test_server.py",
+          ".\\stock-trading-backend\\backend\\simple_server.py",
+          ".\\后端\\后端\\simple_api_server_9000.py",
+          ".\\后端\\后端\\start_simple_frontend.py",
+          ".\\后端\\后端\\test_server.py",
+          ".\\后端\\后端\\backend\\simple_server.py"
+        ]
+      }
+    ],
+    "data_integrity": []
+  }
+}

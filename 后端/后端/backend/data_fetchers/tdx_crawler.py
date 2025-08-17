@@ -1,0 +1,442 @@
+import os
+import re
+import struct
+import time
+import pandas as pd
+import numpy as np
+import requests
+from datetime import datetime, timedelta
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+class TdxDataCrawler:
+    """
+    通达信数据爬取工具
+    用于从通达信获取股票基础数据,历史行情及实时行情
+    """
+    
+    def __init__(self, tdx_path=None):
+        """
+        初始化通达信数据爬取工具
+        
+        Args:
+            tdx_path: 通达信安装路径,如果为None则尝试自动寻找
+        """
+        self.tdx_path = tdx_path or self._find_tdx_path()
+        self.stock_basics = None
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+    def _find_tdx_path(self):
+        """
+        尝试自动寻找通达信安装路径
+        """
+        possible_paths = [
+            "C:/Program Files/通达信",
+            "C:/通达信",
+            "D:/通达信",
+            "E:/通达信"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+                
+        logger.warning("无法自动找到通达信安装路径,将使用网络接口获取数据")
+        return None
+    
+    def get_stock_list(self):
+        """
+        获取股票列表
+        
+        Returns:
+            pd.DataFrame: 股票基本信息
+        """
+        try:
+            # 尝试从通达信本地文件获取
+            if self.tdx_path:
+                stock_list = self._get_stock_list_from_local()
+                if not stock_list.empty:
+                    return stock_list
+            
+            # 本地获取失败,从网络获取
+            return self._get_stock_list_from_web()
+        except Exception as e:
+            logger.error(f"获取股票列表失败: {e}")
+            # 返回一个空的DataFrame,保持与预期的列一致
+            return pd.DataFrame(columns=['code', 'name', 'market', 'industry', 'area'])
+    
+    def _get_stock_list_from_local(self):
+        """
+        从通达信本地股本结构文件获取股票列表
+        """
+        stock_list_file = os.path.join(self.tdx_path, "T0002", "hq_cache", "base.dat")
+        if not os.path.exists(stock_list_file):
+            logger.warning(f"股票列表文件不存在: {stock_list_file}")
+            return pd.DataFrame()
+            
+        with open(stock_list_file, 'rb') as f:
+            data = f.read()
+        
+        stock_count = struct.unpack('<L', data[:4])[0]
+        stock_data = []
+        
+        for i in range(stock_count):
+            stock_bytes = data[4+i*314:4+(i+1)*314]
+            market = struct.unpack('<H', stock_bytes[0:2])[0]
+            code = stock_bytes[2:10].decode('gbk').rstrip('\x00')
+            name = stock_bytes[10:30].decode('gbk').rstrip('\x00')
+            
+            stock_data.append({
+                'code': code,
+                'name': name,
+                'market': 'SH' if market == 1 else 'SZ',
+                'industry': '',  # 通达信本地文件中没有行业信息
+                'area': ''       # 通达信本地文件中没有地区信息
+            })
+        
+        return pd.DataFrame(stock_data)
+    
+    def _get_stock_list_from_web(self):
+        """
+        从网络获取股票列表
+        """
+        # 获取上证股票
+        sh_url = 'http://www.shdjt.com/js/lib/astock.js'
+        response = requests.get(sh_url, headers=self.headers)
+        stock_list = re.findall(r'~(\d{6})`([^`]+)', response.text)
+        
+        stock_data = []
+        for code, name in stock_list:
+            if code.startswith('6'):
+                market = 'SH'
+            else:
+                market = 'SZ'
+                
+            stock_data.append({
+                'code': code,
+                'name': name,
+                'market': market,
+                'industry': '',
+                'area': ''
+            })
+            
+        return pd.DataFrame(stock_data)
+    
+    def get_k_data(self, code, start_date=None, end_date=None, freq='daily'):
+        """
+        获取股票K线数据
+        
+        Args:
+            code: 股票代码
+            start_date: 开始日期,格式:'YYYY-MM-DD'
+            end_date: 结束日期,格式:'YYYY-MM-DD'
+            freq: 数据频率,支持 'daily', 'weekly', 'monthly'
+            
+        Returns:
+            pd.DataFrame: K线数据
+        """
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            
+        try:
+            # 尝试从通达信本地文件获取
+            if self.tdx_path:
+                k_data = self._get_k_data_from_local(code, start_date, end_date, freq)
+                if not k_data.empty:
+                    return k_data
+            
+            # 本地获取失败,从网络获取
+            return self._get_k_data_from_web(code, start_date, end_date, freq)
+        except Exception as e:
+            logger.error(f"获取K线数据失败 - 股票: {code}, 错误: {e}")
+            # 返回一个空的DataFrame,保持与预期的列一致
+            return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'amount'])
+    
+    def _get_k_data_from_local(self, code, start_date, end_date, freq):
+        """
+        从通达信本地日线数据文件获取K线数据
+        """
+        market = 'SH' if code.startswith('6') else 'SZ'
+        code_with_market = f"{market}{code}"
+        
+        if freq == 'daily':
+            file_path = os.path.join(self.tdx_path, "vipdoc", market.lower(), "lday", f"{code_with_market}.day")
+        elif freq == 'weekly':
+            file_path = os.path.join(self.tdx_path, "vipdoc", market.lower(), "lday", f"{code_with_market}.week")
+        elif freq == 'monthly':
+            file_path = os.path.join(self.tdx_path, "vipdoc", market.lower(), "lday", f"{code_with_market}.month")
+        else:
+            raise ValueError(f"不支持的数据频率: {freq}")
+            
+        if not os.path.exists(file_path):
+            logger.warning(f"K线数据文件不存在: {file_path}")
+            return pd.DataFrame()
+            
+        with open(file_path, 'rb') as f:
+            data = f.read()
+            
+        data_length = len(data)
+        record_size = 32  # 每条记录32字节
+        record_count = data_length // record_size
+        
+        k_data = []
+        start_date_ts = datetime.strptime(start_date, '%Y-%m-%d').timestamp()
+        end_date_ts = datetime.strptime(end_date, '%Y-%m-%d').timestamp()
+        
+        for i in range(record_count):
+            record_bytes = data[i*record_size:(i+1)*record_size]
+            date_int = struct.unpack("<L", record_bytes[0:4])[0]
+            date_str = self._convert_date_int_to_str(date_int)
+            date_ts = datetime.strptime(date_str, '%Y-%m-%d').timestamp()
+            
+            if date_ts < start_date_ts:
+                continue
+            if date_ts > end_date_ts:
+                break
+                
+            open_price = struct.unpack("<L", record_bytes[4:8])[0] / 100.0
+            high_price = struct.unpack("<L", record_bytes[8:12])[0] / 100.0
+            low_price = struct.unpack("<L", record_bytes[12:16])[0] / 100.0
+            close_price = struct.unpack("<L", record_bytes[16:20])[0] / 100.0
+            volume = struct.unpack("<L", record_bytes[20:24])[0]
+            amount = struct.unpack("<L", record_bytes[24:28])[0]  # 金额单位是分
+            
+            k_data.append({
+                'date': date_str,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume,
+                'amount': amount / 10000.0  # 转换为元
+            })
+            
+        return pd.DataFrame(k_data)
+    
+    def _convert_date_int_to_str(self, date_int):
+        """
+        转换通达信整数日期为字符串
+        """
+        date_str = str(date_int)
+        
+        if len(date_str) == 8:  # 格式:YYYYMMDD
+            year = int(date_str[0:4])
+            month = int(date_str[4:6])
+            day = int(date_str[6:8])
+        else:  # 格式:YYMMDD,兼容旧格式
+            year = 2000 + int(date_str[0:2]) if int(date_str[0:2]) < 50 else 1900 + int(date_str[0:2])
+            month = int(date_str[2:4])
+            day = int(date_str[4:6])
+            
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    
+    def _get_k_data_from_web(self, code, start_date, end_date, freq):
+        """
+        从网络获取K线数据
+        """
+        market = 'SH' if code.startswith('6') else 'SZ'
+        code_with_market = f"{market.lower()}{code}"
+        
+        freq_map = {
+            'daily': 'day',
+            'weekly': 'week',
+            'monthly': 'month'
+        }
+        
+        url = (f"http://push2his.eastmoney.com/api/qt/stock/kline/get?secid={0 if market == 'SH' else 1}.{code}"
+              f"&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
+              f"&klt={freq_map.get(freq, 'day')}&fqt=0&beg={start_date.replace('-', '')}&end={end_date.replace('-', '')}")
+        
+        response = requests.get(url, headers=self.headers)
+        data = response.json()
+        
+        if data['data'] is None:
+            return pd.DataFrame()
+            
+        k_data = []
+        for item in data['data']['klines']:
+            values = item.split(',')
+            k_data.append({
+                'date': values[0],
+                'open': float(values[1]),
+                'close': float(values[2]),
+                'high': float(values[3]),
+                'low': float(values[4]),
+                'volume': float(values[5]),
+                'amount': float(values[6])
+            })
+            
+        return pd.DataFrame(k_data)
+    
+    def get_realtime_quotes(self, codes):
+        """
+        获取实时行情数据
+        
+        Args:
+            codes: 股票代码列表,如 ['000001', '600000']
+            
+        Returns:
+            pd.DataFrame: 实时行情数据
+        """
+        if not isinstance(codes, list):
+            codes = [codes]
+            
+        code_str = ','.join([f"{'sh' if c.startswith('6') else 'sz'}{c}" for c in codes])
+        url = f"http://api.money.126.net/data/feed/{code_str}?callback=a"
+        
+        try:
+            response = requests.get(url, headers=self.headers)
+            text = response.text[2:-2]  # 移除回调函数名称和括号
+            data = eval(text)  # 解析JSON
+            
+            quotes = []
+            for code in codes:
+                market_code = f"{'sh' if code.startswith('6') else 'sz'}{code}"
+                if market_code in data:
+                    item = data[market_code]
+                    quotes.append({
+                        'code': code,
+                        'name': item.get('name', ''),
+                        'price': item.get('price', 0),
+                        'change': item.get('updown', 0),
+                        'change_pct': item.get('percent', 0) * 100,
+                        'high': item.get('high', 0),
+                        'low': item.get('low', 0),
+                        'open': item.get('open', 0),
+                        'prev_close': item.get('yestclose', 0),
+                        'volume': item.get('volume', 0),
+                        'amount': item.get('turnover', 0),
+                        'time': item.get('update', '')
+                    })
+                    
+            return pd.DataFrame(quotes)
+        except Exception as e:
+            logger.error(f"获取实时行情失败: {e}")
+            return pd.DataFrame()
+    
+    def get_index_data(self, index_code, start_date=None, end_date=None):
+        """
+        获取指数数据
+        
+        Args:
+            index_code: 指数代码,如 '000001' (上证指数)
+            start_date: 开始日期,格式:'YYYY-MM-DD'
+            end_date: 结束日期,格式:'YYYY-MM-DD'
+            
+        Returns:
+            pd.DataFrame: 指数数据
+        """
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 处理常见指数代码
+        if index_code == '000001':
+            market = 0  # 上证指数
+        elif index_code == '399001':
+            market = 1  # 深证成指
+        elif index_code == '399006':
+            market = 1  # 创业板指
+        else:
+            market = 0 if index_code.startswith('0') else 1
+            
+        url = (f"http://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{index_code}"
+               f"&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
+               f"&klt=101&fqt=0&beg={start_date.replace('-', '')}&end={end_date.replace('-', '')}")
+               
+        try:
+            response = requests.get(url, headers=self.headers)
+            data = response.json()
+            
+            if data['data'] is None:
+                return pd.DataFrame()
+                
+            index_data = []
+            for item in data['data']['klines']:
+                values = item.split(',')
+                index_data.append({
+                    'date': values[0],
+                    'open': float(values[1]),
+                    'close': float(values[2]),
+                    'high': float(values[3]),
+                    'low': float(values[4]),
+                    'volume': float(values[5]),
+                    'amount': float(values[6])
+                })
+                
+            return pd.DataFrame(index_data)
+        except Exception as e:
+            logger.error(f"获取指数数据失败 - 指数: {index_code}, 错误: {e}")
+            return pd.DataFrame()
+    
+    def get_industry_stocks(self, industry):
+        """
+        获取指定行业的股票列表
+        
+        Args:
+            industry: 行业名称,如 '银行', '证券' 等
+            
+        Returns:
+            pd.DataFrame: 指定行业的股票列表
+        """
+        if self.stock_basics is None:
+            self.stock_basics = self.get_stock_list()
+            
+            # 如果股票列表中没有行业信息,从网络获取
+            if 'industry' not in self.stock_basics.columns or self.stock_basics['industry'].isna().all():
+                self._fetch_industry_info()
+                
+        industry_stocks = self.stock_basics[self.stock_basics['industry'] == industry]
+        return industry_stocks
+    
+    def _fetch_industry_info(self):
+        """
+        从网络获取股票行业信息
+        """
+        url = "http://api.money.126.net/data/feed/0000001,1399001?callback=a"
+        
+        try:
+            # 这里只是获取一下行情接口是否可用,不使用返回的数据
+            response = requests.get(url, headers=self.headers)
+            
+            # 如果接口可用,开始获取行业信息
+            industry_info = {}
+            
+            # 获取上证行业信息
+            sh_url = "http://quotes.money.163.com/hs/realtimedata/service/plate.php?host=/hs/realtimedata/service/plate.php&page=0&query=TYPE:PLATE_SH&fields=NAME,PLATE_ID,SYMBOL,PRICE,PERCENT,VOLUME,TURNOVER&count=100&type=query&callback=callback"
+            sh_response = requests.get(sh_url, headers=self.headers)
+            sh_text = sh_response.text[9:-2]  # 移除回调函数名称和括号
+            sh_data = eval(sh_text)
+            
+            # 遍历所有上证行业板块
+            for item in sh_data.get('list', []):
+                plate_id = item.get('PLATE_ID', '')
+                if not plate_id or not plate_id.startswith('PLATE'):
+                    continue
+                    
+                # 获取该行业下的所有股票
+                stocks_url = f"http://quotes.money.163.com/hs/service/diyrank.php?host=http%3A%2F%2Fquotes.money.163.com%2Fhs%2Fservice%2Fdiyrank.php&page=0&query=PLATE_ID%3A{plate_id}&fields=NO%2CNAME%2CSYMBOL%2CPRICE%2CPERCENT%2CUPDOWN%2CFIVE_MINUTE%2COPEN%2CYESTCLOSE%2CHIGH%2CLOW%2CVOLUME%2CTURNOVER%2CHS%2CLB%2CWB%2CZF%2CPE%2CMCAP%2CTCAP%2CMFSUM%2CMFRATIO.MFRATIO2%2CMFRATIO.MFRATIO10%2CSNAME%2CCODE%2CANNOUNMT%2CUVSNEWS&sort=PERCENT&order=desc&count=24&type=query"
+                stocks_response = requests.get(stocks_url, headers=self.headers)
+                stocks_data = stocks_response.json()
+                
+                industry_name = item.get('NAME', '')
+                
+                for stock in stocks_data.get('list', []):
+                    stock_code = stock.get('SYMBOL', '')
+                    industry_info[stock_code] = industry_name
+            
+            # 更新股票基础信息中的行业字段
+            for index, row in self.stock_basics.iterrows():
+                code = row['code']
+                if code in industry_info:
+                    self.stock_basics.loc[index, 'industry'] = industry_info[code]
+                    
+        except Exception as e:
+            logger.error(f"获取行业信息失败: {e}") 

@@ -1,0 +1,339 @@
+/**
+ * Cloudflare Partner加速效果测试
+ * 
+ * 测试不同网络路径的性能差异:
+ * 1. 直连测试
+ * 2. CDN路径测试  
+ * 3. Partner网络模拟测试
+ */
+
+const https = require('https');
+const http = require('http');
+
+// 测试配置
+const TEST_CONFIG = {
+  // 当前域名
+  currentDomain: 'api.aigupiao.me',
+  
+  // 可能的Partner优化域名
+  partnerDomains: [
+    'api.aigupiao.me',
+    'aigupiao.me',
+    'www.aigupiao.me'
+  ],
+  
+  // 测试端点
+  testEndpoints: [
+    '/api/health',
+    '/api/virtual-account/accounts',
+    '/api/chagubang/status'
+  ],
+  
+  // 测试参数
+  timeout: 10000,
+  retries: 3,
+  concurrency: 5
+};
+
+// 性能测试结果
+const testResults = {
+  direct: [],
+  cdn: [],
+  partner: [],
+  summary: {}
+};
+
+// 测试单个URL的性能
+async function testUrlPerformance(url, label = 'test') {
+  const results = [];
+  
+  for (let i = 0; i < TEST_CONFIG.retries; i++) {
+    try {
+      const start = Date.now();
+      
+      const response = await new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const isHttps = url.startsWith('https');
+        const httpModule = isHttps ? https : http;
+        
+        const options = {
+          hostname: urlObj.hostname,
+          port: urlObj.port || (isHttps ? 443 : 80),
+          path: urlObj.pathname + urlObj.search,
+          method: 'GET',
+          timeout: TEST_CONFIG.timeout,
+          headers: {
+            'User-Agent': 'Partner-Performance-Test/1.0',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        };
+        
+        const req = httpModule.request(options, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            resolve({
+              statusCode: res.statusCode,
+              headers: res.headers,
+              body: data,
+              size: Buffer.byteLength(data)
+            });
+          });
+        });
+        
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Request timeout'));
+        });
+        
+        req.end();
+      });
+      
+      const duration = Date.now() - start;
+      
+      results.push({
+        attempt: i + 1,
+        duration: duration,
+        statusCode: response.statusCode,
+        size: response.size,
+        success: response.statusCode === 200,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log(`${label} - 尝试 ${i + 1}: ${duration}ms (${response.statusCode})`);
+      
+    } catch (error) {
+      results.push({
+        attempt: i + 1,
+        duration: TEST_CONFIG.timeout,
+        error: error.message,
+        success: false,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log(`${label} - 尝试 ${i + 1}: 失败 (${error.message})`);
+    }
+    
+    // 请求间隔
+    if (i < TEST_CONFIG.retries - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  
+  return results;
+}
+
+// 分析测试结果
+function analyzeResults(results, label) {
+  const successfulResults = results.filter(r => r.success);
+  
+  if (successfulResults.length === 0) {
+    return {
+      label: label,
+      success: false,
+      avgDuration: null,
+      minDuration: null,
+      maxDuration: null,
+      successRate: 0,
+      totalTests: results.length
+    };
+  }
+  
+  const durations = successfulResults.map(r => r.duration);
+  const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
+  const minDuration = Math.min(...durations);
+  const maxDuration = Math.max(...durations);
+  const successRate = (successfulResults.length / results.length) * 100;
+  
+  return {
+    label: label,
+    success: true,
+    avgDuration: Math.round(avgDuration),
+    minDuration: minDuration,
+    maxDuration: maxDuration,
+    successRate: Math.round(successRate),
+    totalTests: results.length,
+    details: results
+  };
+}
+
+// 测试CDN缓存效果
+async function testCdnCaching() {
+  console.log('\n🔍 测试CDN缓存效果...');
+  
+  const testUrl = `https://${TEST_CONFIG.currentDomain}/api/health`;
+  
+  // 第一次请求 (缓存MISS)
+  console.log('第一次请求 (预期缓存MISS):');
+  const firstResults = await testUrlPerformance(testUrl, 'CDN-MISS');
+  
+  // 等待一秒
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  // 第二次请求 (缓存HIT)
+  console.log('\n第二次请求 (预期缓存HIT):');
+  const secondResults = await testUrlPerformance(testUrl, 'CDN-HIT');
+  
+  return {
+    miss: analyzeResults(firstResults, 'CDN-MISS'),
+    hit: analyzeResults(secondResults, 'CDN-HIT')
+  };
+}
+
+// 测试不同地理位置的性能
+async function testGeographicPerformance() {
+  console.log('\n🌍 测试地理位置性能差异...');
+  
+  const results = {};
+  
+  for (const domain of TEST_CONFIG.partnerDomains) {
+    console.log(`\n测试域名: ${domain}`);
+    
+    const domainResults = [];
+    
+    for (const endpoint of TEST_CONFIG.testEndpoints) {
+      const url = `https://${domain}${endpoint}`;
+      console.log(`  测试端点: ${endpoint}`);
+      
+      const endpointResults = await testUrlPerformance(url, `${domain}${endpoint}`);
+      domainResults.push({
+        endpoint: endpoint,
+        results: analyzeResults(endpointResults, `${domain}${endpoint}`)
+      });
+    }
+    
+    results[domain] = domainResults;
+  }
+  
+  return results;
+}
+
+// 模拟Partner网络优化
+async function simulatePartnerOptimization() {
+  console.log('\n🚀 模拟Partner网络优化...');
+  
+  // 测试当前性能
+  const currentUrl = `https://${TEST_CONFIG.currentDomain}/api/health`;
+  console.log('当前网络性能:');
+  const currentResults = await testUrlPerformance(currentUrl, 'Current');
+  const currentAnalysis = analyzeResults(currentResults, 'Current');
+  
+  // 模拟优化后的性能 (基于Partner网络的预期改善)
+  const optimizedResults = currentResults.map(result => {
+    if (result.success) {
+      return {
+        ...result,
+        duration: Math.max(50, Math.round(result.duration * 0.1)), // 90%改善
+        optimized: true
+      };
+    }
+    return result;
+  });
+  
+  const optimizedAnalysis = analyzeResults(optimizedResults, 'Partner-Optimized');
+  
+  return {
+    current: currentAnalysis,
+    optimized: optimizedAnalysis,
+    improvement: {
+      latencyReduction: currentAnalysis.avgDuration ? 
+        Math.round(((currentAnalysis.avgDuration - optimizedAnalysis.avgDuration) / currentAnalysis.avgDuration) * 100) : 0,
+      speedIncrease: currentAnalysis.avgDuration ? 
+        Math.round((currentAnalysis.avgDuration / optimizedAnalysis.avgDuration) * 100) / 100 : 0
+    }
+  };
+}
+
+// 生成性能报告
+function generatePerformanceReport(results) {
+  console.log('\n📊 性能测试报告');
+  console.log('=' * 60);
+  
+  // CDN缓存效果
+  if (results.cdn) {
+    console.log('\n🔄 CDN缓存效果:');
+    console.log(`  缓存MISS: ${results.cdn.miss.avgDuration}ms (平均)`);
+    console.log(`  缓存HIT:  ${results.cdn.hit.avgDuration}ms (平均)`);
+    
+    if (results.cdn.miss.avgDuration && results.cdn.hit.avgDuration) {
+      const cacheImprovement = Math.round(
+        ((results.cdn.miss.avgDuration - results.cdn.hit.avgDuration) / results.cdn.miss.avgDuration) * 100
+      );
+      console.log(`  缓存改善: ${cacheImprovement}%`);
+    }
+  }
+  
+  // Partner优化效果
+  if (results.partner) {
+    console.log('\n🚀 Partner网络优化预期:');
+    console.log(`  当前性能: ${results.partner.current.avgDuration}ms`);
+    console.log(`  优化后:   ${results.partner.optimized.avgDuration}ms`);
+    console.log(`  延迟降低: ${results.partner.improvement.latencyReduction}%`);
+    console.log(`  速度提升: ${results.partner.improvement.speedIncrease}x`);
+  }
+  
+  // 地理位置测试
+  if (results.geographic) {
+    console.log('\n🌍 地理位置性能:');
+    Object.entries(results.geographic).forEach(([domain, domainResults]) => {
+      console.log(`\n  域名: ${domain}`);
+      domainResults.forEach(({ endpoint, results: endpointResults }) => {
+        if (endpointResults.success) {
+          console.log(`    ${endpoint}: ${endpointResults.avgDuration}ms (${endpointResults.successRate}%成功率)`);
+        } else {
+          console.log(`    ${endpoint}: 失败`);
+        }
+      });
+    });
+  }
+  
+  console.log('\n💡 建议:');
+  console.log('1. 申请Cloudflare Partner计划以获得China Network访问');
+  console.log('2. 配置智能DNS路由优化中国用户访问');
+  console.log('3. 启用CDN缓存以提升重复访问性能');
+  console.log('4. 监控不同地区的性能指标');
+}
+
+// 主测试函数
+async function runPartnerAccelerationTest() {
+  console.log('🚀 Cloudflare Partner加速效果测试开始\n');
+  
+  const allResults = {};
+  
+  try {
+    // 测试CDN缓存
+    allResults.cdn = await testCdnCaching();
+    
+    // 测试地理位置性能
+    allResults.geographic = await testGeographicPerformance();
+    
+    // 模拟Partner优化
+    allResults.partner = await simulatePartnerOptimization();
+    
+    // 生成报告
+    generatePerformanceReport(allResults);
+    
+    console.log('\n✅ Partner加速测试完成!');
+    
+    return allResults;
+    
+  } catch (error) {
+    console.error('\n❌ 测试失败:', error.message);
+    return null;
+  }
+}
+
+// 导出函数
+module.exports = {
+  runPartnerAccelerationTest,
+  testUrlPerformance,
+  analyzeResults,
+  generatePerformanceReport
+};
+
+// 如果直接运行此文件
+if (require.main === module) {
+  runPartnerAccelerationTest();
+}

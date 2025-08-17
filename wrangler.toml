@@ -1,0 +1,13 @@
+name = "ai-stock-trading-api"
+main = "complete-api-worker.js"
+compatibility_date = "2025-07-13"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "ai-stock-trading-api"
+
+[[env.production.vars]]
+ENVIRONMENT = "production"
+
+[vars]
+ENVIRONMENT = "development"

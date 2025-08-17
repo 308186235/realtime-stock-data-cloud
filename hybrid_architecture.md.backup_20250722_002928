@@ -1,0 +1,37 @@
+# 混合网络优化架构
+
+## 🏗️ 架构概述
+Cloudflare SSL/CDN + ngrok Tunnel
+
+## 📊 组件配置
+- **SSL提供商**: Cloudflare
+- **CDN提供商**: JSDelivr + Cloudflare
+- **隧道提供商**: ngrok (亚太区域)
+- **DNS提供商**: Google DNS
+
+## 🔄 数据流向
+1. Mobile App → Cloudflare DNS
+2. Static Resources → JSDelivr CDN
+3. API Requests → ngrok Tunnel → Local Server
+4. SSL/Security → Cloudflare
+
+## 🎯 预期性能改善
+- **DNS解析**: 降低到 297ms (Google DNS)
+- **静态资源**: 降低到 919ms (JSDelivr CDN)
+- **API隧道**: 降低到 200-800ms (ngrok亚太区域)
+- **SSL/安全**: 保持Cloudflare企业级安全
+
+## 🚀 部署步骤
+1. 运行 `set_optimal_dns.bat` 设置DNS
+2. 运行 `start_ngrok_optimized.bat` 启动隧道
+3. 更新前端配置使用 `optimized_cdn_config.js`
+4. 在Cloudflare中配置CNAME指向ngrok地址
+
+## 💡 优势
+- ✅ 保留Cloudflare的SSL和安全功能
+- ✅ 使用更快的ngrok隧道降低API延迟
+- ✅ 优化CDN选择提升静态资源加载速度
+- ✅ DNS优化提升域名解析速度
+- ✅ 双重备份，提高可靠性
+
+生成时间: 2025-07-21 12:47:13

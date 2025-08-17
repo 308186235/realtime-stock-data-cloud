@@ -1,0 +1,129 @@
+"""
+WebSocket 修复补丁
+
+使用说明:
+1. 停止当前运行的simple_test_server.py
+2. 在simple_test_server.py中添加以下补丁代码
+3. 重新启动服务器,测试WebSocket功能
+
+主要修复点:
+1. 添加根路径WebSocket端点
+2. 修改服务器启动选项,禁用reload
+3. 简化WebSocket处理逻辑
+"""
+
+# ---------- 添加到simple_test_server.py文件中 ----------
+
+# 添加根路径WebSocket端点
+@app.websocket("/ws")
+async def websocket_root(websocket: WebSocket):
+    """根路径WebSocket端点 - 更可靠的连接"""
+    await websocket.accept()
+    logger.info("WebSocket客户端连接到根路径")
+    
+    # 生成客户端ID
+    client_id = str(id(websocket))
+    websocket_connections[client_id] = websocket
+    # 创建空订阅列表
+    if client_id not in active_subscriptions:
+        active_subscriptions[client_id] = {}
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            logger.info(f"收到WebSocket消息: {data}")
+            
+            try:
+                message = json.loads(data)
+                message_type = message.get("type", "")
+                
+                # 处理不同类型的消息
+                if message_type == "ping":
+                    await websocket.send_text(json.dumps({
+                        "type": "pong",
+                        "timestamp": time.time()
+                    }))
+                    logger.info("响应ping消息")
+                
+                elif message_type == "subscribe":
+                    channel = message.get("channel", "")
+                    params = message.get("params", {})
+                    
+                    if channel:
+                        # 保存订阅
+                        active_subscriptions[client_id][channel] = params
+                        await websocket.send_text(json.dumps({
+                            "type": "subscription",
+                            "status": "success",
+                            "channel": channel,
+                            "params": params
+                        }))
+                        logger.info(f"客户端订阅: {channel}, 参数: {params}")
+                
+                elif message_type == "unsubscribe":
+                    channel = message.get("channel", "")
+                    
+                    if channel and channel in active_subscriptions[client_id]:
+                        # 删除订阅
+                        del active_subscriptions[client_id][channel]
+                        await websocket.send_text(json.dumps({
+                            "type": "unsubscription",
+                            "status": "success",
+                            "channel": channel
+                        }))
+                        logger.info(f"客户端取消订阅: {channel}")
+                
+                else:
+                    # 回显未知消息类型
+                    await websocket.send_text(json.dumps({
+                        "type": "echo",
+                        "data": message,
+                        "timestamp": time.time()
+                    }))
+                    logger.info(f"回显消息: {message}")
+            
+            except json.JSONDecodeError:
+                # 无效的JSON
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "error": "无效的JSON数据"
+                }))
+                logger.error("无效的JSON数据")
+            
+            except Exception as e:
+                # 其他错误
+                logger.error(f"处理WebSocket消息时出错: {str(e)}")
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "error": f"处理消息时出错: {str(e)}"
+                }))
+    
+    except WebSocketDisconnect:
+        # 客户端断开连接
+        if client_id in websocket_connections:
+            del websocket_connections[client_id]
+        if client_id in active_subscriptions:
+            del active_subscriptions[client_id]
+        logger.info(f"客户端 {client_id} 断开连接")
+    
+    except Exception as e:
+        # 其他错误
+        logger.error(f"WebSocket连接错误: {str(e)}")
+        if client_id in websocket_connections:
+            del websocket_connections[client_id]
+        if client_id in active_subscriptions:
+            del active_subscriptions[client_id]
+
+# ---------- 替换原有的启动代码 ----------
+"""
+替换simple_test_server.py末尾的启动代码:
+
+if __name__ == "__main__":
+    uvicorn.run("simple_test_server:app", host="0.0.0.0", port=8000, reload=True)
+
+改为:
+"""
+if __name__ == "__main__":
+    logger.info("启动修复版测试服务器 - 禁用reload功能")
+    uvicorn.run("simple_test_server:app", host="0.0.0.0", port=8000, reload=False) 
+ 

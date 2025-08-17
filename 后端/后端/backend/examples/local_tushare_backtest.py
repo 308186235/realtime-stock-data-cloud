@@ -1,0 +1,234 @@
+"""
+本地Tushare回测 - 不依赖API服务器
+"""
+
+import tushare as ts
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# 设置Tushare Token
+TOKEN = "2f204ad53468c48203e351b2e43b7ebd2c1ef1028c9d4c4e8ea3736c"
+
+def init_tushare():
+    """初始化Tushare"""
+    try:
+        ts.set_token(TOKEN)
+        pro = ts.pro_api()
+        print(" Tushare初始化成功")
+        return pro
+    except Exception as e:
+        print(f" Tushare初始化失败: {e}")
+        return None
+
+def calculate_backtest_metrics(returns, trades):
+    """计算回测指标"""
+    if not returns:
+        return {}
+    
+    returns = np.array(returns)
+    
+    # 基础指标
+    total_return = np.prod(1 + returns) - 1
+    annual_return = (1 + total_return) ** (252 / len(returns)) - 1
+    volatility = np.std(returns) * np.sqrt(252)
+    sharpe_ratio = (annual_return - 0.03) / volatility if volatility > 0 else 0
+    
+    # 最大回撤
+    cumulative = np.cumprod(1 + returns)
+    running_max = np.maximum.accumulate(cumulative)
+    drawdowns = (cumulative - running_max) / running_max
+    max_drawdown = np.min(drawdowns)
+    
+    # 交易统计
+    total_trades = len(trades)
+    winning_trades = sum(1 for t in trades if t['profit'] > 0)
+    win_rate = winning_trades / total_trades if total_trades > 0 else 0
+    
+    profits = [t['profit'] for t in trades if t['profit'] > 0]
+    losses = [abs(t['profit']) for t in trades if t['profit'] < 0]
+    avg_profit = np.mean(profits) if profits else 0
+    avg_loss = np.mean(losses) if losses else 1
+    profit_loss_ratio = avg_profit / avg_loss if avg_loss > 0 else 0
+    
+    return {
+        'total_return': total_return,
+        'annual_return': annual_return,
+        'volatility': volatility,
+        'sharpe_ratio': sharpe_ratio,
+        'max_drawdown': max_drawdown,
+        'total_trades': total_trades,
+        'win_rate': win_rate,
+        'profit_loss_ratio': profit_loss_ratio
+    }
+
+def run_local_backtest():
+    """运行本地回测"""
+    print(" 开始本地Tushare回测")
+    print("=" * 60)
+    
+    # 初始化Tushare
+    pro = init_tushare()
+    if not pro:
+        return
+    
+    # 回测参数
+    stock_codes = ['000001.SZ', '000002.SZ', '600000.SH']  # 平安银行,万科A,浦发银行
+    start_date = '20240101'
+    end_date = '20240630'
+    initial_capital = 100000
+    
+    print(f" 回测参数:")
+    print(f"  股票代码: {stock_codes}")
+    print(f"  回测期间: {start_date} - {end_date}")
+    print(f"  初始资金: {initial_capital:,} 元")
+    print("-" * 60)
+    
+    all_returns = []
+    all_trades = []
+    stock_results = {}
+    
+    # 处理每只股票
+    for stock_code in stock_codes:
+        print(f"\n 分析 {stock_code}...")
+        
+        try:
+            # 获取股票数据
+            df = pro.daily(ts_code=stock_code, start_date=start_date, end_date=end_date)
+            
+            if df.empty:
+                print(f"   未获取到数据")
+                continue
+            
+            df = df.sort_values('trade_date')
+            print(f"   获取数据成功: {len(df)} 条记录")
+            
+            # 计算技术指标
+            df['ma5'] = df['close'].rolling(5).mean()
+            df['ma20'] = df['close'].rolling(20).mean()
+            df['rsi'] = calculate_rsi(df['close'], 14)
+            
+            # 生成交易信号
+            df['signal'] = 0
+            df.loc[(df['ma5'] > df['ma20']) & (df['rsi'] < 70), 'signal'] = 1  # 买入
+            df.loc[(df['ma5'] < df['ma20']) | (df['rsi'] > 80), 'signal'] = -1  # 卖出
+            
+            # 计算收益率
+            df['returns'] = df['close'].pct_change()
+            df['strategy_returns'] = df['signal'].shift(1) * df['returns']
+            
+            strategy_returns = df['strategy_returns'].dropna().tolist()
+            all_returns.extend(strategy_returns)
+            
+            # 模拟交易
+            if len(df) > 20:
+                entry_idx = 10
+                exit_idx = -10
+                entry_price = df.iloc[entry_idx]['close']
+                exit_price = df.iloc[exit_idx]['close']
+                quantity = 1000
+                commission = 60
+                
+                profit = (exit_price - entry_price) * quantity - commission
+                
+                trade = {
+                    'symbol': stock_code,
+                    'entry_price': entry_price,
+                    'exit_price': exit_price,
+                    'quantity': quantity,
+                    'profit': profit,
+                    'commission': commission
+                }
+                all_trades.append(trade)
+                
+                # 计算个股指标
+                stock_returns = strategy_returns
+                if stock_returns:
+                    stock_metrics = calculate_backtest_metrics(stock_returns, [trade])
+                    stock_results[stock_code] = stock_metrics
+                    
+                    print(f"   模拟交易:")
+                    print(f"    买入价: {entry_price:.2f} 元")
+                    print(f"    卖出价: {exit_price:.2f} 元")
+                    print(f"    盈亏: {profit:.2f} 元")
+                    print(f"    收益率: {stock_metrics['total_return']:.2%}")
+            
+        except Exception as e:
+            print(f"   处理失败: {e}")
+            continue
+    
+    # 计算整体回测结果
+    if all_returns and all_trades:
+        print(f"\n 整体回测结果:")
+        print("=" * 60)
+        
+        overall_metrics = calculate_backtest_metrics(all_returns, all_trades)
+        
+        print(f" 收益指标:")
+        print(f"  总收益率: {overall_metrics['total_return']:.2%}")
+        print(f"  年化收益率: {overall_metrics['annual_return']:.2%}")
+        print(f"  波动率: {overall_metrics['volatility']:.2%}")
+        print(f"  夏普比率: {overall_metrics['sharpe_ratio']:.2f}")
+        
+        print(f"\n 风险指标:")
+        print(f"  最大回撤: {overall_metrics['max_drawdown']:.2%}")
+        
+        print(f"\n 交易统计:")
+        print(f"  总交易次数: {overall_metrics['total_trades']}")
+        print(f"  胜率: {overall_metrics['win_rate']:.2%}")
+        print(f"  盈亏比: {overall_metrics['profit_loss_ratio']:.2f}")
+        
+        # 总盈亏
+        total_profit = sum(t['profit'] for t in all_trades)
+        print(f"  总盈亏: {total_profit:.2f} 元")
+        print(f"  收益率: {total_profit/initial_capital:.2%}")
+        
+        # 个股表现
+        print(f"\n 个股表现:")
+        for stock_code, metrics in stock_results.items():
+            print(f"  {stock_code}: 收益率 {metrics['total_return']:.2%}, 夏普比率 {metrics['sharpe_ratio']:.2f}")
+        
+        # 策略评价
+        print(f"\n 策略评价:")
+        if overall_metrics['sharpe_ratio'] > 1.5:
+            rating = "优秀"
+        elif overall_metrics['sharpe_ratio'] > 1.0:
+            rating = "良好"
+        elif overall_metrics['sharpe_ratio'] > 0.5:
+            rating = "一般"
+        else:
+            rating = "较差"
+        
+        print(f"  综合评级: {rating}")
+        
+        # 改进建议
+        print(f"\n 改进建议:")
+        if overall_metrics['max_drawdown'] < -0.15:
+            print("  - 最大回撤较大,建议加强风险控制")
+        if overall_metrics['win_rate'] < 0.4:
+            print("  - 胜率偏低,建议优化入场时机")
+        if overall_metrics['profit_loss_ratio'] < 1.5:
+            print("  - 盈亏比偏低,建议优化止盈止损策略")
+        if overall_metrics['volatility'] > 0.25:
+            print("  - 策略波动率较高,建议分散投资")
+        
+        if rating == "优秀":
+            print("  - 策略表现优秀,可考虑增加资金配置")
+    
+    else:
+        print(" 未获取到有效的回测数据")
+    
+    print("\n" + "=" * 60)
+    print(" 本地回测完成!")
+
+def calculate_rsi(prices, period=14):
+    """计算RSI指标"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+if __name__ == "__main__":
+    run_local_backtest()

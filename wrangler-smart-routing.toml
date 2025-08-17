@@ -1,0 +1,19 @@
+name = "ai-stock-smart-routing"
+main = "smart-routing-worker.js"
+compatibility_date = "2025-07-15"
+compatibility_flags = ["nodejs_compat"]
+
+# 智能路由优化配置
+[placement]
+mode = "smart"
+
+# 环境变量
+[vars]
+ENVIRONMENT = "production"
+SERVICE_NAME = "AI股票交易智能路由 - 中国优化版"
+VERSION = "1.0.0"
+
+# 智能路由域名配置
+routes = [
+  { pattern = "smart.aigupiao.me", custom_domain = true }
+]

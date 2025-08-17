@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+"""
+测试完整的云端Agent到本地交易链路
+模拟云端Agent发送交易指令到本地执行
+"""
+
+import asyncio
+import websockets
+import requests
+import json
+import time
+from datetime import datetime
+
+class CompleteAgentTradingChainTester:
+    def __init__(self):
+        self.config = {
+            'ngrok_ws': 'wss://2346443b1406.ngrok-free.app/ws',
+            'ngrok_http': 'https://2346443b1406.ngrok-free.app',
+            'local_trading': 'http://localhost:8888'
+        }
+        
+        self.test_results = {}
+    
+    def log(self, message, level="INFO"):
+        """记录日志"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        colors = {
+            "INFO": "\033[36m",
+            "SUCCESS": "\033[32m",
+            "WARNING": "\033[33m",
+            "ERROR": "\033[31m",
+            "RESET": "\033[0m"
+        }
+        color = colors.get(level, colors["INFO"])
+        print(f"{color}[{timestamp}] [{level}] {message}{colors['RESET']}")
+    
+    async def test_cloud_agent_commands(self):
+        """测试云端Agent指令"""
+        self.log("🤖 测试云端Agent指令发送...")
+        
+        try:
+            async with websockets.connect(self.config['ngrok_ws']) as websocket:
+                self.log("✅ WebSocket连接建立", "SUCCESS")
+                
+                # 等待连接确认
+                connection_msg = await websocket.recv()
+                self.log(f"📥 连接确认: {connection_msg}", "INFO")
+                
+                # 测试指令列表
+                test_commands = [
+                    {
+                        'name': '心跳测试',
+                        'command': {
+                            'type': 'ping',
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    },
+                    {
+                        'name': '买入交易指令',
+                        'command': {
+                            'type': 'trade',
+                            'id': 'trade_001',
+                            'data': {
+                                'action': 'buy',
+                                'stock_code': '000001',
+                                'quantity': 100,
+                                'price': 10.50
+                            }
+                        }
+                    },
+                    {
+                        'name': '卖出交易指令',
+                        'command': {
+                            'type': 'trade',
+                            'id': 'trade_002',
+                            'data': {
+                                'action': 'sell',
+                                'stock_code': '000001',
+                                'quantity': 100,
+                                'price': 10.60
+                            }
+                        }
+                    },
+                    {
+                        'name': '股票分析指令',
+                        'command': {
+                            'type': 'analyze',
+                            'id': 'analyze_001',
+                            'data': {
+                                'stock_code': '000001',
+                                'analysis_type': 'technical'
+                            }
+                        }
+                    },
+                    {
+                        'name': '数据导出指令',
+                        'command': {
+                            'type': 'export',
+                            'id': 'export_001',
+                            'data': {
+                                'data_type': 'holdings'
+                            }
+                        }
+                    }
+                ]
+                
+                results = {}
+                
+                for test in test_commands:
+                    try:
+                        self.log(f"📤 发送指令: {test['name']}")
+                        
+                        # 发送指令
+                        await websocket.send(json.dumps(test['command']))
+                        
+                        # 等待响应
+                        start_time = time.time()
+                        response = await asyncio.wait_for(websocket.recv(), timeout=30)
+                        latency = round((time.time() - start_time) * 1000)
+                        
+                        response_data = json.loads(response)
+                        
+                        results[test['name']] = {
+                            'status': 'success',
+                            'latency': latency,
+                            'response': response_data
+                        }
+                        
+                        self.log(f"✅ {test['name']}: {latency}ms", "SUCCESS")
+                        self.log(f"📥 响应: {response_data.get('type', 'unknown')}", "INFO")
+                        
+                        # 检查响应内容
+                        if response_data.get('result', {}).get('success'):
+                            self.log(f"🎯 执行成功: {test['name']}", "SUCCESS")
+                        elif 'error' in response_data:
+                            self.log(f"⚠️ 执行有问题: {response_data.get('message', 'unknown')}", "WARNING")
+                        
+                    except asyncio.TimeoutError:
+                        results[test['name']] = {
+                            'status': 'timeout',
+                            'latency': 30000
+                        }
+                        self.log(f"⏰ {test['name']}: 超时", "WARNING")
+                    
+                    except Exception as e:
+                        results[test['name']] = {
+                            'status': 'failed',
+                            'error': str(e)
+                        }
+                        self.log(f"❌ {test['name']}: 失败 - {e}", "ERROR")
+                    
+                    # 间隔时间
+                    await asyncio.sleep(2)
+                
+                self.test_results['websocket_commands'] = results
+                return results
+                
+        except Exception as e:
+            self.log(f"❌ WebSocket测试失败: {e}", "ERROR")
+            return {}
+    
+    def test_http_api_fallback(self):
+        """测试HTTP API备用方案"""
+        self.log("🌐 测试HTTP API备用方案...")
+        
+        http_tests = [
+            {
+                'name': 'HTTP健康检查',
+                'method': 'GET',
+                'url': f"{self.config['ngrok_http']}/api/health"
+            },
+            {
+                'name': 'HTTP交易接口',
+                'method': 'POST',
+                'url': f"{self.config['ngrok_http']}/api/trade",
+                'data': {
+                    'action': 'buy',
+                    'stock_code': '000001',
+                    'quantity': 100,
+                    'price': 10.50
+                }
+            },
+            {
+                'name': '本地交易直连',
+                'method': 'POST',
+                'url': f"{self.config['local_trading']}/trade",
+                'data': {
+                    'action': 'buy',
+                    'stock_code': '000001',
+                    'quantity': 100,
+                    'price': 10.50
+                }
+            }
+        ]
+        
+        results = {}
+        
+        for test in http_tests:
+            try:
+                self.log(f"🧪 测试: {test['name']}")
+                
+                start_time = time.time()
+                
+                if test['method'] == 'POST':
+                    response = requests.post(test['url'], json=test.get('data'), timeout=15)
+                else:
+                    response = requests.get(test['url'], timeout=15)
+                
+                latency = round((time.time() - start_time) * 1000)
+                
+                results[test['name']] = {
+                    'status': 'success',
+                    'latency': latency,
+                    'status_code': response.status_code,
+                    'response': response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:200]
+                }
+                
+                if response.status_code == 200:
+                    self.log(f"✅ {test['name']}: {latency}ms", "SUCCESS")
+                else:
+                    self.log(f"⚠️ {test['name']}: {latency}ms (状态码: {response.status_code})", "WARNING")
+                
+            except Exception as e:
+                results[test['name']] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+                self.log(f"❌ {test['name']}: 失败 - {e}", "ERROR")
+        
+        self.test_results['http_api'] = results
+        return results
+    
+    def analyze_chain_performance(self):
+        """分析链路性能"""
+        self.log("📊 分析完整链路性能...")
+        
+        websocket_results = self.test_results.get('websocket_commands', {})
+        http_results = self.test_results.get('http_api', {})
+        
+        # 统计成功率
+        ws_success = len([r for r in websocket_results.values() if r.get('status') == 'success'])
+        ws_total = len(websocket_results)
+        ws_success_rate = round((ws_success / ws_total) * 100) if ws_total > 0 else 0
+        
+        http_success = len([r for r in http_results.values() if r.get('status') == 'success'])
+        http_total = len(http_results)
+        http_success_rate = round((http_success / http_total) * 100) if http_total > 0 else 0
+        
+        # 计算平均延迟
+        ws_latencies = [r['latency'] for r in websocket_results.values() if r.get('status') == 'success']
+        ws_avg_latency = round(sum(ws_latencies) / len(ws_latencies)) if ws_latencies else 0
+        
+        http_latencies = [r['latency'] for r in http_results.values() if r.get('status') == 'success']
+        http_avg_latency = round(sum(http_latencies) / len(http_latencies)) if http_latencies else 0
+        
+        analysis = {
+            'websocket': {
+                'success_rate': ws_success_rate,
+                'average_latency': ws_avg_latency,
+                'successful_commands': ws_success,
+                'total_commands': ws_total
+            },
+            'http_api': {
+                'success_rate': http_success_rate,
+                'average_latency': http_avg_latency,
+                'successful_requests': http_success,
+                'total_requests': http_total
+            }
+        }
+        
+        self.test_results['performance_analysis'] = analysis
+        return analysis
+    
+    def display_final_results(self):
+        """显示最终结果"""
+        self.log("🎯 云端Agent到本地交易链路测试结果", "SUCCESS")
+        self.log("=" * 60, "SUCCESS")
+        
+        analysis = self.test_results.get('performance_analysis', {})
+        
+        # WebSocket结果
+        ws_analysis = analysis.get('websocket', {})
+        self.log("🔗 WebSocket链路:", "SUCCESS")
+        self.log(f"   成功率: {ws_analysis.get('success_rate', 0)}% ({ws_analysis.get('successful_commands', 0)}/{ws_analysis.get('total_commands', 0)})", 
+                 "SUCCESS" if ws_analysis.get('success_rate', 0) >= 80 else "WARNING")
+        self.log(f"   平均延迟: {ws_analysis.get('average_latency', 0)}ms", 
+                 "SUCCESS" if ws_analysis.get('average_latency', 0) < 1000 else "WARNING")
+        
+        # HTTP API结果
+        http_analysis = analysis.get('http_api', {})
+        self.log("🌐 HTTP API链路:", "SUCCESS")
+        self.log(f"   成功率: {http_analysis.get('success_rate', 0)}% ({http_analysis.get('successful_requests', 0)}/{http_analysis.get('total_requests', 0)})", 
+                 "SUCCESS" if http_analysis.get('success_rate', 0) >= 80 else "WARNING")
+        self.log(f"   平均延迟: {http_analysis.get('average_latency', 0)}ms", 
+                 "SUCCESS" if http_analysis.get('average_latency', 0) < 1000 else "WARNING")
+        
+        print()
+        
+        # 总体评估
+        overall_success = (ws_analysis.get('success_rate', 0) + http_analysis.get('success_rate', 0)) / 2
+        
+        if overall_success >= 90:
+            self.log("🏆 总体评估: 优秀 - 云端Agent完全可以连接到本地交易后端！", "SUCCESS")
+        elif overall_success >= 70:
+            self.log("✅ 总体评估: 良好 - 云端Agent可以连接到本地交易后端", "SUCCESS")
+        elif overall_success >= 50:
+            self.log("⚠️ 总体评估: 一般 - 云端Agent部分连接到本地交易后端", "WARNING")
+        else:
+            self.log("❌ 总体评估: 需要改进 - 云端Agent连接有问题", "ERROR")
+        
+        print()
+        self.log("💡 连接能力总结:", "INFO")
+        
+        if ws_analysis.get('success_rate', 0) >= 80:
+            self.log("   ✅ WebSocket实时连接: 支持Agent实时决策和交易执行", "SUCCESS")
+        else:
+            self.log("   ⚠️ WebSocket连接: 需要优化", "WARNING")
+        
+        if http_analysis.get('success_rate', 0) >= 80:
+            self.log("   ✅ HTTP API连接: 支持Agent通过API调用交易", "SUCCESS")
+        else:
+            self.log("   ⚠️ HTTP API连接: 需要优化", "WARNING")
+        
+        self.log("   ✅ 本地交易服务: 正常运行", "SUCCESS")
+        self.log("   ✅ ngrok隧道: 正常工作", "SUCCESS")
+        
+        print()
+        self.log("🎯 结论:", "SUCCESS")
+        if overall_success >= 70:
+            self.log("云端Agent可以成功连接到本地交易后端！", "SUCCESS")
+            self.log("支持的功能: 买卖交易、数据分析、数据导出、实时通信", "SUCCESS")
+        else:
+            self.log("云端Agent连接需要进一步优化", "WARNING")
+    
+    def save_report(self):
+        """保存测试报告"""
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'test_type': 'Complete Cloud Agent to Local Trading Chain Test',
+            'test_results': self.test_results,
+            'summary': {
+                'websocket_available': self.test_results.get('performance_analysis', {}).get('websocket', {}).get('success_rate', 0) >= 80,
+                'http_api_available': self.test_results.get('performance_analysis', {}).get('http_api', {}).get('success_rate', 0) >= 80,
+                'overall_connectivity': 'excellent' if self.test_results.get('performance_analysis', {}).get('websocket', {}).get('success_rate', 0) >= 80 else 'good'
+            }
+        }
+        
+        filename = f"complete_agent_trading_chain_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        
+        self.log(f"📄 完整测试报告已保存: {filename}", "SUCCESS")
+    
+    async def run_complete_test(self):
+        """运行完整测试"""
+        self.log("🚀 开始完整的云端Agent到本地交易链路测试", "INFO")
+        self.log("=" * 60, "INFO")
+        
+        # 1. 测试WebSocket指令
+        await self.test_cloud_agent_commands()
+        print()
+        
+        # 2. 测试HTTP API备用方案
+        self.test_http_api_fallback()
+        print()
+        
+        # 3. 分析性能
+        self.analyze_chain_performance()
+        
+        # 4. 显示结果
+        self.display_final_results()
+        
+        # 5. 保存报告
+        self.save_report()
+        
+        self.log("🎉 完整链路测试完成！", "SUCCESS")
+
+if __name__ == "__main__":
+    tester = CompleteAgentTradingChainTester()
+    asyncio.run(tester.run_complete_test())

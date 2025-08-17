@@ -1,0 +1,763 @@
+import numpy as np
+import pandas as pd
+import logging
+import json
+import asyncio
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Union, Optional, Tuple
+import traceback
+from enum import Enum
+import aiohttp
+import os
+
+# 设置日志
+logger = logging.getLogger("TradeExecutor")
+
+class OrderType(Enum):
+    """订单类型枚举"""
+    MARKET = "market"          # 市价单
+    LIMIT = "limit"            # 限价单
+    STOP = "stop"              # 止损单
+    STOP_LIMIT = "stop_limit"  # 止损限价单
+    TRAILING_STOP = "trailing_stop"  # 跟踪止损单
+
+class OrderStatus(Enum):
+    """订单状态枚举"""
+    PENDING = "pending"        # 待提交
+    SUBMITTED = "submitted"    # 已提交
+    PARTIAL = "partial"        # 部分成交
+    FILLED = "filled"          # 完全成交
+    CANCELLED = "cancelled"    # 已取消
+    REJECTED = "rejected"      # 被拒绝
+    EXPIRED = "expired"        # 已过期
+
+class TradeExecutor:
+    """
+    自动交易执行器 - 负责将Agent的决策转换为实际的交易订单并执行
+    """
+    
+    def __init__(self, config: Dict = None):
+        """
+        初始化交易执行器
+        
+        Args:
+            config: 配置参数
+        """
+        self.config = config or {}
+        
+        # 交易账户配置
+        self.broker_config = self.config.get("broker", {})
+        self.api_key = self.broker_config.get("api_key", "")
+        self.api_secret = self.broker_config.get("api_secret", "")
+        self.base_url = self.broker_config.get("base_url", "http://localhost:8080/api")
+        self.account_id = self.broker_config.get("account_id", "")
+        
+        # 交易参数
+        self.max_position_size = self.config.get("max_position_size", 0.2)  # 最大仓位比例
+        self.max_orders_per_day = self.config.get("max_orders_per_day", 100)
+        self.min_order_interval = self.config.get("min_order_interval", 1)  # 最小下单间隔（秒）
+        self.enable_paper_trading = self.config.get("enable_paper_trading", True)  # 模拟交易模式
+        
+        # 风险控制参数
+        self.stop_loss_percentage = self.config.get("stop_loss_percentage", 0.05)
+        self.take_profit_percentage = self.config.get("take_profit_percentage", 0.15)
+        self.max_slippage = self.config.get("max_slippage", 0.01)
+        
+        # 订单管理
+        self.active_orders = {}  # 活跃订单
+        self.order_history = []  # 订单历史
+        self.positions = {}      # 当前持仓
+        self.daily_order_count = 0
+        self.last_order_time = None
+        
+        # 账户信息
+        self.account_balance = 100000.0  # 默认账户余额（模拟）
+        self.buying_power = 100000.0     # 可用资金
+        self.portfolio_value = 100000.0  # 投资组合价值
+        
+        # HTTP会话
+        self.session = None
+        
+        # 执行状态
+        self.is_connected = False
+        self.execution_enabled = True
+        
+        logger.info(f"Trade Executor initialized (Paper Trading: {self.enable_paper_trading})")
+    
+    async def connect(self) -> bool:
+        """
+        连接到交易系统
+        
+        Returns:
+            是否连接成功
+        """
+        try:
+            # 创建HTTP会话
+            self.session = aiohttp.ClientSession()
+            
+            # 如果是模拟交易，直接返回成功
+            if self.enable_paper_trading:
+                self.is_connected = True
+                logger.info("Connected to paper trading system")
+                return True
+            
+            # 真实交易：验证API连接
+            headers = self._get_auth_headers()
+            async with self.session.get(f"{self.base_url}/account", headers=headers) as response:
+                if response.status == 200:
+                    account_info = await response.json()
+                    self.account_balance = account_info.get("balance", 0)
+                    self.buying_power = account_info.get("buying_power", 0)
+                    self.is_connected = True
+                    logger.info("Connected to real trading system")
+                    return True
+                else:
+                    logger.error(f"Failed to connect: HTTP {response.status}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Error connecting to trading system: {str(e)}")
+            traceback.print_exc()
+            return False
+    
+    async def disconnect(self):
+        """断开交易系统连接"""
+        try:
+            if self.session:
+                await self.session.close()
+            self.is_connected = False
+            logger.info("Disconnected from trading system")
+        except Exception as e:
+            logger.error(f"Error disconnecting: {str(e)}")
+    
+    async def execute_decision(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行Agent的交易决策
+        
+        Args:
+            decision: Agent的决策结果
+            
+        Returns:
+            执行结果
+        """
+        try:
+            # 检查连接状态
+            if not self.is_connected:
+                return {"status": "error", "message": "Not connected to trading system"}
+            
+            # 检查是否启用执行
+            if not self.execution_enabled:
+                return {"status": "error", "message": "Execution is disabled"}
+            
+            # 提取决策信息
+            action = decision.get("action", "").lower()
+            symbol = decision.get("symbol", "")
+            confidence = decision.get("confidence", 0.0)
+            position_size = decision.get("position_size", 0.0)
+            
+            # 验证决策
+            validation = self._validate_decision(decision)
+            if not validation["valid"]:
+                return {"status": "error", "message": validation["reason"]}
+            
+            # 根据动作类型执行
+            if action == "buy":
+                result = await self._execute_buy_order(symbol, position_size, decision)
+            elif action == "sell":
+                result = await self._execute_sell_order(symbol, position_size, decision)
+            elif action == "hold":
+                result = {"status": "success", "message": "Holding position", "action": "hold"}
+            elif action == "close":
+                result = await self._close_position(symbol, decision)
+            else:
+                result = {"status": "error", "message": f"Unknown action: {action}"}
+            
+            # 记录执行结果
+            self._record_execution(decision, result)
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error executing decision: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    async def _execute_buy_order(self, symbol: str, position_size: float, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行买入订单
+        
+        Args:
+            symbol: 交易标的
+            position_size: 仓位大小（占总资金的比例）
+            decision: 完整决策信息
+            
+        Returns:
+            执行结果
+        """
+        try:
+            # 计算订单数量
+            current_price = await self._get_current_price(symbol)
+            if current_price <= 0:
+                return {"status": "error", "message": "Invalid price"}
+            
+            # 计算买入金额和数量
+            buy_amount = self.buying_power * position_size
+            quantity = int(buy_amount / current_price)
+            
+            if quantity <= 0:
+                return {"status": "error", "message": "Insufficient buying power"}
+            
+            # 创建订单
+            order = {
+                "symbol": symbol,
+                "side": "buy",
+                "quantity": quantity,
+                "type": OrderType.MARKET.value,
+                "price": current_price,
+                "stop_loss": current_price * (1 - self.stop_loss_percentage),
+                "take_profit": current_price * (1 + self.take_profit_percentage),
+                "timestamp": datetime.now().isoformat(),
+                "decision_id": decision.get("id", ""),
+                "confidence": decision.get("confidence", 0.0)
+            }
+            
+            # 执行订单
+            if self.enable_paper_trading:
+                result = await self._execute_paper_order(order)
+            else:
+                result = await self._execute_real_order(order)
+            
+            # 更新持仓
+            if result.get("status") == "success":
+                self._update_position(symbol, quantity, current_price, "buy")
+                
+                # 设置止损和止盈订单
+                await self._set_stop_orders(symbol, order["stop_loss"], order["take_profit"])
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error executing buy order: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    async def _execute_sell_order(self, symbol: str, position_size: float, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行卖出订单
+        
+        Args:
+            symbol: 交易标的
+            position_size: 卖出仓位比例
+            decision: 完整决策信息
+            
+        Returns:
+            执行结果
+        """
+        try:
+            # 检查是否有持仓
+            position = self.positions.get(symbol, {})
+            if not position or position.get("quantity", 0) <= 0:
+                return {"status": "error", "message": "No position to sell"}
+            
+            # 计算卖出数量
+            current_quantity = position.get("quantity", 0)
+            sell_quantity = int(current_quantity * position_size)
+            
+            if sell_quantity <= 0:
+                return {"status": "error", "message": "Invalid sell quantity"}
+            
+            # 获取当前价格
+            current_price = await self._get_current_price(symbol)
+            
+            # 创建订单
+            order = {
+                "symbol": symbol,
+                "side": "sell",
+                "quantity": sell_quantity,
+                "type": OrderType.MARKET.value,
+                "price": current_price,
+                "timestamp": datetime.now().isoformat(),
+                "decision_id": decision.get("id", ""),
+                "confidence": decision.get("confidence", 0.0)
+            }
+            
+            # 执行订单
+            if self.enable_paper_trading:
+                result = await self._execute_paper_order(order)
+            else:
+                result = await self._execute_real_order(order)
+            
+            # 更新持仓
+            if result.get("status") == "success":
+                self._update_position(symbol, -sell_quantity, current_price, "sell")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error executing sell order: {str(e)}"
+            logger.error(error_msg)
+            traceback.print_exc()
+            return {"status": "error", "message": error_msg}
+    
+    async def _close_position(self, symbol: str, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        平仓
+        
+        Args:
+            symbol: 交易标的
+            decision: 决策信息
+            
+        Returns:
+            执行结果
+        """
+        # 卖出全部持仓
+        decision_copy = decision.copy()
+        decision_copy["position_size"] = 1.0  # 卖出100%
+        return await self._execute_sell_order(symbol, 1.0, decision_copy)
+    
+    async def _execute_paper_order(self, order: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行模拟订单
+        
+        Args:
+            order: 订单信息
+            
+        Returns:
+            执行结果
+        """
+        try:
+            # 生成订单ID
+            order_id = f"PAPER_{datetime.now().strftime('%Y%m%d%H%M%S')}_{len(self.order_history)}"
+            
+            # 模拟订单执行
+            executed_order = order.copy()
+            executed_order.update({
+                "order_id": order_id,
+                "status": OrderStatus.FILLED.value,
+                "filled_quantity": order["quantity"],
+                "filled_price": order["price"] * (1 + np.random.uniform(-0.001, 0.001)),  # 模拟滑点
+                "commission": order["quantity"] * order["price"] * 0.001,  # 0.1%手续费
+                "execution_time": datetime.now().isoformat()
+            })
+            
+            # 更新账户余额（模拟）
+            if order["side"] == "buy":
+                cost = executed_order["filled_quantity"] * executed_order["filled_price"] + executed_order["commission"]
+                self.buying_power -= cost
+            else:
+                proceeds = executed_order["filled_quantity"] * executed_order["filled_price"] - executed_order["commission"]
+                self.buying_power += proceeds
+            
+            # 记录订单
+            self.active_orders[order_id] = executed_order
+            self.order_history.append(executed_order)
+            self.daily_order_count += 1
+            self.last_order_time = datetime.now()
+            
+            logger.info(f"Paper order executed: {order_id} - {order['side']} {order['quantity']} {order['symbol']} @ {executed_order['filled_price']:.2f}")
+            
+            return {
+                "status": "success",
+                "order_id": order_id,
+                "filled_quantity": executed_order["filled_quantity"],
+                "filled_price": executed_order["filled_price"],
+                "commission": executed_order["commission"]
+            }
+            
+        except Exception as e:
+            error_msg = f"Error executing paper order: {str(e)}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+    
+    async def _execute_real_order(self, order: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行真实订单
+        
+        Args:
+            order: 订单信息
+            
+        Returns:
+            执行结果
+        """
+        try:
+            # 准备API请求
+            headers = self._get_auth_headers()
+            
+            # 构建订单请求体
+            order_request = {
+                "symbol": order["symbol"],
+                "side": order["side"],
+                "quantity": order["quantity"],
+                "type": order["type"],
+                "time_in_force": "GTC",  # Good Till Cancelled
+                "account_id": self.account_id
+            }
+            
+            # 如果是限价单，添加价格
+            if order["type"] == OrderType.LIMIT.value:
+                order_request["price"] = order["price"]
+            
+            # 发送订单请求
+            async with self.session.post(
+                f"{self.base_url}/orders",
+                headers=headers,
+                json=order_request
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    
+                    # 记录订单
+                    order_id = result.get("order_id")
+                    self.active_orders[order_id] = order
+                    self.order_history.append(order)
+                    self.daily_order_count += 1
+                    self.last_order_time = datetime.now()
+                    
+                    logger.info(f"Real order submitted: {order_id}")
+                    
+                    return {
+                        "status": "success",
+                        "order_id": order_id,
+                        "message": "Order submitted successfully"
+                    }
+                else:
+                    error_msg = await response.text()
+                    logger.error(f"Order submission failed: {error_msg}")
+                    return {"status": "error", "message": error_msg}
+                    
+        except Exception as e:
+            error_msg = f"Error executing real order: {str(e)}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+    
+    async def _set_stop_orders(self, symbol: str, stop_loss: float, take_profit: float):
+        """
+        设置止损和止盈订单
+        
+        Args:
+            symbol: 交易标的
+            stop_loss: 止损价格
+            take_profit: 止盈价格
+        """
+        try:
+            # 设置止损订单
+            stop_loss_order = {
+                "symbol": symbol,
+                "side": "sell",
+                "quantity": self.positions.get(symbol, {}).get("quantity", 0),
+                "type": OrderType.STOP.value,
+                "stop_price": stop_loss,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # 设置止盈订单
+            take_profit_order = {
+                "symbol": symbol,
+                "side": "sell",
+                "quantity": self.positions.get(symbol, {}).get("quantity", 0),
+                "type": OrderType.LIMIT.value,
+                "price": take_profit,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # 执行止损止盈订单
+            if self.enable_paper_trading:
+                # 模拟交易中记录止损止盈价格
+                if symbol in self.positions:
+                    self.positions[symbol]["stop_loss"] = stop_loss
+                    self.positions[symbol]["take_profit"] = take_profit
+            else:
+                # 真实交易中提交OCO订单（One-Cancels-Other）
+                await self._submit_oco_order(stop_loss_order, take_profit_order)
+                
+        except Exception as e:
+            logger.error(f"Error setting stop orders: {str(e)}")
+    
+    async def _submit_oco_order(self, stop_order: Dict, limit_order: Dict):
+        """提交OCO订单（一个成交则取消另一个）"""
+        # 实际券商API的OCO订单实现
+        pass
+    
+    def _validate_decision(self, decision: Dict[str, Any]) -> Dict[str, bool]:
+        """
+        验证交易决策
+        
+        Args:
+            decision: 交易决策
+            
+        Returns:
+            验证结果
+        """
+        # 检查必要字段
+        if not decision.get("symbol"):
+            return {"valid": False, "reason": "Missing symbol"}
+        
+        if not decision.get("action"):
+            return {"valid": False, "reason": "Missing action"}
+        
+        # 检查置信度
+        confidence = decision.get("confidence", 0.0)
+        if confidence < 0.5:
+            return {"valid": False, "reason": f"Low confidence: {confidence}"}
+        
+        # 检查每日订单限制
+        if self.daily_order_count >= self.max_orders_per_day:
+            return {"valid": False, "reason": "Daily order limit reached"}
+        
+        # 检查最小下单间隔
+        if self.last_order_time:
+            time_since_last = (datetime.now() - self.last_order_time).total_seconds()
+            if time_since_last < self.min_order_interval:
+                return {"valid": False, "reason": "Order interval too short"}
+        
+        # 检查仓位限制
+        position_size = decision.get("position_size", 0.0)
+        if position_size > self.max_position_size:
+            return {"valid": False, "reason": f"Position size {position_size} exceeds limit {self.max_position_size}"}
+        
+        return {"valid": True, "reason": "OK"}
+    
+    def _update_position(self, symbol: str, quantity_change: int, price: float, side: str):
+        """
+        更新持仓信息
+        
+        Args:
+            symbol: 交易标的
+            quantity_change: 数量变化（正数为买入，负数为卖出）
+            price: 成交价格
+            side: 交易方向
+        """
+        if symbol not in self.positions:
+            self.positions[symbol] = {
+                "symbol": symbol,
+                "quantity": 0,
+                "avg_cost": 0.0,
+                "market_value": 0.0,
+                "unrealized_pnl": 0.0,
+                "realized_pnl": 0.0
+            }
+        
+        position = self.positions[symbol]
+        
+        if side == "buy":
+            # 买入：更新平均成本
+            total_cost = position["quantity"] * position["avg_cost"] + quantity_change * price
+            position["quantity"] += quantity_change
+            if position["quantity"] > 0:
+                position["avg_cost"] = total_cost / position["quantity"]
+        else:
+            # 卖出：计算已实现盈亏
+            if position["quantity"] > 0:
+                realized_pnl = quantity_change * (price - position["avg_cost"])
+                position["realized_pnl"] += realized_pnl
+                position["quantity"] += quantity_change  # quantity_change为负数
+        
+        # 更新市值
+        position["market_value"] = position["quantity"] * price
+        
+        # 如果持仓为0，移除记录
+        if position["quantity"] == 0:
+            del self.positions[symbol]
+        
+        logger.info(f"Position updated: {symbol} - Quantity: {position.get('quantity', 0)}, Avg Cost: {position.get('avg_cost', 0):.2f}")
+    
+    async def _get_current_price(self, symbol: str) -> float:
+        """
+        获取当前价格
+        
+        Args:
+            symbol: 交易标的
+            
+        Returns:
+            当前价格
+        """
+        try:
+            if self.enable_paper_trading:
+                # 模拟价格（实际应该从数据源获取）
+                return 100.0 * (1 + np.random.uniform(-0.02, 0.02))
+            else:
+                # 从真实API获取价格
+                headers = self._get_auth_headers()
+                async with self.session.get(
+                    f"{self.base_url}/quote/{symbol}",
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get("price", 0.0)
+                    else:
+                        logger.error(f"Failed to get price for {symbol}")
+                        return 0.0
+        except Exception as e:
+            logger.error(f"Error getting price: {str(e)}")
+            return 0.0
+    
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """获取API认证头"""
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+    
+    def _record_execution(self, decision: Dict[str, Any], result: Dict[str, Any]):
+        """记录执行结果"""
+        execution_record = {
+            "timestamp": datetime.now().isoformat(),
+            "decision": decision,
+            "result": result
+        }
+        
+        # 这里可以将记录保存到数据库或文件
+        logger.info(f"Execution recorded: {execution_record}")
+    
+    async def get_account_status(self) -> Dict[str, Any]:
+        """
+        获取账户状态
+        
+        Returns:
+            账户状态信息
+        """
+        try:
+            # 计算总市值
+            total_market_value = sum(pos.get("market_value", 0) for pos in self.positions.values())
+            
+            # 计算总盈亏
+            total_unrealized_pnl = sum(
+                pos["quantity"] * (await self._get_current_price(pos["symbol"]) - pos["avg_cost"])
+                for pos in self.positions.values()
+                if pos["quantity"] > 0
+            )
+            total_realized_pnl = sum(pos.get("realized_pnl", 0) for pos in self.positions.values())
+            
+            return {
+                "account_balance": self.account_balance,
+                "buying_power": self.buying_power,
+                "portfolio_value": self.buying_power + total_market_value,
+                "total_market_value": total_market_value,
+                "total_unrealized_pnl": total_unrealized_pnl,
+                "total_realized_pnl": total_realized_pnl,
+                "positions_count": len(self.positions),
+                "active_orders_count": len(self.active_orders),
+                "daily_trades": self.daily_order_count,
+                "is_paper_trading": self.enable_paper_trading,
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error getting account status: {str(e)}")
+            return {"error": str(e)}
+    
+    async def get_positions(self) -> List[Dict[str, Any]]:
+        """
+        获取当前持仓
+        
+        Returns:
+            持仓列表
+        """
+        positions_list = []
+        
+        for symbol, position in self.positions.items():
+            # 获取当前价格
+            current_price = await self._get_current_price(symbol)
+            
+            # 计算未实现盈亏
+            if position["quantity"] > 0:
+                unrealized_pnl = position["quantity"] * (current_price - position["avg_cost"])
+                unrealized_pnl_pct = (current_price / position["avg_cost"] - 1) * 100
+            else:
+                unrealized_pnl = 0
+                unrealized_pnl_pct = 0
+            
+            positions_list.append({
+                "symbol": symbol,
+                "quantity": position["quantity"],
+                "avg_cost": position["avg_cost"],
+                "current_price": current_price,
+                "market_value": position["quantity"] * current_price,
+                "unrealized_pnl": unrealized_pnl,
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+                "realized_pnl": position.get("realized_pnl", 0),
+                "stop_loss": position.get("stop_loss"),
+                "take_profit": position.get("take_profit")
+            })
+        
+        return positions_list
+    
+    async def get_order_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        获取订单历史
+        
+        Args:
+            limit: 返回的最大订单数
+            
+        Returns:
+            订单历史列表
+        """
+        # 返回最近的订单
+        return self.order_history[-limit:]
+    
+    def reset_daily_counters(self):
+        """重置每日计数器（应该在每日开始时调用）"""
+        self.daily_order_count = 0
+        logger.info("Daily counters reset")
+    
+    def enable_execution(self):
+        """启用交易执行"""
+        self.execution_enabled = True
+        logger.info("Trade execution enabled")
+    
+    def disable_execution(self):
+        """禁用交易执行"""
+        self.execution_enabled = False
+        logger.info("Trade execution disabled")
+
+# 主函数（用于测试）
+async def main():
+    """测试TradeExecutor功能"""
+    # 创建交易执行器
+    config = {
+        "broker": {
+            "api_key": "test_key",
+            "api_secret": "test_secret",
+            "base_url": "http://localhost:8080/api",
+            "account_id": "test_account"
+        },
+        "max_position_size": 0.2,
+        "stop_loss_percentage": 0.05,
+        "take_profit_percentage": 0.15,
+        "enable_paper_trading": True
+    }
+    
+    executor = TradeExecutor(config)
+    
+    # 连接到交易系统
+    connected = await executor.connect()
+    print(f"Connected: {connected}")
+    
+    # 模拟Agent决策
+    decision = {
+        "action": "buy",
+        "symbol": "AAPL",
+        "confidence": 0.85,
+        "position_size": 0.1,
+        "reason": "Strong uptrend detected"
+    }
+    
+    # 执行决策
+    result = await executor.execute_decision(decision)
+    print(f"Execution result: {result}")
+    
+    # 获取账户状态
+    account_status = await executor.get_account_status()
+    print(f"Account status: {json.dumps(account_status, indent=2)}")
+    
+    # 获取持仓
+    positions = await executor.get_positions()
+    print(f"Positions: {json.dumps(positions, indent=2)}")
+    
+    # 断开连接
+    await executor.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main()) 

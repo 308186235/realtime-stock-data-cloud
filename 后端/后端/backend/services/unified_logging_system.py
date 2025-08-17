@@ -1,0 +1,241 @@
+"""
+统一日志系统
+"""
+
+import logging
+import json
+import time
+import os
+from datetime import datetime
+from typing import Dict, Any, Optional
+from enum import Enum
+
+class LogLevel(Enum):
+    """日志级别"""
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+class LogCategory(Enum):
+    """日志分类"""
+    TRADING = "trading"
+    MARKET_DATA = "market_data"
+    SYSTEM = "system"
+    SECURITY = "security"
+    PERFORMANCE = "performance"
+    USER_ACTION = "user_action"
+
+class UnifiedLogger:
+    """统一日志记录器"""
+    
+    def __init__(self, log_dir: str = "logs"):
+        self.log_dir = log_dir
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # 配置日志格式
+        self.setup_logging()
+        
+        # 日志统计
+        self.log_stats = {
+            "total_logs": 0,
+            "error_count": 0,
+            "warning_count": 0,
+            "last_error_time": None
+        }
+    
+    def setup_logging(self):
+        """设置日志配置"""
+        # 创建格式化器
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        
+        # 文件处理器
+        file_handler = logging.FileHandler(
+            os.path.join(self.log_dir, f"system_{datetime.now().strftime('%Y%m%d')}.log"),
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(formatter)
+        
+        # 控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        
+        # 配置根日志器
+        logging.basicConfig(
+            level=logging.INFO,
+            handlers=[file_handler, console_handler]
+        )
+        
+        self.logger = logging.getLogger("UnifiedLogger")
+    
+    def log(self, level: LogLevel, category: LogCategory, message: str, 
+            extra_data: Optional[Dict[str, Any]] = None):
+        """记录日志"""
+        
+        # 构建日志数据
+        log_data = {
+            "timestamp": time.time(),
+            "level": level.value,
+            "category": category.value,
+            "message": message,
+            "extra_data": extra_data or {}
+        }
+        
+        # 更新统计
+        self._update_stats(level)
+        
+        # 记录到文件
+        self._write_to_file(log_data)
+        
+        # 记录到系统日志
+        self._write_to_system_log(level, message)
+        
+        # 检查是否需要告警
+        self._check_alert_conditions(level, category, message)
+    
+    def _update_stats(self, level: LogLevel):
+        """更新日志统计"""
+        self.log_stats["total_logs"] += 1
+        
+        if level == LogLevel.ERROR or level == LogLevel.CRITICAL:
+            self.log_stats["error_count"] += 1
+            self.log_stats["last_error_time"] = time.time()
+        elif level == LogLevel.WARNING:
+            self.log_stats["warning_count"] += 1
+    
+    def _write_to_file(self, log_data: Dict[str, Any]):
+        """写入日志文件"""
+        category = log_data["category"]
+        date_str = datetime.now().strftime('%Y%m%d')
+        
+        log_file = os.path.join(self.log_dir, f"{category}_{date_str}.log")
+        
+        try:
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(log_data, ensure_ascii=False) + '\n')
+        except Exception as e:
+            self.logger.error(f"写入日志文件失败: {e}")
+    
+    def _write_to_system_log(self, level: LogLevel, message: str):
+        """写入系统日志"""
+        if level == LogLevel.DEBUG:
+            self.logger.debug(message)
+        elif level == LogLevel.INFO:
+            self.logger.info(message)
+        elif level == LogLevel.WARNING:
+            self.logger.warning(message)
+        elif level == LogLevel.ERROR:
+            self.logger.error(message)
+        elif level == LogLevel.CRITICAL:
+            self.logger.critical(message)
+    
+    def _check_alert_conditions(self, level: LogLevel, category: LogCategory, message: str):
+        """检查告警条件"""
+        # 严重错误立即告警
+        if level == LogLevel.CRITICAL:
+            self._send_alert(f"严重错误: {message}", "critical")
+        
+        # 交易相关错误告警
+        if category == LogCategory.TRADING and level == LogLevel.ERROR:
+            self._send_alert(f"交易错误: {message}", "high")
+        
+        # 安全相关告警
+        if category == LogCategory.SECURITY:
+            self._send_alert(f"安全事件: {message}", "high")
+    
+    def _send_alert(self, message: str, priority: str):
+        """发送告警"""
+        # 这里可以集成邮件,短信,钉钉等告警方式
+        alert_data = {
+            "timestamp": time.time(),
+            "message": message,
+            "priority": priority
+        }
+        
+        # 写入告警日志
+        alert_file = os.path.join(self.log_dir, "alerts.log")
+        try:
+            with open(alert_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(alert_data, ensure_ascii=False) + '\n')
+        except Exception as e:
+            self.logger.error(f"写入告警日志失败: {e}")
+    
+    # 便捷方法
+    def debug(self, category: LogCategory, message: str, extra_data: Optional[Dict] = None):
+        self.log(LogLevel.DEBUG, category, message, extra_data)
+    
+    def info(self, category: LogCategory, message: str, extra_data: Optional[Dict] = None):
+        self.log(LogLevel.INFO, category, message, extra_data)
+    
+    def warning(self, category: LogCategory, message: str, extra_data: Optional[Dict] = None):
+        self.log(LogLevel.WARNING, category, message, extra_data)
+    
+    def error(self, category: LogCategory, message: str, extra_data: Optional[Dict] = None):
+        self.log(LogLevel.ERROR, category, message, extra_data)
+    
+    def critical(self, category: LogCategory, message: str, extra_data: Optional[Dict] = None):
+        self.log(LogLevel.CRITICAL, category, message, extra_data)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取日志统计"""
+        return self.log_stats.copy()
+    
+    def get_recent_logs(self, category: Optional[LogCategory] = None, 
+                       limit: int = 100) -> list:
+        """获取最近的日志"""
+        logs = []
+        date_str = datetime.now().strftime('%Y%m%d')
+        
+        if category:
+            log_file = os.path.join(self.log_dir, f"{category.value}_{date_str}.log")
+            files_to_read = [log_file] if os.path.exists(log_file) else []
+        else:
+            files_to_read = [
+                os.path.join(self.log_dir, f)
+                for f in os.listdir(self.log_dir)
+                if f.endswith(f"{date_str}.log")
+            ]
+        
+        for file_path in files_to_read:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            logs.append(json.loads(line.strip()))
+            except Exception as e:
+                self.logger.error(f"读取日志文件失败 {file_path}: {e}")
+        
+        # 按时间排序并限制数量
+        logs.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        return logs[:limit]
+
+# 全局日志实例
+unified_logger = UnifiedLogger()
+
+# 便捷函数
+def log_trading(message: str, level: LogLevel = LogLevel.INFO, extra_data: Optional[Dict] = None):
+    """交易日志"""
+    unified_logger.log(level, LogCategory.TRADING, message, extra_data)
+
+def log_market_data(message: str, level: LogLevel = LogLevel.INFO, extra_data: Optional[Dict] = None):
+    """市场数据日志"""
+    unified_logger.log(level, LogCategory.MARKET_DATA, message, extra_data)
+
+def log_system(message: str, level: LogLevel = LogLevel.INFO, extra_data: Optional[Dict] = None):
+    """系统日志"""
+    unified_logger.log(level, LogCategory.SYSTEM, message, extra_data)
+
+def log_security(message: str, level: LogLevel = LogLevel.WARNING, extra_data: Optional[Dict] = None):
+    """安全日志"""
+    unified_logger.log(level, LogCategory.SECURITY, message, extra_data)
+
+def log_performance(message: str, level: LogLevel = LogLevel.INFO, extra_data: Optional[Dict] = None):
+    """性能日志"""
+    unified_logger.log(level, LogCategory.PERFORMANCE, message, extra_data)
+
+def log_user_action(message: str, level: LogLevel = LogLevel.INFO, extra_data: Optional[Dict] = None):
+    """用户行为日志"""
+    unified_logger.log(level, LogCategory.USER_ACTION, message, extra_data)

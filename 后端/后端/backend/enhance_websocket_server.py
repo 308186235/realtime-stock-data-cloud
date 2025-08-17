@@ -1,0 +1,178 @@
+"""
+增强版WebSocket服务器
+使用增强版WebSocket处理器实现的安全高性能WebSocket服务器
+"""
+
+import os
+import sys
+import json
+import time
+import asyncio
+import logging
+import argparse
+from typing import Dict, Any
+
+import uvicorn
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
+
+# 添加当前目录到路径,以便导入utils
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from utils.enhanced_websocket import add_websocket_endpoint, connection_manager, create_token
+
+# 配置日志
+logging.basicConfig(level=logging.INFO,
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("enhanced_websocket_server")
+
+# 创建FastAPI应用
+app = FastAPI(title="增强版WebSocket服务器",
+             description="提供安全和高性能的WebSocket通信服务")
+
+# 添加CORS中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 生产环境应限制为特定域名
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# OAuth2 密码流认证
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# 用于演示的测试用户(生产环境应使用数据库)
+test_users = {
+    "admin": {"password": "admin123", "role": "admin"},
+    "user": {"password": "user123", "role": "user"}
+}
+
+# 创建API路由
+
+@app.get("/")
+async def root():
+    """服务器状态检查"""
+    return {
+        "status": "online",
+        "version": "1.0.0",
+        "timestamp": time.time()
+    }
+
+@app.get("/api/test/ping")
+async def ping():
+    """基本的ping测试"""
+    return {"message": "pong", "timestamp": time.time()}
+
+@app.post("/api/auth/token")
+async def login(username: str, password: str):
+    """获取认证令牌"""
+    if username not in test_users or test_users[username]["password"] != password:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # 创建JWT令牌
+    token = create_token(username)
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "username": username,
+            "role": test_users[username]["role"]
+        }
+    }
+
+@app.get("/api/websocket/stats")
+async def websocket_stats():
+    """获取WebSocket连接统计信息"""
+    return connection_manager.get_system_stats()
+
+# 添加数据广播任务
+async def broadcast_data():
+    """定期向订阅者广播模拟数据"""
+    # 股票数据模拟
+    stock_symbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+    
+    while True:
+        try:
+            # 为每个股票生成随机价格变动
+            for symbol in stock_symbols:
+                price = 100 + (hash(f"{symbol}{time.time()}") % 1000) / 10
+                change = (hash(f"{symbol}{time.time() + 1}") % 200 - 100) / 10
+                
+                message = {
+                    "type": "quote",
+                    "data": {
+                        "symbol": symbol,
+                        "price": price,
+                        "change": change,
+                        "change_percent": round(change / (price - change) * 100, 2),
+                        "volume": int(abs(hash(f"{symbol}{time.time() + 2}") % 10000)),
+                        "timestamp": time.time()
+                    }
+                }
+                
+                # 广播到quote频道
+                await connection_manager.broadcast(message, channel="quote")
+            
+            # 系统状态信息
+            system_stats = {
+                "type": "system_stats",
+                "data": {
+                    "connections": len(connection_manager.active_connections),
+                    "cpu": int(abs(hash(f"cpu{time.time()}") % 100)),
+                    "memory": int(abs(hash(f"mem{time.time()}") % 100)),
+                    "timestamp": time.time()
+                }
+            }
+            
+            # 广播到system频道
+            await connection_manager.broadcast(system_stats, channel="system")
+            
+            # 1秒广播一次
+            await asyncio.sleep(1)
+        
+        except Exception as e:
+            logger.error(f"广播数据错误: {str(e)}")
+            await asyncio.sleep(5)  # 出错后等待5秒再继续
+
+# 添加WebSocket端点
+add_websocket_endpoint(app, "/ws")
+
+# 添加安全WebSocket端点(需要认证)
+@app.websocket("/ws/secure")
+async def secure_websocket_endpoint(websocket):
+    # 这个端点在enhanced_websocket模块中会检查token
+    await handle_websocket(websocket)
+
+@app.on_event("startup")
+async def startup_event():
+    """启动时执行的操作"""
+    logger.info("启动增强版WebSocket服务器")
+    
+    # 启动数据广播任务
+    asyncio.create_task(broadcast_data())
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description="增强版WebSocket服务器")
+    parser.add_argument("--host", default="0.0.0.0", help="绑定的主机IP")
+    parser.add_argument("--port", type=int, default=8000, help="绑定的端口")
+    parser.add_argument("--reload", action="store_true", help="启用自动重载(仅开发环境)")
+    parser.add_argument("--debug", action="store_true", help="启用调试模式")
+    
+    args = parser.parse_args()
+    
+    # 设置日志级别
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+    
+    # 启动服务器
+    uvicorn.run("enhance_websocket_server:app", 
+               host=args.host, 
+               port=args.port, 
+               reload=args.reload)
+
+if __name__ == "__main__":
+    main() 
+ 

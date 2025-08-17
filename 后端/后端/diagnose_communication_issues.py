@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+"""
+通信问题深度诊断脚本
+检查前端与后端之间的通信问题
+"""
+import os
+import json
+import requests
+import websocket
+import threading
+import time
+from datetime import datetime
+import subprocess
+
+class CommunicationDiagnoser:
+    """通信问题诊断器"""
+    
+    def __init__(self):
+        self.results = {}
+        
+    def print_banner(self):
+        """打印诊断横幅"""
+        print("=" * 80)
+        print("🔍 通信问题深度诊断")
+        print("=" * 80)
+        print(f"📅 诊断时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("🎯 检查前端与后端通信问题")
+        print("=" * 80)
+        
+    def test_api_endpoints(self):
+        """测试API端点"""
+        print("\n🌐 测试API端点通信...")
+        print("-" * 60)
+        
+        endpoints = {
+            "主API根路径": "https://api.aigupiao.me/",
+            "主API健康检查": "https://api.aigupiao.me/health",
+            "主API文档": "https://api.aigupiao.me/docs",
+            "主API股票数据": "https://api.aigupiao.me/api/stocks",
+            "本地API根路径": "http://localhost:8000/",
+            "本地API健康检查": "http://localhost:8000/health",
+            "本地API文档": "http://localhost:8000/docs",
+            "备用API": "http://localhost:8001/health",
+            "监控API": "http://localhost:8002/health",
+            "备份API": "http://localhost:8003/health"
+        }
+        
+        api_results = {}
+        
+        for name, url in endpoints.items():
+            print(f"测试: {name}")
+            print(f"  URL: {url}")
+            
+            try:
+                response = requests.get(url, timeout=10)
+                
+                result = {
+                    "status": "success",
+                    "status_code": response.status_code,
+                    "response_time": round(response.elapsed.total_seconds(), 3),
+                    "content_length": len(response.content),
+                    "headers": dict(response.headers)
+                }
+                
+                # 检查响应内容
+                if response.status_code == 200:
+                    try:
+                        json_data = response.json()
+                        result["response_type"] = "json"
+                        result["response_preview"] = str(json_data)[:200]
+                        print(f"  ✅ 成功 ({response.status_code}) - JSON响应")
+                    except:
+                        result["response_type"] = "text"
+                        result["response_preview"] = response.text[:200]
+                        print(f"  ✅ 成功 ({response.status_code}) - 文本响应")
+                else:
+                    result["status"] = "warning"
+                    print(f"  ⚠️ 状态码: {response.status_code}")
+                    
+            except requests.exceptions.ConnectionError as e:
+                result = {"status": "connection_error", "error": str(e)}
+                print(f"  ❌ 连接错误: 服务不可达")
+                
+            except requests.exceptions.Timeout as e:
+                result = {"status": "timeout", "error": str(e)}
+                print(f"  ❌ 超时错误: 请求超时")
+                
+            except Exception as e:
+                result = {"status": "error", "error": str(e)}
+                print(f"  ❌ 其他错误: {str(e)}")
+                
+            api_results[name] = result
+            
+        self.results["api_endpoints"] = api_results
+        
+    def test_websocket_connection(self):
+        """测试WebSocket连接"""
+        print("\n📡 测试WebSocket连接...")
+        print("-" * 60)
+        
+        ws_endpoints = [
+            "wss://api.aigupiao.me/ws",
+            "ws://localhost:8000/ws",
+            "ws://localhost:8001/ws"
+        ]
+        
+        ws_results = {}
+        
+        for ws_url in ws_endpoints:
+            print(f"测试WebSocket: {ws_url}")
+            
+            try:
+                # 创建WebSocket连接测试
+                def on_message(ws, message):
+                    print(f"  📨 收到消息: {message[:100]}...")
+                    
+                def on_error(ws, error):
+                    print(f"  ❌ WebSocket错误: {error}")
+                    
+                def on_close(ws, close_status_code, close_msg):
+                    print(f"  🔌 连接关闭: {close_status_code}")
+                    
+                def on_open(ws):
+                    print(f"  ✅ WebSocket连接成功")
+                    # 发送测试消息
+                    ws.send('{"type":"ping","data":"test"}')
+                    
+                # 设置WebSocket
+                ws = websocket.WebSocketApp(ws_url,
+                                          on_open=on_open,
+                                          on_message=on_message,
+                                          on_error=on_error,
+                                          on_close=on_close)
+                
+                # 在单独线程中运行,避免阻塞
+                def run_ws():
+                    ws.run_forever()
+                    
+                ws_thread = threading.Thread(target=run_ws)
+                ws_thread.daemon = True
+                ws_thread.start()
+                
+                # 等待连接结果
+                time.sleep(3)
+                
+                ws_results[ws_url] = {"status": "tested", "note": "连接测试完成"}
+                
+            except Exception as e:
+                ws_results[ws_url] = {"status": "error", "error": str(e)}
+                print(f"  ❌ WebSocket测试失败: {str(e)}")
+                
+        self.results["websocket"] = ws_results
+        
+    def test_cors_configuration(self):
+        """测试CORS配置"""
+        print("\n🔒 测试CORS配置...")
+        print("-" * 60)
+        
+        cors_test_urls = [
+            "https://api.aigupiao.me/",
+            "http://localhost:8000/"
+        ]
+        
+        cors_results = {}
+        
+        for url in cors_test_urls:
+            print(f"测试CORS: {url}")
+            
+            try:
+                # 发送OPTIONS请求测试CORS
+                response = requests.options(url, headers={
+                    'Origin': 'http://localhost:3000',
+                    'Access-Control-Request-Method': 'GET',
+                    'Access-Control-Request-Headers': 'Content-Type'
+                }, timeout=10)
+                
+                cors_headers = {
+                    'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Methods': response.headers.get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers': response.headers.get('Access-Control-Allow-Headers'),
+                    'Access-Control-Allow-Credentials': response.headers.get('Access-Control-Allow-Credentials')
+                }
+                
+                cors_results[url] = {
+                    "status": "success",
+                    "status_code": response.status_code,
+                    "cors_headers": cors_headers
+                }
+                
+                if cors_headers['Access-Control-Allow-Origin']:
+                    print(f"  ✅ CORS配置正常")
+                    print(f"    Origin: {cors_headers['Access-Control-Allow-Origin']}")
+                else:
+                    print(f"  ⚠️ CORS配置可能有问题")
+                    
+            except Exception as e:
+                cors_results[url] = {"status": "error", "error": str(e)}
+                print(f"  ❌ CORS测试失败: {str(e)}")
+                
+        self.results["cors"] = cors_results
+        
+    def test_network_connectivity(self):
+        """测试网络连通性"""
+        print("\n🌍 测试网络连通性...")
+        print("-" * 60)
+        
+        # 测试DNS解析
+        print("测试DNS解析:")
+        try:
+            import socket
+            ip = socket.gethostbyname('api.aigupiao.me')
+            print(f"  ✅ api.aigupiao.me 解析到: {ip}")
+            self.results["dns"] = {"status": "success", "ip": ip}
+        except Exception as e:
+            print(f"  ❌ DNS解析失败: {str(e)}")
+            self.results["dns"] = {"status": "error", "error": str(e)}
+            
+        # 测试端口连通性
+        print("测试端口连通性:")
+        ports_to_test = [
+            ("localhost", 8000),
+            ("localhost", 8001),
+            ("localhost", 8002),
+            ("localhost", 8003),
+            ("localhost", 8888),
+            ("localhost", 9999)
+        ]
+        
+        port_results = {}
+        
+        for host, port in ports_to_test:
+            try:
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                result = sock.connect_ex((host, port))
+                sock.close()
+                
+                if result == 0:
+                    print(f"  ✅ {host}:{port} 连接正常")
+                    port_results[f"{host}:{port}"] = {"status": "open"}
+                else:
+                    print(f"  ❌ {host}:{port} 连接失败")
+                    port_results[f"{host}:{port}"] = {"status": "closed"}
+                    
+            except Exception as e:
+                print(f"  ❌ {host}:{port} 测试异常: {str(e)}")
+                port_results[f"{host}:{port}"] = {"status": "error", "error": str(e)}
+                
+        self.results["ports"] = port_results
+        
+    def test_frontend_config_issues(self):
+        """测试前端配置问题"""
+        print("\n⚙️ 测试前端配置问题...")
+        print("-" * 60)
+        
+        config_files = [
+            "frontend/stock5/env.js",
+            "炒股养家/env.js",
+            "vercel-frontend/config.js"
+        ]
+        
+        config_results = {}
+        
+        for config_file in config_files:
+            print(f"检查配置: {config_file}")
+            
+            if not os.path.exists(config_file):
+                config_results[config_file] = {"status": "missing"}
+                print(f"  ❌ 配置文件不存在")
+                continue
+                
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                issues = []
+                
+                # 检查API地址
+                if 'localhost' in content and 'api.aigupiao.me' not in content:
+                    issues.append("仍使用localhost地址")
+                    
+                # 检查端口配置
+                if ':8000' in content or ':3000' in content:
+                    issues.append("硬编码端口号")
+                    
+                # 检查协议
+                if 'http://' in content and 'https://' not in content:
+                    issues.append("使用HTTP而非HTTPS")
+                    
+                # 检查模拟数据
+                if 'mock: true' in content or 'useMockData: true' in content:
+                    issues.append("模拟数据仍然启用")
+                    
+                if issues:
+                    config_results[config_file] = {"status": "issues", "issues": issues}
+                    print(f"  ⚠️ 发现问题: {', '.join(issues)}")
+                else:
+                    config_results[config_file] = {"status": "ok"}
+                    print(f"  ✅ 配置正常")
+                    
+            except Exception as e:
+                config_results[config_file] = {"status": "error", "error": str(e)}
+                print(f"  ❌ 配置检查失败: {str(e)}")
+                
+        self.results["frontend_config"] = config_results
+        
+    def check_service_status(self):
+        """检查服务状态"""
+        print("\n🔧 检查服务状态...")
+        print("-" * 60)
+        
+        # 检查进程
+        try:
+            # 使用tasklist命令查看Python进程
+            result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], 
+                                  capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                python_processes = result.stdout.count('python.exe')
+                print(f"  📊 运行中的Python进程: {python_processes}个")
+                
+                if python_processes > 0:
+                    print(f"  ✅ 后端服务可能正在运行")
+                else:
+                    print(f"  ⚠️ 未发现Python进程,后端服务可能未启动")
+                    
+            self.results["service_status"] = {
+                "python_processes": python_processes,
+                "status": "checked"
+            }
+            
+        except Exception as e:
+            print(f"  ❌ 服务状态检查失败: {str(e)}")
+            self.results["service_status"] = {"status": "error", "error": str(e)}
+            
+    def generate_communication_report(self):
+        """生成通信诊断报告"""
+        print("\n" + "=" * 80)
+        print("📊 通信问题诊断报告")
+        print("=" * 80)
+        
+        # 分析API连接问题
+        api_issues = []
+        api_success = 0
+        api_total = 0
+        
+        if "api_endpoints" in self.results:
+            for name, result in self.results["api_endpoints"].items():
+                api_total += 1
+                if result.get("status") == "success":
+                    api_success += 1
+                elif result.get("status") == "connection_error":
+                    api_issues.append(f"❌ {name}: 连接失败")
+                elif result.get("status") == "timeout":
+                    api_issues.append(f"⏰ {name}: 超时")
+                    
+        print(f"\n🌐 API连接测试:")
+        print(f"  成功率: {api_success}/{api_total} ({(api_success/api_total*100):.1f}%)")
+        
+        if api_issues:
+            print(f"  发现问题:")
+            for issue in api_issues:
+                print(f"    {issue}")
+                
+        # 分析网络连通性
+        if "ports" in self.results:
+            print(f"\n🔌 端口连通性:")
+            for port, result in self.results["ports"].items():
+                status = result.get("status")
+                if status == "open":
+                    print(f"  ✅ {port}: 开放")
+                elif status == "closed":
+                    print(f"  ❌ {port}: 关闭")
+                else:
+                    print(f"  ⚠️ {port}: 异常")
+                    
+        # 分析配置问题
+        if "frontend_config" in self.results:
+            print(f"\n⚙️ 前端配置:")
+            config_issues = []
+            for config_file, result in self.results["frontend_config"].items():
+                if result.get("status") == "issues":
+                    config_issues.extend(result.get("issues", []))
+                    
+            if config_issues:
+                print(f"  发现配置问题:")
+                for issue in set(config_issues):
+                    print(f"    ⚠️ {issue}")
+            else:
+                print(f"  ✅ 配置正常")
+                
+        # 给出修复建议
+        print(f"\n💡 修复建议:")
+        
+        if api_success < api_total:
+            print("  🔧 API连接问题:")
+            print("    - 检查后端服务是否启动")
+            print("    - 验证API地址配置")
+            print("    - 检查网络连接")
+            print("    - 查看防火墙设置")
+            
+        if "ports" in self.results:
+            closed_ports = [port for port, result in self.results["ports"].items() 
+                          if result.get("status") == "closed"]
+            if closed_ports:
+                print("  🔌 端口连接问题:")
+                print("    - 启动相关服务")
+                print("    - 检查端口占用情况")
+                print("    - 验证服务配置")
+                
+        if config_issues:
+            print("  ⚙️ 配置问题:")
+            print("    - 更新API地址配置")
+            print("    - 禁用模拟数据")
+            print("    - 使用HTTPS协议")
+            
+        print("=" * 80)
+        
+    def run_diagnosis(self):
+        """运行完整诊断"""
+        self.print_banner()
+        
+        # 执行各项诊断
+        self.test_api_endpoints()
+        self.test_websocket_connection()
+        self.test_cors_configuration()
+        self.test_network_connectivity()
+        self.test_frontend_config_issues()
+        self.check_service_status()
+        
+        # 生成报告
+        self.generate_communication_report()
+
+def main():
+    """主函数"""
+    diagnoser = CommunicationDiagnoser()
+    diagnoser.run_diagnosis()
+
+if __name__ == "__main__":
+    main()

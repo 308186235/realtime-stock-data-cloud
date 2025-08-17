@@ -1,0 +1,54 @@
+{
+  "timestamp": "2025-07-21T13:27:51.745Z",
+  "test_type": "Final Performance Test",
+  "results": {
+    "before_optimization": {
+      "cloudflare_tunnel": 3267,
+      "api_latency": 5545,
+      "success_rate": 33
+    },
+    "after_optimization": {
+      "本地后端服务": {
+        "latency": 20,
+        "success": true,
+        "statusCode": 200,
+        "type": "local"
+      },
+      "本地交易服务": {
+        "latency": 4,
+        "success": true,
+        "statusCode": 200,
+        "type": "local"
+      },
+      "Cloudflare路由": {
+        "latency": 6204,
+        "success": true,
+        "statusCode": 200,
+        "type": "cloud"
+      },
+      "CDN性能测试": {
+        "latency": 2264,
+        "success": true,
+        "statusCode": 200,
+        "type": "cdn"
+      },
+      "success_rate": 100,
+      "total_tests": 4,
+      "successful_tests": 4
+    },
+    "improvement": {
+      "local_service_latency": 12,
+      "cloud_service_latency": 6204,
+      "latency_improvement_percent": -90,
+      "success_rate_improvement": 67,
+      "before_latency": 3267,
+      "after_latency": 6204
+    }
+  },
+  "overall_score": 75,
+  "recommendations": [
+    "使用ngrok替代Cloudflare隧道以降低延迟",
+    "定期监控系统性能",
+    "考虑部署到国内云服务器进一步降低延迟"
+  ]
+}
