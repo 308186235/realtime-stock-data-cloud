@@ -19,7 +19,7 @@ impl KrakenExchange {
             ws_url: "wss://ws.kraken.com/".to_string(),
             symbols: vec![
                 "BTC/USD".to_string(),
-                "ETH/USD".to_string(), 
+                "ETH/USD".to_string(),
                 "ADA/USD".to_string(),
                 "DOT/USD".to_string(),
             ],
@@ -30,9 +30,9 @@ impl KrakenExchange {
         // Kraken WebSocket ticker数据格式: [channelID, data, channelName, pair]
         if let Some(array) = data.as_array() {
             if array.len() >= 4 {
-                if let (Some(ticker_data), Some(channel_name), Some(symbol)) = 
+                if let (Some(ticker_data), Some(channel_name), Some(symbol)) =
                     (array[1].as_object(), array[2].as_str(), array[3].as_str()) {
-                    
+
                     if channel_name == "ticker" {
                         // 获取最新价格 (c: [price, lot_volume])
                         if let Some(close_data) = ticker_data.get("c").and_then(|v| v.as_array()) {
@@ -81,7 +81,7 @@ impl KrakenExchange {
                                     "Kraken".to_string(),
                                 );
 
-                                info!("📊 Kraken {}: ${:.2} ({:+.2}%) Vol: {:.0}", 
+                                info!("📊 Kraken {}: ${:.2} ({:+.2}%) Vol: {:.0}",
                                     symbol, price, crypto_price.change_24h, volume_24h);
 
                                 return Ok(Some(crypto_price));
@@ -100,16 +100,39 @@ impl Exchange for KrakenExchange {
     async fn connect(&self, sender: mpsc::Sender<CryptoPrice>) -> Result<()> {
         info!("🔗 连接Kraken WebSocket: {}", self.ws_url);
 
+        // 🚀 添加重连逻辑
+        loop {
+            match self.connect_with_retry(&sender).await {
+                Ok(_) => {
+                    warn!("⚠️ Kraken连接正常结束，5秒后重连...");
+                }
+                Err(e) => {
+                    error!("❌ Kraken连接失败: {}，5秒后重试", e);
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+    }
+
+    fn name(&self) -> &str {
+        "Kraken"
+    }
+}
+
+impl KrakenExchange {
+    async fn connect_with_retry(&self, sender: &mpsc::Sender<CryptoPrice>) -> Result<()> {
         let (ws_stream, _) = connect_async(&self.ws_url).await
             .map_err(|e| anyhow!("Failed to connect to Kraken WebSocket: {}", e))?;
 
         let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-        // 订阅ticker数据
+        // 🚀 优化订阅消息 - 订阅更高频的数据流
         let subscribe_msg = json!({
             "event": "subscribe",
             "pair": self.symbols,
-            "subscription": {"name": "ticker"}
+            "subscription": {
+                "name": "ticker"
+            }
         });
 
         ws_sender.send(Message::Text(subscribe_msg.to_string())).await
@@ -117,16 +140,33 @@ impl Exchange for KrakenExchange {
 
         info!("✅ Kraken WebSocket连接成功，已订阅 {} 个交易对", self.symbols.len());
 
+        // 🚀 添加心跳计时器
+        let mut last_heartbeat = tokio::time::Instant::now();
+        let heartbeat_interval = tokio::time::Duration::from_secs(30);
+
         // 处理消息
         while let Some(msg) = ws_receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
+                    // 更新心跳时间
+                    last_heartbeat = tokio::time::Instant::now();
+
                     match serde_json::from_str::<Value>(&text) {
                         Ok(data) => {
-                            // 跳过系统消息
-                            if data.get("event").is_some() {
-                                debug!("Kraken系统消息: {}", text);
-                                continue;
+                            // 跳过订阅确认消息
+                            if let Some(event) = data.get("event").and_then(|v| v.as_str()) {
+                                if event == "subscriptionStatus" {
+                                    info!("📡 Kraken订阅确认: {}", text);
+                                    continue;
+                                }
+                                if event == "systemStatus" {
+                                    info!("📡 Kraken系统状态: {}", text);
+                                    continue;
+                                }
+                                if event == "heartbeat" {
+                                    debug!("💓 Kraken心跳: {}", text);
+                                    continue;
+                                }
                             }
 
                             // 处理ticker数据
@@ -151,13 +191,15 @@ impl Exchange for KrakenExchange {
                     }
                 }
                 Ok(Message::Ping(payload)) => {
+                    // 🚀 处理ping消息
                     if let Err(e) = ws_sender.send(Message::Pong(payload)).await {
                         error!("Failed to send pong to Kraken: {}", e);
                         break;
                     }
+                    debug!("💓 Kraken Ping/Pong处理成功");
                 }
                 Ok(Message::Close(_)) => {
-                    warn!("Kraken WebSocket连接关闭");
+                    warn!("⚠️ Kraken WebSocket连接关闭");
                     break;
                 }
                 Err(e) => {
@@ -166,13 +208,15 @@ impl Exchange for KrakenExchange {
                 }
                 _ => {}
             }
+
+            // 🚀 检查心跳超时
+            if last_heartbeat.elapsed() > heartbeat_interval * 2 {
+                warn!("⚠️ Kraken心跳超时，重新连接...");
+                break;
+            }
         }
 
         warn!("Kraken WebSocket连接断开");
         Ok(())
-    }
-
-    fn name(&self) -> &str {
-        "Kraken"
     }
 }

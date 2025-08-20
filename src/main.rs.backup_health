@@ -12,7 +12,6 @@ mod models;
 mod exchanges;
 mod storage;
 mod queue;
-mod health;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -36,7 +35,6 @@ static GLOBAL: MiMalloc = MiMalloc;
 use models::CryptoPrice;
 use storage::ClickHouseStorage;
 use queue::HighPerformanceRedisQueue;
-use health::create_health_monitor;
 use exchanges::{
     binance::BinanceExchange,
     bybit::BybitExchange,
@@ -138,13 +136,6 @@ async fn main() -> Result<()> {
 
     // 🚀 创建高性能通道
     let (tx, rx) = flume::bounded::<CryptoPrice>(CHANNEL_BUFFER);
-
-    // 🩺 初始化健康监控系统
-    let health_monitor = create_health_monitor();
-    health_monitor.start_monitoring().await;
-    health_monitor.start_auto_reconnect().await;
-    info!("🩺 健康监控系统已启动");
-
     let stats = Arc::new(UltraPerformanceStats::new());
 
     // 🚀 启动所有交易所连接 (并行启动)
@@ -176,8 +167,6 @@ async fn main() -> Result<()> {
         let mut last_flush = Instant::now();
         
         while let Ok(price) = rx.recv_async().await {
-            // 🩺 记录健康检查数据
-            health_monitor.record_data(&price.exchange);
             batch_buffer.push(price);
             
             // 智能批量处理：大小或时间触发
